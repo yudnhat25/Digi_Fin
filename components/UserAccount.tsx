@@ -7,7 +7,7 @@ import { Wallet, TrendingUp, Shield, Clock, ArrowUpRight, ArrowDownRight, Credit
 import PortfolioPieChart from './PortfolioPieChart';
 
 // Initialize Stripe
-const stripePromise = loadStripe('pk_test_51Snh0cRmNvNpxlLaH5lm7dD4mO54akyfUHig5RyeHRNQyDNqbYvrdmOEPlZVNORCW9jad4cDvcAeaznpfxROC0Q400y00vGk1B');
+const stripePromise = loadStripe('pk_test_51SmmvXEzg6BsPMWkBairxWMhSg73qqIuwgLtUSxB0kWYbNIVsvaj3TaDz4UokmyRj5HPghfn1QidmzRf3pxdxxzs00OaykiGBJ');
 
 interface UserAccountProps {
     user: UserState;

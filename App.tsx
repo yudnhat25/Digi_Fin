@@ -92,7 +92,7 @@ const App: React.FC = () => {
       if (data.length > 0) setMarketPrices(data);
     };
     updatePrices();
-    const interval = setInterval(updatePrices, 15000);
+    const interval = setInterval(updatePrices, 3000); // Update every 3 seconds
     return () => clearInterval(interval);
   }, []);
 
