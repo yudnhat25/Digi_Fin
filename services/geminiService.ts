@@ -7,7 +7,9 @@ export const getGeminiResponse = async (
   userState: UserState,
   marketData: MarketData[]
 ) => {
-  const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || 'AIzaSyAQNVQEWE4RRu5iQ0vr9B9tKXyS3L2zgZk' });
+  const ai = new GoogleGenAI({ 
+  apiKey: import.meta.env.VITE_GEMINI_API_KEY 
+});
 
   const systemInstruction = `
     You are the CoinWise AI Assistant, a specialized financial agent for a paper trading platform.
