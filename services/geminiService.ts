@@ -3,12 +3,12 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { UserState, MarketData } from "../types";
 
 export const getGeminiResponse = async (
-  prompt: string, 
-  userState: UserState, 
+  prompt: string,
+  userState: UserState,
   marketData: MarketData[]
 ) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  
+  const ai = new GoogleGenAI({ apiKey: 'AIzaSyAQNVQEWE4RRu5iQ0vr9B9tKXyS3L2zgZk' });
+
   const systemInstruction = `
     You are the CoinWise AI Assistant, a specialized financial agent for a paper trading platform.
     Help users learn about crypto trading, explain market concepts, and answer questions about their account.
@@ -31,7 +31,7 @@ export const getGeminiResponse = async (
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-2.5-flash-lite',
       contents: prompt,
       config: {
         systemInstruction,
