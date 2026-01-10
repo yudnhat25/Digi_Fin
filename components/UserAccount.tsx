@@ -4,6 +4,7 @@ import { UserState, MarketData } from '../types';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { Wallet, TrendingUp, Shield, Clock, ArrowUpRight, ArrowDownRight, CreditCard, DollarSign } from 'lucide-react';
+import PortfolioPieChart from './PortfolioPieChart';
 
 // Initialize Stripe
 const stripePromise = loadStripe('pk_test_51Snh0cRmNvNpxlLaH5lm7dD4mO54akyfUHig5RyeHRNQyDNqbYvrdmOEPlZVNORCW9jad4cDvcAeaznpfxROC0Q400y00vGk1B');
@@ -148,7 +149,7 @@ const UserAccount: React.FC<UserAccountProps> = ({ user, marketPrices, onDeposit
         <div className="space-y-6 animate-in fade-in duration-500">
 
             {/* Top Section - Account Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
 
                 {/* User Profile Card */}
                 <div className="bg-[#131722] border border-gray-800 rounded-xl p-6 relative overflow-hidden group hover:border-gray-700 transition-all">
@@ -257,6 +258,9 @@ const UserAccount: React.FC<UserAccountProps> = ({ user, marketPrices, onDeposit
                         </div>
                     </div>
                 </div>
+
+                {/* Portfolio Pie Chart */}
+                <PortfolioPieChart userState={user} marketPrices={marketPrices} />
             </div>
 
             {/* Deposit Section */}

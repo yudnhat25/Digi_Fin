@@ -150,7 +150,19 @@ const App: React.FC = () => {
         roundId: roundId,
         pnlPercent: 0,
         currentRank: 0
-      }
+      },
+      transactions: [
+        ...currentUser.transactions,
+        {
+          id: Math.random().toString(36).substr(2, 9),
+          type: 'ENTRY_FEE',
+          asset: 'USD',
+          amount: 5.00,
+          price: 1,
+          total: -5.00,
+          timestamp: Date.now()
+        }
+      ]
     };
     setCurrentUser(updatedUser);
     syncData(updatedUser);
@@ -168,6 +180,25 @@ const App: React.FC = () => {
     if (auth.currentUser) {
       try { await deleteDoc(doc(db, "leaderboard", auth.currentUser.uid)); } catch (e) { }
     }
+    syncData(updatedUser);
+  };
+
+  const handleClaimPrize = async (prizeAmount: number) => {
+    if (!currentUser) return;
+
+    // Prize goes to Stripe only, not added to paper trading balance
+    const updatedUser: UserState = {
+      ...currentUser,
+      competition: { ...INITIAL_STATE.competition, isCompeting: false }
+    };
+
+    setCurrentUser(updatedUser);
+
+    // Clean up leaderboard
+    if (auth.currentUser) {
+      try { await deleteDoc(doc(db, "leaderboard", auth.currentUser.uid)); } catch (e) { }
+    }
+
     syncData(updatedUser);
   };
 
@@ -227,6 +258,7 @@ const App: React.FC = () => {
             user={currentUser} marketPrices={marketPrices}
             onRegister={() => setIsCompPaymentOpen(true)}
             onReset={handleResetArena}
+            onClaimPrize={handleClaimPrize}
           />
           {isCompPaymentOpen && <CompetitionPaymentModal onClose={() => setIsCompPaymentOpen(false)} onSuccess={handleRegisterArena} />}
         </>

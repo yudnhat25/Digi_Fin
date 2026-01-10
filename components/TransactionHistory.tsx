@@ -17,7 +17,7 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({ transactions })
           <p className="text-[10px] text-slate-500 font-bold uppercase mt-1">Real-time execution history</p>
         </div>
         <div className="flex items-center gap-2">
-           <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Total: {transactions.length}</span>
+          <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Total: {transactions.length}</span>
         </div>
       </div>
 
@@ -60,12 +60,13 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({ transactions })
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-md tracking-widest ${
-                      t.type === 'BUY' ? 'bg-emerald-500/10 text-emerald-400' :
-                      t.type === 'SELL' ? 'bg-rose-500/10 text-rose-400' :
-                      'bg-blue-500/10 text-blue-400'
-                    }`}>
-                      {t.type}
+                    <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-md tracking-widest ${t.type === 'BUY' ? 'bg-emerald-500/10 text-emerald-400' :
+                        t.type === 'SELL' ? 'bg-rose-500/10 text-rose-400' :
+                          t.type === 'PRIZE' ? 'bg-amber-500/10 text-amber-400' :
+                            t.type === 'ENTRY_FEE' ? 'bg-purple-500/10 text-purple-400' :
+                              'bg-blue-500/10 text-blue-400'
+                      }`}>
+                      {t.type === 'ENTRY_FEE' ? 'ARENA FEE' : t.type}
                     </span>
                   </td>
                   <td className="px-6 py-4">
@@ -94,7 +95,7 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({ transactions })
           </tbody>
         </table>
       </div>
-      
+
       <div className="p-4 bg-slate-950/30 border-t border-slate-800/50 flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase tracking-widest">
         <span>Blockchain Simulator ID: {Math.random().toString(36).substring(7).toUpperCase()}</span>
         <span className="text-slate-600 italic">Historical data persisted locally</span>

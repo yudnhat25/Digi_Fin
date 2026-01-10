@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 interface CompetitionPayoutModalProps {
   amount: number;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (prizeAmount: number) => void;
 }
 
 const CompetitionPayoutModal: React.FC<CompetitionPayoutModalProps> = ({ amount, onClose, onSuccess }) => {
@@ -24,14 +24,14 @@ const CompetitionPayoutModal: React.FC<CompetitionPayoutModalProps> = ({ amount,
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/95 backdrop-blur-xl">
       <div className="bg-white text-slate-900 rounded-[2.5rem] w-full max-w-md p-10 shadow-2xl relative overflow-hidden animate-in zoom-in duration-300">
-        
+
         {step === 'review' ? (
           <>
             {/* Stripe Branded Header */}
             <div className="flex items-center justify-between mb-8">
               <div className="flex items-center gap-2">
                 <svg className="w-8 h-8 text-[#635BFF]" viewBox="0 0 40 40" fill="currentColor">
-                  <path d="M20 0C8.954 0 0 8.954 0 20s8.954 20 20 20 20-8.954 20-20S31.046 0 20 0zm0 36.364C10.963 36.364 3.636 29.037 3.636 20S10.963 3.636 20 3.636 36.364 10.963 36.364 20s-7.327 16.364-16.364 16.364z"/>
+                  <path d="M20 0C8.954 0 0 8.954 0 20s8.954 20 20 20 20-8.954 20-20S31.046 0 20 0zm0 36.364C10.963 36.364 3.636 29.037 3.636 20S10.963 3.636 20 3.636 36.364 10.963 36.364 20s-7.327 16.364-16.364 16.364z" />
                 </svg>
                 <span className="font-bold text-2xl tracking-tight text-[#635BFF]">Stripe <span className="text-slate-400 font-medium text-sm">Connect Payout</span></span>
               </div>
@@ -64,13 +64,13 @@ const CompetitionPayoutModal: React.FC<CompetitionPayoutModalProps> = ({ amount,
               </div>
 
               <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 flex gap-3">
-                 <svg className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                 <p className="text-[10px] text-emerald-800 font-medium leading-relaxed">
-                   Stripe Instant Payouts arrive in your account within minutes. No fee applies for Competition Champions.
-                 </p>
+                <svg className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <p className="text-[10px] text-emerald-800 font-medium leading-relaxed">
+                  Stripe Instant Payouts arrive in your account within minutes. No fee applies for Competition Champions.
+                </p>
               </div>
 
-              <button 
+              <button
                 onClick={handleRequestPayout}
                 disabled={isProcessing}
                 className="w-full bg-[#635BFF] hover:bg-[#5851e0] text-white font-black py-5 rounded-[1.25rem] flex items-center justify-center gap-3 transition-all active:scale-[0.98] shadow-2xl shadow-[#635BFF]/30 disabled:opacity-70"
@@ -93,19 +93,19 @@ const CompetitionPayoutModal: React.FC<CompetitionPayoutModalProps> = ({ amount,
             </div>
             <h3 className="text-3xl font-black text-slate-900 mb-2">Funds Dispatched</h3>
             <p className="text-slate-500 mb-10 text-sm">Your reward of ${amount.toFixed(2)} has been successfully sent to your bank via Stripe Connect.</p>
-            
+
             <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 mb-8 text-left">
-               <div className="flex justify-between text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
-                  <span>Reference ID</span>
-                  <span>{Math.random().toString(36).substring(2, 12).toUpperCase()}</span>
-               </div>
-               <div className="flex justify-between text-xs font-bold text-slate-800">
-                  <span>Status</span>
-                  <span className="text-emerald-600">Succeeded</span>
-               </div>
+              <div className="flex justify-between text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+                <span>Reference ID</span>
+                <span>{Math.random().toString(36).substring(2, 12).toUpperCase()}</span>
+              </div>
+              <div className="flex justify-between text-xs font-bold text-slate-800">
+                <span>Status</span>
+                <span className="text-emerald-600">Succeeded</span>
+              </div>
             </div>
 
-            <button 
+            <button
               onClick={onSuccess}
               className="w-full bg-slate-900 text-white font-black py-5 rounded-[1.25rem] hover:bg-slate-800 transition-all active:scale-95"
             >

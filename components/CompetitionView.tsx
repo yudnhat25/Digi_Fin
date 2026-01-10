@@ -10,9 +10,10 @@ interface CompetitionViewProps {
   marketPrices: MarketData[];
   onRegister: () => void;
   onReset: () => void;
+  onClaimPrize: (prizeAmount: number) => void;
 }
 
-const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, onRegister, onReset }) => {
+const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, onRegister, onReset, onClaimPrize }) => {
   const [participants, setParticipants] = useState<LeaderboardEntry[]>([]);
   const [timeLeftStr, setTimeLeftStr] = useState('SYNCING: 0s');
   const [isRaceActive, setIsRaceActive] = useState(false);
@@ -183,9 +184,13 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
         <CompetitionPayoutModal
           amount={50.00}
           onClose={() => setIsPayoutModalOpen(false)}
-          onSuccess={() => {
+          onSuccess={(prizeAmount) => {
+            onClaimPrize(prizeAmount);
             setIsPayoutModalOpen(false);
-            onReset();
+            // Switch to dashboard after modal closes
+            setTimeout(() => {
+              onReset();
+            }, 300);
           }}
         />
       )}
