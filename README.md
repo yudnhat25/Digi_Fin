@@ -4,7 +4,7 @@ A modern crypto paper trading platform with AI-powered chatbot assistance.
 
 ## 🚀 Live Demo
 
-[Visit CoinWise](https://your-app.vercel.app) *(Update after deployment)*
+[Visit CoinWise](https://fintech-final-ivory.vercel.app/) 
 
 ## ✨ Features
 
