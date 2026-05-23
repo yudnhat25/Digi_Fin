@@ -5,16 +5,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CoinWise AI - Learn Crypto Risk-Free</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tailwind config MUST be defined BEFORE the CDN script so JIT picks it up -->
     <script>
-      // Safelist for dynamic Tailwind classes (color templates like bg-{c}-500/10)
-      tailwind.config = {
+      window.tailwind = window.tailwind || {};
+      window.tailwind.config = {
         safelist: [
-          { pattern: /(bg|text|border|from|via|to|ring|shadow)-(emerald|blue|violet|amber|rose|cyan|orange|slate|pink|sky|purple|indigo|green|red|yellow)-(50|100|200|300|400|500|600|700|800|900|950)(\/(5|10|15|20|25|30|40|50|60|70|80|90))?/ },
+          { pattern: /(bg|text|border|from|via|to|ring|shadow)-(emerald|blue|violet|amber|rose|cyan|orange|slate|pink|sky|purple|indigo|green|red|yellow|fuchsia)-(50|100|200|300|400|500|600|700|800|900|950)(\/(5|10|15|20|25|30|40|50|60|70|80|90))?/ },
           { pattern: /(bg|text|border)-\[#(635BFF|5851e0)\]/ }
         ]
       };
     </script>
+    <script src="https://cdn.tailwindcss.com" onerror="document.getElementById('boot-status') && (document.getElementById('boot-status').textContent='Tailwind CDN blocked — UI will be unstyled', document.getElementById('boot-status').style.color='#f43f5e')"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
