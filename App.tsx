@@ -80,12 +80,17 @@ const App: React.FC = () => {
         const snapshot = await get(userRef);
         if (snapshot.exists()) {
           const data = snapshot.val();
+          // Firebase Realtime DB strips empty arrays — restore defaults so .reduce() etc. don't crash.
+          if (!Array.isArray(data.assets)) data.assets = [];
+          if (!Array.isArray(data.transactions)) data.transactions = [];
           if (!data.tier) data.tier = 'STARTER';
-          if (!data.watchlist) data.watchlist = [{ symbol: 'BTCUSDT', addedAt: Date.now() }, { symbol: 'ETHUSDT', addedAt: Date.now() }, { symbol: 'SOLUSDT', addedAt: Date.now() }];
-          if (!data.stakes) data.stakes = [];
-          if (!data.enrollments) data.enrollments = [];
+          if (!Array.isArray(data.watchlist)) data.watchlist = [{ symbol: 'BTCUSDT', addedAt: Date.now() }, { symbol: 'ETHUSDT', addedAt: Date.now() }, { symbol: 'SOLUSDT', addedAt: Date.now() }];
+          if (!Array.isArray(data.stakes)) data.stakes = [];
+          if (!Array.isArray(data.enrollments)) data.enrollments = [];
+          if (!data.competition) data.competition = { isCompeting: false, entryNetWorth: 0, entryTime: 0, pnlPercent: 0, currentRank: 0 };
           if (data.referralEarnings === undefined) data.referralEarnings = 0;
           if (data.referralCount === undefined) data.referralCount = 0;
+          if (typeof data.balance !== 'number') data.balance = 1000000;
           setCurrentUser(data);
         }
       } else {

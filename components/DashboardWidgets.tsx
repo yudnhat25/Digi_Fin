@@ -113,7 +113,7 @@ export const NewsWidget: React.FC = () => {
 
 export const PortfolioBreakdownWidget: React.FC<WidgetsProps> = ({ marketData, user }) => {
   const breakdown = useMemo(() => {
-    return user.assets.map(a => {
+    return (user.assets || []).map(a => {
       const price = marketData.find(m => m.symbol === a.symbol)?.price || 0;
       return { symbol: a.symbol.replace('USDT', ''), value: a.amount * price };
     }).filter(a => a.value > 0).sort((a, b) => b.value - a.value);

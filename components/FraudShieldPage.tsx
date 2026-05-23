@@ -27,7 +27,7 @@ const FraudShieldPage: React.FC<{ user: UserState }> = ({ user }) => {
 
   useEffect(() => {
     let alive = true;
-    const recent = user.transactions.slice(-15).reverse();
+    const recent = (user.transactions || []).slice(-15).reverse();
     Promise.all(
       recent.map(async (tx) => {
         const check = await apiFraudCheck(user.accountId, {

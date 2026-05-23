@@ -30,7 +30,7 @@ const TradingPanel: React.FC<TradingPanelProps> = ({
   const activeMarket = marketData.find(m => m.symbol === selectedAsset);
   const currentPrice = activeMarket?.price || 0;
   const displayPrice = priceOverride !== null ? parseFloat(priceOverride) : currentPrice;
-  const userAssetAmount = userState.assets.find(a => a.symbol === selectedAsset)?.amount || 0;
+  const userAssetAmount = (userState.assets || []).find(a => a.symbol === selectedAsset)?.amount || 0;
   
   const filteredMarkets = useMemo(() => {
     return marketData.filter(m => m.symbol.toLowerCase().includes(searchQuery.toLowerCase()));

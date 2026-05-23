@@ -9,22 +9,25 @@ interface PortfolioSummaryProps {
 
 const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({ userState, marketPrices }) => {
   const { format, currency } = useCurrency();
-  const assetValue = useMemo(() => userState.assets.reduce((acc, asset) => {
+  const assets = userState.assets || [];
+  const balance = typeof userState.balance === 'number' ? userState.balance : 0;
+
+  const assetValue = useMemo(() => assets.reduce((acc, asset) => {
     const marketPrice = marketPrices.find(m => m.symbol === asset.symbol)?.price || 0;
     return acc + (asset.amount * marketPrice);
-  }, 0), [userState.assets, marketPrices]);
+  }, 0), [assets, marketPrices]);
 
-  const totalValue = userState.balance + assetValue;
+  const totalValue = balance + assetValue;
   const initialValue = 1000000;
   const pnlAbs = totalValue - initialValue;
   const pnlPercent = (pnlAbs / initialValue) * 100;
 
   // Today's PnL (simulated based on assets × change24h)
-  const todayPnl = useMemo(() => userState.assets.reduce((acc, a) => {
+  const todayPnl = useMemo(() => assets.reduce((acc, a) => {
     const m = marketPrices.find(x => x.symbol === a.symbol);
     if (!m) return acc;
     return acc + (a.amount * m.price * m.change24h / 100);
-  }, 0), [userState.assets, marketPrices]);
+  }, 0), [assets, marketPrices]);
 
   const cards = [
     {
@@ -36,7 +39,7 @@ const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({ userState, marketPr
     },
     {
       label: 'Available Cash',
-      value: format(userState.balance),
+      value: format(balance),
       sub: currency === 'VND' ? 'Ví VND/USDT' : 'USDT Wallet',
       subColor: 'text-slate-500',
       iconBg: 'blue'
@@ -44,7 +47,7 @@ const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({ userState, marketPr
     {
       label: 'Portfolio Value',
       value: format(assetValue),
-      sub: `${userState.assets.length} positions`,
+      sub: `${assets.length} positions`,
       subColor: 'text-slate-500',
       iconBg: 'violet'
     },
