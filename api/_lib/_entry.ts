@@ -7,11 +7,11 @@ export const config = { runtime: 'nodejs' };
 
 export default async function handler(req: any, res: any) {
   try {
-    const mod = await import('./_lib/app').catch((e) => {
+    const mod = await import('./app').catch((e) => {
       throw new Error('IMPORT_FAILED: ' + (e as Error).message);
     });
     const app = mod.app;
-    if (!app) throw new Error('App export is missing from server/app');
+    if (!app) throw new Error('App export is missing from _lib/app');
 
     const proto = (req.headers['x-forwarded-proto'] as string | undefined) || 'https';
     const host = (req.headers['x-forwarded-host'] as string | undefined)
