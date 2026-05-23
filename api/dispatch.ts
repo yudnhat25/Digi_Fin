@@ -1,22 +1,23 @@
 /**
- * Single Vercel serverless function that wires every CoinWise OpenAPI route.
- * vercel.json rewrites map `/api/v1/*`, `/api/openapi.yaml`, `/api/docs`,
- * `/docs`, and `/openapi.yaml` to `/api/dispatch`.
+ * Single Vercel serverless function. Uses dynamic import so that any module
+ * load error surfaces inside the handler's catch and is returned to the
+ * client instead of triggering Vercel's opaque FUNCTION_INVOCATION_FAILED.
  */
-import { app } from '../server/app';
-
 export const config = { runtime: 'nodejs' };
 
 export default async function handler(req: any, res: any) {
   try {
+    const mod = await import('../server/app').catch((e) => {
+      throw new Error('IMPORT_FAILED: ' + (e as Error).message);
+    });
+    const app = mod.app;
+    if (!app) throw new Error('App export is missing from server/app');
+
     const proto = (req.headers['x-forwarded-proto'] as string | undefined) || 'https';
     const host = (req.headers['x-forwarded-host'] as string | undefined)
       || (req.headers['host'] as string | undefined)
       || 'localhost';
 
-    // Vercel passes the original request URL untouched through rewrites.
-    // Defensive: if it ever points back at /api/dispatch (which Hono has no route for),
-    // try the matched-path header used by some Vercel runtimes.
     let path = req.url || '/';
     if (path.startsWith('/api/dispatch')) {
       const matched = req.headers['x-matched-path'] as string | undefined;
@@ -50,11 +51,12 @@ export default async function handler(req: any, res: any) {
     const buf = Buffer.from(await webRes.arrayBuffer());
     res.end(buf);
   } catch (err) {
+    const e = err as Error;
     res.setHeader('content-type', 'application/json; charset=utf-8');
     res.status(500).end(JSON.stringify({
       error: 'function_crash',
-      message: (err as Error).message,
-      stack: (err as Error).stack?.split('\n').slice(0, 6),
+      message: e.message,
+      stack: e.stack?.split('\n').slice(0, 12),
     }));
   }
 }
