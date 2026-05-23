@@ -1,17 +1,15 @@
 /**
- * Minimal health endpoint — no imports, no Hono — used to verify that
- * Vercel serverless functions are deploying & responding at all.
- * If THIS works but /api/v1/* doesn't, the issue is in the Hono app bundling.
+ * Minimal Vercel Node function — uses classic (req, res) signature so we know
+ * the Vercel function infrastructure is reachable at all.
  */
 export const config = { runtime: 'nodejs' };
 
-export default function handler(_req: Request): Response {
-  return new Response(
-    JSON.stringify({
-      ok: true,
-      env: typeof process !== 'undefined' ? 'nodejs' : 'edge',
-      time: new Date().toISOString(),
-    }),
-    { headers: { 'content-type': 'application/json' } },
-  );
+export default function handler(req: any, res: any) {
+  res.setHeader('content-type', 'application/json; charset=utf-8');
+  res.status(200).end(JSON.stringify({
+    ok: true,
+    time: new Date().toISOString(),
+    url: req.url,
+    method: req.method,
+  }));
 }
