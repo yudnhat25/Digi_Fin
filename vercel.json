@@ -5,12 +5,15 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "functions": {
-    "api/[...path].ts": {
+    "api/dispatch.ts": {
       "includeFiles": "server/**"
     }
   },
   "rewrites": [
-    { "source": "/docs", "destination": "/api/docs" },
-    { "source": "/openapi.yaml", "destination": "/api/openapi.yaml" }
+    { "source": "/api/v1/:path*", "destination": "/api/dispatch" },
+    { "source": "/api/openapi.yaml", "destination": "/api/dispatch" },
+    { "source": "/api/docs", "destination": "/api/dispatch" },
+    { "source": "/docs", "destination": "/api/dispatch" },
+    { "source": "/openapi.yaml", "destination": "/api/dispatch" }
   ]
 }
