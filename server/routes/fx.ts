@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { convert, getRates } from '../fx.js';
+import { convert, getRates } from '../fx';
 
 export const fxRouter = new Hono();
 

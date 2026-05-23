@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
-import { computeCreditScore } from '../ai/credit.js';
-import { checkFraud } from '../ai/fraud.js';
-import { buildAdvisor, RiskProfile } from '../ai/advisor.js';
-import { getSentiment, getWhaleFlow, getFearGreed, signalFromSentiment } from '../ai/altdata.js';
+import { computeCreditScore } from '../ai/credit';
+import { checkFraud } from '../ai/fraud';
+import { buildAdvisor, RiskProfile } from '../ai/advisor';
+import { getSentiment, getWhaleFlow, getFearGreed, signalFromSentiment } from '../ai/altdata';
 
 export const aiRouter = new Hono();
 

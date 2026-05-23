@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
-import { getAccount, shortId, ServerTransaction } from '../state.js';
-import { usdToVnd, vndToUsd, getRates } from '../fx.js';
-import { checkFraud } from '../ai/fraud.js';
+import { getAccount, shortId, ServerTransaction } from '../state';
+import { usdToVnd, vndToUsd, getRates } from '../fx';
+import { checkFraud } from '../ai/fraud';
 
 export const accountsRouter = new Hono();
 

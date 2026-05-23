@@ -7,12 +7,12 @@
  * the model can quote back to the user (and that we render in the chat UI).
  */
 import { Hono } from 'hono';
-import { getAccount } from '../state.js';
-import { usdToVnd, vndToUsd, convert, getRates } from '../fx.js';
-import { getSentiment, getWhaleFlow, getFearGreed } from '../ai/altdata.js';
-import { computeCreditScore } from '../ai/credit.js';
-import { buildAdvisor, RiskProfile } from '../ai/advisor.js';
-import { checkFraud } from '../ai/fraud.js';
+import { getAccount } from '../state';
+import { usdToVnd, vndToUsd, convert, getRates } from '../fx';
+import { getSentiment, getWhaleFlow, getFearGreed } from '../ai/altdata';
+import { computeCreditScore } from '../ai/credit';
+import { buildAdvisor, RiskProfile } from '../ai/advisor';
+import { checkFraud } from '../ai/fraud';
 
 export const agentRouter = new Hono();
 

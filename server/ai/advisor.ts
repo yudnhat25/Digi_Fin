@@ -3,8 +3,8 @@
  * + whale flow) to build a target allocation tailored to the user's risk
  * profile, plus a narrative rationale.
  */
-import { getAccount } from '../state.js';
-import { getSentiment, getFearGreed, getWhaleFlow, signalFromSentiment } from './altdata.js';
+import { getAccount } from '../state';
+import { getSentiment, getFearGreed, getWhaleFlow, signalFromSentiment } from './altdata';
 
 export type RiskProfile = 'CONSERVATIVE' | 'BALANCED' | 'GROWTH' | 'AGGRESSIVE';
 

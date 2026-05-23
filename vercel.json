@@ -5,13 +5,12 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "functions": {
-    "api/[[...path]].ts": {
-      "includeFiles": "server/openapi.yaml"
+    "api/[...path].ts": {
+      "includeFiles": "server/**"
     }
   },
   "rewrites": [
-    { "source": "/api/:path*", "destination": "/api/[[...path]]" },
-    { "source": "/docs", "destination": "/api/[[...path]]" },
-    { "source": "/openapi.yaml", "destination": "/api/[[...path]]" }
+    { "source": "/docs", "destination": "/api/docs" },
+    { "source": "/openapi.yaml", "destination": "/api/openapi.yaml" }
   ]
 }

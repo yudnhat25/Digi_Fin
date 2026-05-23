@@ -6,8 +6,8 @@
  * a real anomaly-detection model (Isolation Forest / LSTM autoencoder) backed
  * by alternative data such as device fingerprint, geo-velocity, social signal.
  */
-import { getAccount } from '../state.js';
-import { getSentiment } from './altdata.js';
+import { getAccount } from '../state';
+import { getSentiment } from './altdata';
 
 export interface FraudTx {
   type?: string;

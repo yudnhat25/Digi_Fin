@@ -1,12 +1,12 @@
 import { Hono } from 'hono';
-import { usdToVnd } from '../fx.js';
+import { usdToVnd } from '../fx';
 import {
   getSentiment,
   getWhaleFlow,
   getFearGreed,
   getSocialPulse,
   signalFromSentiment,
-} from '../ai/altdata.js';
+} from '../ai/altdata';
 
 export const marketRouter = new Hono();
 

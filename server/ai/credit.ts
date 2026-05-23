@@ -9,8 +9,8 @@
  *
  * Output: 0–1000 score + band + factor breakdown + lending eligibility in VND.
  */
-import { getAccount } from '../state.js';
-import { usdToVnd } from '../fx.js';
+import { getAccount } from '../state';
+import { usdToVnd } from '../fx';
 
 export interface CreditFactor {
   key: string;

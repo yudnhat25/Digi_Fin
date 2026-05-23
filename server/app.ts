@@ -1,8 +1,13 @@
 /**
  * Pure Hono application — shared between the standalone Node server (server/index.ts)
- * and Vercel serverless entry (api/[[...path]].ts).
+ * and Vercel serverless entry (api/[...path].ts).
  *
  * No side-effects, no listen(). Export the Hono instance only.
+ *
+ * All endpoints are mounted under /api/ so that Vercel filesystem routing
+ * (api/[...path].ts catches /api/*) automatically forwards every URL we care
+ * about. Top-level `/docs` and `/openapi.yaml` are exposed via vercel.json
+ * rewrites that point to /api/docs and /api/openapi.yaml respectively.
  */
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
@@ -10,20 +15,22 @@ import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { fxRouter } from './routes/fx.js';
-import { marketRouter } from './routes/market.js';
-import { aiRouter } from './routes/ai.js';
-import { accountsRouter } from './routes/accounts.js';
-import { agentRouter } from './routes/agent.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+import { fxRouter } from './routes/fx';
+import { marketRouter } from './routes/market';
+import { aiRouter } from './routes/ai';
+import { accountsRouter } from './routes/accounts';
+import { agentRouter } from './routes/agent';
 
 const startedAt = Date.now();
 
 export const app = new Hono();
 
 app.use('*', cors({ origin: '*', allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'] }));
+
+// Diagnostic ping — does not depend on anything, useful when debugging cold-start crashes.
+app.get('/api/ping', (c) =>
+  c.json({ ok: true, uptimeSec: Math.floor((Date.now() - startedAt) / 1000), time: new Date().toISOString() }),
+);
 
 app.get('/api/v1/health', (c) =>
   c.json({
@@ -40,35 +47,37 @@ app.route('/api/v1/ai', aiRouter);
 app.route('/api/v1/accounts', accountsRouter);
 app.route('/api/v1/agent', agentRouter);
 
-// Locate openapi.yaml: prefer co-located file, fall back to repo root (Vercel).
 function loadSpec(): string | null {
+  // Candidate paths cover: local tsx run (__dirname = server/), Vercel bundle (cwd/server/), and a fallback.
+  const here = (() => {
+    try { return dirname(fileURLToPath(import.meta.url)); } catch { return ''; }
+  })();
   const candidates = [
-    resolve(__dirname, 'openapi.yaml'),
-    resolve(__dirname, '../server/openapi.yaml'),
+    here && resolve(here, 'openapi.yaml'),
+    here && resolve(here, '../server/openapi.yaml'),
     resolve(process.cwd(), 'server/openapi.yaml'),
-  ];
+    resolve(process.cwd(), 'openapi.yaml'),
+  ].filter(Boolean) as string[];
   for (const path of candidates) {
     try {
       return readFileSync(path, 'utf8');
-    } catch {
-      /* try next */
-    }
+    } catch { /* try next */ }
   }
   return null;
 }
 
-app.get('/openapi.yaml', (c) => {
+app.get('/api/openapi.yaml', (c) => {
   const spec = loadSpec();
-  if (!spec) return c.json({ error: 'Spec file not found in bundle' }, 500);
+  if (!spec) return c.json({ error: 'Spec file not in bundle. Check vercel.json includeFiles.' }, 500);
   return new Response(spec, { headers: { 'content-type': 'text/yaml; charset=utf-8' } });
 });
 
-app.get('/docs', (c) => {
+app.get('/api/docs', (c) => {
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>CoinWise AI — OpenAPI Docs</title>
+  <title>CoinWise AI · OpenAPI Docs</title>
   <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui.css" />
   <style>body{margin:0;background:#0f172a}.swagger-ui .topbar{background:#0f172a}</style>
 </head>
@@ -91,14 +100,19 @@ app.get('/docs', (c) => {
   return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8' } });
 });
 
-// Root redirect → docs (only when hitting the API host directly).
-app.get('/', (c) => c.redirect('/docs'));
-
+// Local-server convenience routes (when running via `npm run dev:api` on port 3001).
+app.get('/openapi.yaml', (c) => {
+  const spec = loadSpec();
+  if (!spec) return c.json({ error: 'Spec not found' }, 500);
+  return new Response(spec, { headers: { 'content-type': 'text/yaml; charset=utf-8' } });
+});
+app.get('/docs', (c) => c.redirect('/api/docs'));
+app.get('/', (c) => c.redirect('/api/docs'));
 app.get('/meta', (c) =>
   c.json({
     name: 'CoinWise AI Fintech OpenAPI',
-    docs: '/docs',
-    spec: '/openapi.yaml',
+    docs: '/api/docs',
+    spec: '/api/openapi.yaml',
     health: '/api/v1/health',
   }),
 );

@@ -6,7 +6,7 @@
  */
 import { serve } from '@hono/node-server';
 import { logger } from 'hono/logger';
-import { app } from './app.js';
+import { app } from './app';
 
 const PORT = Number(process.env.COINWISE_API_PORT || 3001);
 
