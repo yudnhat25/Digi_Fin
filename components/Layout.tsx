@@ -168,30 +168,63 @@ const TopBar: React.FC<{
   mobileNavOpen: boolean;
   onMobileNavToggle: () => void;
 }> = ({ userName, tier, mobileNavOpen, onMobileNavToggle }) => {
-  const [tickers, setTickers] = useState<{ symbol: string; price: number; change: number }[]>([
-    { symbol: 'BTC', price: 74857, change: -8.71 },
-    { symbol: 'ETH', price: 3204, change: 1.24 },
-  ]);
+  const [tickers, setTickers] = useState<Record<string, { price: number; change: number }>>({
+    BTC: { price: 74857, change: -8.71 },
+    ETH: { price: 3204, change: 1.24 },
+  });
   const [fg, setFg] = useState<{ value: number; classification: string } | null>(null);
   const [showCmd, setShowCmd] = useState(false);
 
+  // Streaming tickers from Binance WS. Combined miniTicker stream gives ~1s updates.
   useEffect(() => {
     let alive = true;
-    const load = async () => {
-      try {
-        const [m, f] = await Promise.all([
-          apiMarketPrices(['BTCUSDT', 'ETHUSDT']),
-          apiFearGreed(),
-        ]);
+    let ws: WebSocket | null = null;
+    let retryTimer: number | null = null;
+
+    const open = () => {
+      ws = new WebSocket('wss://stream.binance.com:9443/stream?streams=btcusdt@miniTicker/ethusdt@miniTicker');
+      ws.onmessage = (e) => {
         if (!alive) return;
-        if (m.length) setTickers(m.map(x => ({ symbol: x.symbol.replace('USDT', ''), price: x.price, change: x.change24h })));
-        setFg({ value: f.value, classification: f.classification });
-      } catch { /* keep last values */ }
+        try {
+          const msg = JSON.parse(e.data) as { data: { s: string; c: string; o: string } };
+          const d = msg.data;
+          if (!d) return;
+          const sym = d.s.replace('USDT', '');
+          const price = Number(d.c);
+          const open = Number(d.o);
+          const change = open ? ((price - open) / open) * 100 : 0;
+          setTickers(prev => ({ ...prev, [sym]: { price, change } }));
+        } catch { /* ignore */ }
+      };
+      ws.onclose = () => {
+        if (!alive) return;
+        retryTimer = window.setTimeout(open, 3000);
+      };
     };
-    load();
-    const id = setInterval(load, 15_000);
-    return () => { alive = false; clearInterval(id); };
+    open();
+
+    // Fear & Greed via REST (slow-moving — poll every minute).
+    let alive2 = true;
+    const loadFg = async () => {
+      try {
+        const f = await apiFearGreed();
+        if (alive2) setFg({ value: f.value, classification: f.classification });
+      } catch { /* keep last */ }
+    };
+    loadFg();
+    const fgTimer = setInterval(loadFg, 60_000);
+
+    return () => {
+      alive = false;
+      alive2 = false;
+      if (retryTimer) window.clearTimeout(retryTimer);
+      if (ws) { try { ws.close(); } catch { /* noop */ } }
+      clearInterval(fgTimer);
+    };
   }, []);
+
+  // Suppress unused import warning when REST fallback is removed.
+  void apiMarketPrices;
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -230,7 +263,9 @@ const TopBar: React.FC<{
         </button>
 
         <div className="hidden lg:flex items-center gap-4 text-[12px] tabular-nums">
-          {tickers.map(t => <Ticker key={t.symbol} {...t} />)}
+          {(['BTC', 'ETH'] as const).map(sym => (
+            <Ticker key={sym} symbol={sym} price={tickers[sym]?.price ?? 0} change={tickers[sym]?.change ?? 0} />
+          ))}
         </div>
 
         <FearGreedChip fg={fg} />
