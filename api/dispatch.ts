@@ -7,7 +7,7 @@ export const config = { runtime: 'nodejs' };
 
 export default async function handler(req: any, res: any) {
   try {
-    const mod = await import('../server/app').catch((e) => {
+    const mod = await import('./_lib/app').catch((e) => {
       throw new Error('IMPORT_FAILED: ' + (e as Error).message);
     });
     const app = mod.app;

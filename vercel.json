@@ -6,7 +6,7 @@
   "outputDirectory": "dist",
   "functions": {
     "api/dispatch.ts": {
-      "includeFiles": "server/**"
+      "includeFiles": "api/_lib/**"
     }
   },
   "rewrites": [

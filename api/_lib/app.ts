@@ -54,8 +54,8 @@ function loadSpec(): string | null {
   })();
   const candidates = [
     here && resolve(here, 'openapi.yaml'),
-    here && resolve(here, '../server/openapi.yaml'),
-    resolve(process.cwd(), 'server/openapi.yaml'),
+    here && resolve(here, '../api/_lib/openapi.yaml'),
+    resolve(process.cwd(), 'api/_lib/openapi.yaml'),
     resolve(process.cwd(), 'openapi.yaml'),
   ].filter(Boolean) as string[];
   for (const path of candidates) {
