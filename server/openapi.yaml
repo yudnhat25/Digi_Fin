@@ -1,0 +1,547 @@
+openapi: 3.0.3
+info:
+  title: CoinWise AI — Custom Fintech OpenAPI
+  version: 1.0.0
+  description: |
+    Proprietary OpenAPI server for **CoinWise AI**, the AI-driven crypto paper-trading
+    & financial-intelligence platform. This server resolves the localization gaps left
+    by Stripe / Plaid (which lack first-class **VND** support) and exposes endpoints
+    that serve the AI **Alternative Data** analytics layer (sentiment, on-chain whale
+    flow, fear & greed, AI credit score, fraud detection, AI advisor).
+
+    Built for the Advanced Fintech Synthesis assignment — UII incubator demo.
+  contact:
+    name: CoinWise AI Team
+    email: hello@coinwise.ai
+servers:
+  - url: http://localhost:3001
+    description: Local dev server
+tags:
+  - name: Health
+  - name: FX (VND Localization)
+  - name: Market
+  - name: AI / Alternative Data
+  - name: Accounts
+  - name: Agent
+paths:
+  /api/v1/health:
+    get:
+      tags: [Health]
+      summary: Liveness probe
+      responses:
+        '200':
+          description: Service OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+
+  /api/v1/fx/rates:
+    get:
+      tags: [FX (VND Localization)]
+      summary: Get current FX rates (USD, VND, EUR, JPY) — base USD
+      responses:
+        '200':
+          description: FX table
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FxRates'
+
+  /api/v1/fx/convert:
+    post:
+      tags: [FX (VND Localization)]
+      summary: Convert amount between currencies (handles VND precision)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FxConvertRequest'
+      responses:
+        '200':
+          description: Conversion result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FxConvertResponse'
+
+  /api/v1/market/prices:
+    get:
+      tags: [Market]
+      summary: Get live market prices (Binance proxy, enriched with VND value)
+      parameters:
+        - in: query
+          name: symbols
+          description: Comma-separated USDT pairs (e.g. BTCUSDT,ETHUSDT)
+          schema: { type: string }
+      responses:
+        '200':
+          description: Market list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/EnrichedMarket' }
+
+  /api/v1/market/{symbol}/sentiment:
+    get:
+      tags: [AI / Alternative Data]
+      summary: AI-derived social sentiment score (Twitter/Reddit/News blend)
+      parameters:
+        - in: path
+          name: symbol
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Sentiment payload
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SentimentSnapshot' }
+
+  /api/v1/market/{symbol}/whale-flow:
+    get:
+      tags: [AI / Alternative Data]
+      summary: On-chain whale flow (large wallet net-buy / sell)
+      parameters:
+        - in: path
+          name: symbol
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Whale flow series
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WhaleFlow' }
+
+  /api/v1/market/fear-greed:
+    get:
+      tags: [AI / Alternative Data]
+      summary: Fear & Greed index (Alternative.me + AI overlay)
+      responses:
+        '200':
+          description: Index payload
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FearGreed' }
+
+  /api/v1/market/social-pulse:
+    get:
+      tags: [AI / Alternative Data]
+      summary: Aggregated social-pulse leaderboard (top mentions, mood shift)
+      responses:
+        '200':
+          description: Social pulse rows
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SocialPulseRow' }
+
+  /api/v1/ai/credit-score:
+    post:
+      tags: [AI / Alternative Data]
+      summary: AI Credit Score for a user using alternative data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreditScoreRequest' }
+      responses:
+        '200':
+          description: Score + explanation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreditScoreResponse' }
+
+  /api/v1/ai/fraud-check:
+    post:
+      tags: [AI / Alternative Data]
+      summary: AI Fraud risk assessment on a transaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FraudCheckRequest' }
+      responses:
+        '200':
+          description: Fraud verdict
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FraudCheckResponse' }
+
+  /api/v1/ai/advisor:
+    post:
+      tags: [AI / Alternative Data]
+      summary: Personalised AI portfolio advisor using alternative data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdvisorRequest' }
+      responses:
+        '200':
+          description: Advisor recommendation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdvisorResponse' }
+
+  /api/v1/ai/insight:
+    post:
+      tags: [AI / Alternative Data]
+      summary: Aggregated AI insight for a coin (combines all alt-data sources)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                symbol: { type: string, example: BTCUSDT }
+              required: [symbol]
+      responses:
+        '200':
+          description: Insight bundle
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CoinInsight' }
+
+  /api/v1/accounts/{accountId}/balance:
+    get:
+      tags: [Accounts]
+      summary: Balance + holdings expressed in USD and VND
+      parameters:
+        - in: path
+          name: accountId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Balance snapshot
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountBalance' }
+
+  /api/v1/accounts/{accountId}/deposit-vnd:
+    post:
+      tags: [Accounts]
+      summary: Deposit VND — auto-converted to internal USD balance
+      parameters:
+        - in: path
+          name: accountId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amountVnd: { type: number, example: 25000000 }
+                channel: { type: string, enum: [BANK_TRANSFER, MOMO, ZALOPAY, VNPAY], example: VNPAY }
+              required: [amountVnd]
+      responses:
+        '200':
+          description: Deposit confirmation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DepositResponse' }
+
+  /api/v1/accounts/{accountId}/trade:
+    post:
+      tags: [Accounts]
+      summary: Place a paper trade (currency-safe, supports VND or USD notional)
+      parameters:
+        - in: path
+          name: accountId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TradeRequest' }
+      responses:
+        '200':
+          description: Trade confirmation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TradeResponse' }
+
+  /api/v1/agent/execute:
+    post:
+      tags: [Agent]
+      summary: Dispatcher used by the Gemini agentic chatbot to run tool calls
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AgentExecuteRequest' }
+      responses:
+        '200':
+          description: Tool result (passthrough)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+components:
+  schemas:
+    Health:
+      type: object
+      properties:
+        status: { type: string, example: ok }
+        uptimeSec: { type: number, example: 1234 }
+        version: { type: string, example: 1.0.0 }
+    FxRates:
+      type: object
+      properties:
+        base: { type: string, example: USD }
+        asOf: { type: string, format: date-time }
+        rates:
+          type: object
+          additionalProperties: { type: number }
+          example: { VND: 24850, EUR: 0.92, JPY: 156.4 }
+    FxConvertRequest:
+      type: object
+      required: [amount, from, to]
+      properties:
+        amount: { type: number, example: 100 }
+        from: { type: string, example: USD }
+        to: { type: string, example: VND }
+    FxConvertResponse:
+      type: object
+      properties:
+        amount: { type: number }
+        from: { type: string }
+        to: { type: string }
+        rate: { type: number }
+        result: { type: number }
+        formatted: { type: string, example: "2.485.000 ₫" }
+    EnrichedMarket:
+      type: object
+      properties:
+        symbol: { type: string }
+        price: { type: number }
+        priceVnd: { type: number }
+        change24h: { type: number }
+        high24h: { type: number }
+        low24h: { type: number }
+        aiSignal: { type: string, enum: [BUY, HOLD, SELL, NEUTRAL] }
+    SentimentSnapshot:
+      type: object
+      properties:
+        symbol: { type: string }
+        score: { type: number, minimum: -1, maximum: 1 }
+        label: { type: string, enum: [Bearish, Neutral, Bullish, Euphoric] }
+        mentions24h: { type: integer }
+        sources:
+          type: object
+          properties:
+            twitter: { type: number }
+            reddit: { type: number }
+            news: { type: number }
+        topThemes:
+          type: array
+          items: { type: string }
+        aiSummary: { type: string }
+        updatedAt: { type: string, format: date-time }
+    WhaleFlow:
+      type: object
+      properties:
+        symbol: { type: string }
+        netFlow24hUsd: { type: number }
+        largeBuys: { type: integer }
+        largeSells: { type: integer }
+        biggestSingle: { type: number }
+        verdict: { type: string }
+        series:
+          type: array
+          items:
+            type: object
+            properties:
+              t: { type: string, format: date-time }
+              netUsd: { type: number }
+    FearGreed:
+      type: object
+      properties:
+        value: { type: integer, minimum: 0, maximum: 100 }
+        classification: { type: string }
+        delta24h: { type: integer }
+        history:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string }
+              value: { type: integer }
+    SocialPulseRow:
+      type: object
+      properties:
+        symbol: { type: string }
+        mentions24h: { type: integer }
+        sentiment: { type: number }
+        delta: { type: number }
+        momentum: { type: string, enum: [Spike, Rising, Stable, Cooling] }
+    CreditScoreRequest:
+      type: object
+      required: [accountId]
+      properties:
+        accountId: { type: string }
+        signals:
+          type: object
+          description: Optional alternative-data overrides (mobile-usage, utility, etc.)
+          additionalProperties: true
+    CreditScoreResponse:
+      type: object
+      properties:
+        accountId: { type: string }
+        score: { type: integer, minimum: 0, maximum: 1000 }
+        band: { type: string, enum: [Excellent, Good, Fair, Poor, Subprime] }
+        factors:
+          type: array
+          items:
+            type: object
+            properties:
+              key: { type: string }
+              label: { type: string }
+              impact: { type: number }
+              value: { type: string }
+        recommendation: { type: string }
+        eligibility:
+          type: object
+          properties:
+            marginLoanVnd: { type: number }
+            premiumProducts: { type: boolean }
+    FraudCheckRequest:
+      type: object
+      required: [accountId, transaction]
+      properties:
+        accountId: { type: string }
+        transaction:
+          type: object
+          properties:
+            type: { type: string }
+            asset: { type: string }
+            amount: { type: number }
+            price: { type: number }
+            total: { type: number }
+            timestamp: { type: number }
+    FraudCheckResponse:
+      type: object
+      properties:
+        riskScore: { type: number, minimum: 0, maximum: 1 }
+        verdict: { type: string, enum: [SAFE, REVIEW, BLOCK] }
+        reasons:
+          type: array
+          items: { type: string }
+        recommendedAction: { type: string }
+    AdvisorRequest:
+      type: object
+      required: [accountId]
+      properties:
+        accountId: { type: string }
+        riskProfile: { type: string, enum: [CONSERVATIVE, BALANCED, GROWTH, AGGRESSIVE], default: BALANCED }
+        horizonMonths: { type: integer, default: 12 }
+    AdvisorResponse:
+      type: object
+      properties:
+        riskProfile: { type: string }
+        targetAllocation:
+          type: array
+          items:
+            type: object
+            properties:
+              symbol: { type: string }
+              weight: { type: number }
+              rationale: { type: string }
+        expectedReturnPct: { type: number }
+        volatilityPct: { type: number }
+        rebalanceActions:
+          type: array
+          items: { type: string }
+        narrative: { type: string }
+    CoinInsight:
+      type: object
+      properties:
+        symbol: { type: string }
+        signal: { type: string, enum: [STRONG_BUY, BUY, HOLD, SELL, STRONG_SELL] }
+        confidence: { type: number }
+        sentiment: { $ref: '#/components/schemas/SentimentSnapshot' }
+        whale: { $ref: '#/components/schemas/WhaleFlow' }
+        fearGreed: { $ref: '#/components/schemas/FearGreed' }
+        narrative: { type: string }
+    AccountBalance:
+      type: object
+      properties:
+        accountId: { type: string }
+        cashUsd: { type: number }
+        cashVnd: { type: number }
+        assetsUsd: { type: number }
+        assetsVnd: { type: number }
+        netWorthUsd: { type: number }
+        netWorthVnd: { type: number }
+        positions:
+          type: array
+          items:
+            type: object
+            properties:
+              symbol: { type: string }
+              amount: { type: number }
+              valueUsd: { type: number }
+              valueVnd: { type: number }
+    DepositResponse:
+      type: object
+      properties:
+        accountId: { type: string }
+        amountVnd: { type: number }
+        amountUsd: { type: number }
+        rate: { type: number }
+        channel: { type: string }
+        ref: { type: string }
+        newBalanceUsd: { type: number }
+    TradeRequest:
+      type: object
+      required: [side, symbol]
+      properties:
+        side: { type: string, enum: [BUY, SELL] }
+        symbol: { type: string, example: BTCUSDT }
+        amountUsd: { type: number }
+        amountVnd: { type: number }
+        amount: { type: number, description: Optional explicit base-asset amount }
+    TradeResponse:
+      type: object
+      properties:
+        ok: { type: boolean }
+        txId: { type: string }
+        side: { type: string }
+        symbol: { type: string }
+        executedAmount: { type: number }
+        executedPriceUsd: { type: number }
+        feeUsd: { type: number }
+        newBalanceUsd: { type: number }
+        fraudCheck: { $ref: '#/components/schemas/FraudCheckResponse' }
+    AgentExecuteRequest:
+      type: object
+      required: [tool, args]
+      properties:
+        accountId: { type: string }
+        tool:
+          type: string
+          enum:
+            - getBalance
+            - getCreditScore
+            - getSentiment
+            - getInsight
+            - getFearGreed
+            - getAdvisor
+            - convertCurrency
+            - placeTrade
+            - depositVnd
+        args:
+          type: object
+          additionalProperties: true
