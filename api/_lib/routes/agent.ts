@@ -16,6 +16,27 @@ import { checkFraud } from '../ai/fraud';
 
 export const agentRouter = new Hono();
 
+// Source of truth lives in Firebase on the client. Backend in-memory state
+// resets on every Vercel cold start, so we sync from a client-supplied
+// snapshot before dispatching any tool. Without this, getBalance / placeTrade
+// see a fresh $1M cash + 0 positions account that contradicts what the user
+// actually owns.
+function syncAccountFromSnapshot(
+  accountId: string,
+  snapshot: { cashUsd?: number; positions?: { symbol: string; amount: number }[] } | undefined,
+) {
+  if (!snapshot) return;
+  const acc = getAccount(accountId);
+  if (Number.isFinite(snapshot.cashUsd)) {
+    acc.cashUsd = Number(snapshot.cashUsd);
+  }
+  if (Array.isArray(snapshot.positions)) {
+    acc.positions = snapshot.positions
+      .filter((p) => p && typeof p.symbol === 'string' && Number.isFinite(p.amount) && p.amount > 0)
+      .map((p) => ({ symbol: String(p.symbol).toUpperCase(), amount: Number(p.amount) }));
+  }
+}
+
 const BINANCE = 'https://api.binance.com/api/v3';
 async function priceFor(symbol: string): Promise<number> {
   try {
@@ -29,6 +50,10 @@ interface ExecBody {
   accountId?: string;
   tool?: string;
   args?: Record<string, any>;
+  accountSnapshot?: {
+    cashUsd?: number;
+    positions?: { symbol: string; amount: number }[];
+  };
 }
 
 agentRouter.post('/execute', async (c) => {
@@ -36,6 +61,7 @@ agentRouter.post('/execute', async (c) => {
   const tool = body.tool || '';
   const args = body.args || {};
   const accountId = body.accountId || args.accountId;
+  if (accountId) syncAccountFromSnapshot(accountId, body.accountSnapshot);
 
   try {
     switch (tool) {

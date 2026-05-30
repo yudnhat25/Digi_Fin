@@ -255,7 +255,17 @@ export const apiTrade = (
 });
 
 // ───── Agentic tool dispatcher (used by chatbot) ─────
-export const apiAgentExecute = (accountId: string, tool: string, args: Record<string, any>) =>
+export interface AccountSnapshot {
+  cashUsd: number;
+  positions: { symbol: string; amount: number }[];
+}
+export const apiAgentExecute = (
+  accountId: string,
+  tool: string,
+  args: Record<string, any>,
+  accountSnapshot?: AccountSnapshot,
+) =>
   call<any>('/api/v1/agent/execute', {
-    method: 'POST', body: JSON.stringify({ accountId, tool, args }),
+    method: 'POST',
+    body: JSON.stringify({ accountId, tool, args, accountSnapshot }),
   });

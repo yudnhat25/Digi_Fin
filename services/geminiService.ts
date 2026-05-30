@@ -173,6 +173,16 @@ ${marketData.slice(0, 8).map(m => `- ${m.symbol}: $${m.price.toLocaleString()} (
       },
     });
 
+    // Firebase is the source of truth. Pass a snapshot so the backend's
+    // in-memory account (which resets on Vercel cold start) reflects what the
+    // user actually owns before any tool runs (getBalance, placeTrade, etc.).
+    const accountSnapshot = {
+      cashUsd: Number.isFinite(userState.balance) ? userState.balance : 0,
+      positions: (Array.isArray(userState.assets) ? userState.assets : [])
+        .filter((a: any) => a && typeof a.symbol === 'string' && Number.isFinite(a.amount) && a.amount > 0)
+        .map((a: any) => ({ symbol: a.symbol, amount: a.amount })),
+    };
+
     for (let hop = 0; hop < 2; hop++) {
       const calls = response.functionCalls || [];
       if (!calls.length) break;
@@ -192,7 +202,7 @@ ${marketData.slice(0, 8).map(m => `- ${m.symbol}: $${m.price.toLocaleString()} (
         }
         let toolResult: any;
         try {
-          toolResult = await apiAgentExecute(userState.accountId, name, args);
+          toolResult = await apiAgentExecute(userState.accountId, name, args, accountSnapshot);
         } catch (err) {
           toolResult = { error: (err as Error).message };
         }

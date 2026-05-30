@@ -4642,6 +4642,16 @@ var init_accounts = __esm({
 });
 
 // api/_lib/routes/agent.ts
+function syncAccountFromSnapshot(accountId, snapshot) {
+  if (!snapshot) return;
+  const acc = getAccount(accountId);
+  if (Number.isFinite(snapshot.cashUsd)) {
+    acc.cashUsd = Number(snapshot.cashUsd);
+  }
+  if (Array.isArray(snapshot.positions)) {
+    acc.positions = snapshot.positions.filter((p) => p && typeof p.symbol === "string" && Number.isFinite(p.amount) && p.amount > 0).map((p) => ({ symbol: String(p.symbol).toUpperCase(), amount: Number(p.amount) }));
+  }
+}
 async function priceFor2(symbol) {
   try {
     const r = await fetch(`${BINANCE3}/ticker/price?symbol=${symbol}`);
@@ -4668,6 +4678,7 @@ var init_agent = __esm({
       const tool = body.tool || "";
       const args = body.args || {};
       const accountId = body.accountId || args.accountId;
+      if (accountId) syncAccountFromSnapshot(accountId, body.accountSnapshot);
       try {
         switch (tool) {
           case "getBalance": {
