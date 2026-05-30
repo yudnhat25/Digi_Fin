@@ -14,6 +14,7 @@ import EarnPage from './components/EarnPage';
 import ReferralPage from './components/ReferralPage';
 import { TopMoversWidget, WatchlistWidget, NewsWidget, PortfolioBreakdownWidget } from './components/DashboardWidgets';
 import SocialPulsePage from './components/SocialPulsePage';
+import AltDataPipelinePage from './components/AltDataPipelinePage';
 import CreditScorePage from './components/CreditScorePage';
 import AIAdvisorPage from './components/AIAdvisorPage';
 import FraudShieldPage from './components/FraudShieldPage';
@@ -325,6 +326,9 @@ const App: React.FC = () => {
     }
     if (activeTab === 'pulse') {
       return <SocialPulsePage onSelectAsset={setSelectedAsset} />;
+    }
+    if (activeTab === 'pipeline') {
+      return <AltDataPipelinePage />;
     }
     if (activeTab === 'credit') {
       return <CreditScorePage user={currentUser} onUpgradeClick={() => setActiveTab('pro')} />;

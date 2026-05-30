@@ -5,7 +5,7 @@ import { apiFearGreed, apiMarketPrices } from '../services/coinwiseApi';
 
 export type TabKey =
   | 'dashboard' | 'markets' | 'competition'
-  | 'pulse' | 'credit' | 'advisor' | 'shield' | 'apidocs'
+  | 'pulse' | 'pipeline' | 'credit' | 'advisor' | 'shield' | 'apidocs'
   | 'academy' | 'earn' | 'pro' | 'referral' | 'history';
 
 interface LayoutProps {
@@ -39,6 +39,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'competition',label: 'Arena',        group: 'TRADE',   badge: 'LIVE', icon: <Icon d="M8 21h8M12 17v4M5 4h14l-1 9a6 6 0 0 1-12 0L5 4z" /> },
 
   { key: 'pulse',      label: 'Social Pulse', group: 'AI',      badge: 'AI', icon: <Icon d="M3 12h2l2-9 4 18 3-12 2 6h5" /> },
+  { key: 'pipeline',   label: 'Alt-Data Lab', group: 'AI',      badge: 'NEW', icon: <Icon d="M4 6h16M4 12h10M4 18h6M18 14l4 4-4 4M14 18h8" /> },
   { key: 'credit',     label: 'Credit Score', group: 'AI',      badge: 'AI', icon: <Icon d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0zm5 0l3 3 5-6" /> },
   { key: 'advisor',    label: 'AI Advisor',   group: 'AI',      badge: 'AI', icon: <Icon d="M9.7 17h4.6M12 3v1m6.4 1.6l-.7.7M21 12h-1M4 12H3m3.3-5.7l-.7-.7m2.8 9.9a5 5 0 1 1 7.1 0l-.5.5A3.4 3.4 0 0 0 14 18.5V19a2 2 0 1 1-4 0v-.5c0-.9-.4-1.8-1-2.4l-.5-.5z" /> },
   { key: 'shield',     label: 'Fraud Shield', group: 'AI',      badge: 'AI', icon: <Icon d="M12 3l8 4v5c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V7l8-4z" /> },

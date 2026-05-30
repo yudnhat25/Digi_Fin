@@ -11,6 +11,7 @@
  */
 import { getAccount } from '../state';
 import { usdToVnd } from '../fx';
+import { getRealSentimentScore } from './pipeline';
 
 export interface CreditFactor {
   key: string;
@@ -124,4 +125,51 @@ export function computeCreditScore(accountId: string): CreditScoreResult {
     },
     asOf: new Date().toISOString(),
   };
+}
+
+/**
+ * Async variant that augments the scorecard with the REAL alt-data sentiment
+ * pipeline. Uses the dominant held asset (or BTC fallback) as the sentiment
+ * proxy for the borrower's market context.
+ */
+export async function computeCreditScoreWithRealAltData(
+  accountId: string,
+  proxySymbol = 'BTCUSDT',
+): Promise<CreditScoreResult & { altDataFactor: { score: number; label: string; impact: number } }> {
+  const base = computeCreditScore(accountId);
+  try {
+    const alt = await getRealSentimentScore(proxySymbol);
+    // Map composite sentiment ∈ [-1, 1] → impact ∈ [-40, 60]. Positive social
+    // engagement = small positive nudge (proxy for healthy market awareness).
+    const impact = Math.round(Math.max(-40, Math.min(60, alt.score * 60)));
+    const altFactor: CreditFactor = {
+      key: 'sentiment_alt',
+      label: `Real-time sentiment context (VADER+CoinGecko on ${proxySymbol})`,
+      impact,
+      value: `${alt.label} (${(alt.score * 100).toFixed(0)}/100)`,
+    };
+    const factors = [...base.factors, altFactor];
+    const baseline = 480;
+    const adjustedScore = Math.max(280, Math.min(995, baseline + factors.reduce((s, f) => s + f.impact, 0)));
+    const band: CreditScoreResult['band'] =
+      adjustedScore >= 820 ? 'Excellent' :
+      adjustedScore >= 720 ? 'Good' :
+      adjustedScore >= 600 ? 'Fair' :
+      adjustedScore >= 480 ? 'Poor' : 'Subprime';
+    const marginLoanUsd =
+      band === 'Excellent' ? 25_000 :
+      band === 'Good' ? 12_000 :
+      band === 'Fair' ? 4_000 :
+      band === 'Poor' ? 1_000 : 0;
+    return {
+      ...base,
+      score: adjustedScore,
+      band,
+      factors,
+      eligibility: { marginLoanVnd: usdToVnd(marginLoanUsd), premiumProducts: adjustedScore >= 720 },
+      altDataFactor: { score: alt.score, label: alt.label, impact },
+    };
+  } catch {
+    return { ...base, altDataFactor: { score: 0, label: 'Neutral', impact: 0 } };
+  }
 }

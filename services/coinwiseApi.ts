@@ -118,6 +118,104 @@ export const apiFraudCheck = (accountId: string, transaction: any) =>
 export const apiAdvisor = (accountId: string, riskProfile = 'BALANCED') =>
   call<AdvisorResult>('/api/v1/ai/advisor', { method: 'POST', body: JSON.stringify({ accountId, riskProfile }) });
 
+// ───── REAL alt-data pipeline ─────
+export interface PipelineStage { name: string; status: 'ok' | 'partial' | 'failed'; message: string; latencyMs: number }
+export interface PerPostAnalysis {
+  id: string; title: string; subreddit: string;
+  ups: number; numComments: number; ageMin: number; url: string;
+  compound: number; label: string;
+  matchedTerms: { token: string; valence: number }[];
+}
+export interface NbPostAnalysis {
+  id: string; title: string; subreddit: string;
+  ups: number; numComments: number; ageMin: number; url: string;
+  compound: number; confidence: number;
+  topFeatures: { token: string; positiveLogProb: number; negativeLogProb: number }[];
+}
+export interface AltDataPipelineResult {
+  symbol: string; base: string;
+  sources: { reddit: string[]; news: string[]; coinGecko: string | null; fearGreed: string | null };
+  collected: { redditPosts: number; newsPosts: number; totalDocs: number; coinGeckoOk: boolean; fearGreedOk: boolean };
+  nlp: {
+    technique: string; docCount: number; matchedDocCount: number;
+    weightedCompound: number; posShare: number; negShare: number; neuShare: number;
+    topPositive: PerPostAnalysis[]; topNegative: PerPostAnalysis[];
+  };
+  mlClassifier: {
+    technique: string; modelTrainedAt: string;
+    modelAccuracy: number; modelMacroF1: number;
+    docCount: number; matchedDocCount: number; weightedCompound: number;
+    perClassShare: { positive: number; negative: number; neutral: number };
+    label: 'positive' | 'negative' | 'neutral';
+    topPositive: NbPostAnalysis[]; topNegative: NbPostAnalysis[];
+    agreementWithVader: number;
+  };
+  anomaly: {
+    technique: string; currentMentions: number;
+    zScore: number; baselineMean: number; baselineStd: number; historyN: number; spike: boolean;
+  };
+  fusion: {
+    vaderWeight: number; naiveBayesWeight: number;
+    redditWeight: number; coinGeckoWeight: number; fearGreedWeight: number;
+    compositeScore: number; composite0to100: number;
+    label: string; confidence: number; signal: string;
+  };
+  application: {
+    creditScoreFactor: { label: string; impact: number; rationale: string };
+    fraudRule: { label: string; triggered: boolean; rationale: string };
+    advisorTilt: { label: string; tiltPct: number; rationale: string };
+  };
+  raw: {
+    fearGreed: { current: { value: number; classification: string }; delta24h: number; delta7d: number; history: { date: string; value: number }[] } | null;
+    coinGecko: { voteUpPct: number; voteDownPct: number; redditSubscribers: number; redditPosts48h: number; twitterFollowers: number; developerScore: number; communityScore: number } | null;
+  };
+  stages: PipelineStage[];
+  generatedAt: string; totalLatencyMs: number;
+}
+export interface AltDataSourcesHealth {
+  reddit: { ok: boolean; latencyMs: number; sample?: number; error?: string };
+  news: { ok: boolean; latencyMs: number; sample?: number; error?: string };
+  fearGreed: { ok: boolean; latencyMs: number; value?: number; error?: string };
+  coinGecko: { ok: boolean; latencyMs: number; error?: string };
+  overall: 'live' | 'down';
+  timestamp: string;
+}
+
+export const apiAltDataPipeline = (symbol: string) =>
+  call<AltDataPipelineResult>(`/api/v1/ai/alt-data/pipeline/${symbol}`);
+
+export const apiAltDataSourcesHealth = () =>
+  call<AltDataSourcesHealth>(`/api/v1/ai/alt-data/sources/health`);
+
+export interface NbModelInfo {
+  algorithm: string; version: string; smoothingAlpha: number;
+  classes: ('positive' | 'negative' | 'neutral')[];
+  vocabSize: number; trainSize: number; testSize: number; trainedAt: string;
+  classDistribution: { positive: number; negative: number; neutral: number };
+  metrics: {
+    accuracy: number; macroF1: number;
+    perClass: Record<'positive' | 'negative' | 'neutral', {
+      precision: number; recall: number; f1: number; support: number;
+    }>;
+    confusion: Record<'positive' | 'negative' | 'neutral', Record<'positive' | 'negative' | 'neutral', number>>;
+    testSize: number;
+    errors: { text: string; trueLabel: string; predicted: string; confidence: number }[];
+  };
+}
+export interface NbClassifyResult {
+  label: 'positive' | 'negative' | 'neutral';
+  perClassLogProb: { positive: number; negative: number; neutral: number };
+  perClassProb: { positive: number; negative: number; neutral: number };
+  confidence: number;
+  matchedFeatures: { token: string; contributions: { positive: number; negative: number; neutral: number } }[];
+}
+
+export const apiNbModelInfo = () => call<NbModelInfo>('/api/v1/ai/alt-data/model/info');
+export const apiNbClassify = (text: string) =>
+  call<NbClassifyResult>('/api/v1/ai/alt-data/classify', {
+    method: 'POST', body: JSON.stringify({ text }),
+  });
+
 // ───── Accounts ─────
 export interface AccountBalance {
   accountId: string;

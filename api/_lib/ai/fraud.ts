@@ -8,6 +8,7 @@
  */
 import { getAccount } from '../state';
 import { getSentiment } from './altdata';
+import { getRealSentimentScore } from './pipeline';
 
 export interface FraudTx {
   type?: string;
@@ -81,4 +82,51 @@ export function checkFraud(accountId: string, tx: FraudTx): FraudResult {
       : 'Auto-approve transaction.';
 
   return { riskScore: risk, verdict, reasons, recommendedAction };
+}
+
+/**
+ * Async variant that augments the heuristic check with the REAL alt-data
+ * sentiment pipeline (VADER NLP on Reddit + CoinGecko vote + F&G). Used by
+ * /api/v1/ai/fraud-check when the caller can afford ~500–1500ms latency.
+ */
+export async function checkFraudWithRealAltData(accountId: string, tx: FraudTx): Promise<FraudResult & {
+  altData: { compositeScore: number; label: string; spike: boolean };
+}> {
+  const base = checkFraud(accountId, tx);
+  if (!tx.asset) {
+    return { ...base, altData: { compositeScore: 0, label: 'Neutral', spike: false } };
+  }
+  try {
+    const alt = await getRealSentimentScore(tx.asset);
+    let risk = base.riskScore;
+    const reasons = [...base.reasons];
+
+    // Replace stub sentiment rule (already in base) with the REAL one — additive guard.
+    if (tx.type === 'BUY' && alt.score < -0.4) {
+      risk = Math.min(1, risk + 0.12);
+      reasons.push(
+        `REAL alt-data: buying ${tx.asset} while VADER+CoinGecko composite is ${alt.label} (${alt.score.toFixed(2)}).`,
+      );
+    }
+    if (tx.type === 'BUY' && alt.spike) {
+      risk = Math.min(1, risk + 0.10);
+      reasons.push(`REAL alt-data: Reddit mention spike detected (z>1.5σ) — possible retail FOMO.`);
+    }
+    const verdict: FraudResult['verdict'] = risk > 0.7 ? 'BLOCK' : risk > 0.4 ? 'REVIEW' : 'SAFE';
+    const recommendedAction =
+      verdict === 'BLOCK'
+        ? 'Hold transaction. Trigger step-up authentication or manual review.'
+        : verdict === 'REVIEW'
+        ? 'Show user a confirmation dialog and require explicit consent.'
+        : 'Auto-approve transaction.';
+    return {
+      riskScore: Number(risk.toFixed(3)),
+      verdict,
+      reasons,
+      recommendedAction,
+      altData: { compositeScore: alt.score, label: alt.label, spike: alt.spike },
+    };
+  } catch {
+    return { ...base, altData: { compositeScore: 0, label: 'Neutral', spike: false } };
+  }
 }
