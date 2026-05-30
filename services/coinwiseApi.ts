@@ -247,6 +247,8 @@ export const apiTrade = (
     side: 'BUY' | 'SELL'; symbol: string;
     amountUsd?: number; amountVnd?: number; amount?: number;
     priceHint?: number;
+    currentCashUsd?: number;
+    currentPositionAmount?: number;
   },
 ) => call<TradeResponse>(`/api/v1/accounts/${accountId}/trade`, {
   method: 'POST', body: JSON.stringify(payload),

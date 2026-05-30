@@ -4594,17 +4594,26 @@ var init_accounts = __esm({
         return c.json({ ok: false, blocked: true, fraudCheck: fraud }, 200);
       }
       if (body.side === "BUY") {
-        if (acc.cashUsd < usdNotional + fee) return c.json({ error: "Insufficient cash" }, 400);
-        acc.cashUsd -= usdNotional + fee;
+        const cashAvailable = Number.isFinite(body.currentCashUsd) ? Number(body.currentCashUsd) : acc.cashUsd;
+        if (cashAvailable < usdNotional + fee) {
+          return c.json({ error: "Insufficient cash" }, 400);
+        }
+        acc.cashUsd = Math.max(0, cashAvailable - (usdNotional + fee));
         const pos = acc.positions.find((p) => p.symbol === symbol);
         if (pos) pos.amount += baseAmount;
         else acc.positions.push({ symbol, amount: baseAmount });
       } else {
+        const positionAvailable = Number.isFinite(body.currentPositionAmount) ? Number(body.currentPositionAmount) : acc.positions.find((p) => p.symbol === symbol)?.amount ?? 0;
+        if (positionAvailable < baseAmount) {
+          return c.json({ error: "Insufficient position" }, 400);
+        }
         const pos = acc.positions.find((p) => p.symbol === symbol);
-        if (!pos || pos.amount < baseAmount) return c.json({ error: "Insufficient position" }, 400);
-        pos.amount -= baseAmount;
-        if (pos.amount < 1e-9) acc.positions = acc.positions.filter((p) => p.symbol !== symbol);
-        acc.cashUsd += usdNotional - fee;
+        if (pos) {
+          pos.amount = Math.max(0, positionAvailable - baseAmount);
+          if (pos.amount < 1e-9) acc.positions = acc.positions.filter((p) => p.symbol !== symbol);
+        }
+        const cashBase = Number.isFinite(body.currentCashUsd) ? Number(body.currentCashUsd) : acc.cashUsd;
+        acc.cashUsd = cashBase + (usdNotional - fee);
       }
       const txn = {
         id: shortId(body.side.toLowerCase()),

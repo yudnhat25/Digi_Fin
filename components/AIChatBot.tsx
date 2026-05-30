@@ -108,16 +108,21 @@ const AIChatBot: React.FC<AIChatBotProps> = ({ userState, marketData, onTradeExe
     try {
       // Pass the live price from marketData as priceHint — backend's Binance
       // fetch is geo-blocked on Vercel, so without this the trade endpoint
-      // would 502.
+      // would 502. Also pass current cash and position snapshots because the
+      // backend's in-memory state resets on Vercel cold start and would
+      // otherwise reject SELLs ("Insufficient position") or stale BUYs.
       const liveQuote = marketData.find((m) => m?.symbol === pending.symbol);
       const priceHint = liveQuote && Number.isFinite(liveQuote.price) && liveQuote.price > 0
         ? liveQuote.price
         : Number(pending.priceUsd) || undefined;
+      const currentPosition = (userState.assets || []).find((a) => a?.symbol === pending.symbol)?.amount ?? 0;
       const res: any = await apiTrade(userState.accountId, {
         side: pending.side,
         symbol: pending.symbol,
         amountUsd: pending.amountUsd,
         priceHint,
+        currentCashUsd: Number.isFinite(userState.balance) ? userState.balance : 0,
+        currentPositionAmount: Number.isFinite(currentPosition) ? currentPosition : 0,
       } as any);
       setMessages((prev) => prev.map((m) => m.id === msgId ? { ...m, awaitingConfirm: false } : m));
       const num = (v: any) => (Number.isFinite(Number(v)) ? Number(v) : 0);
