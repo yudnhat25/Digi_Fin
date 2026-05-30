@@ -4,6 +4,9 @@ import { getGeminiAgentResponse, AgentToolCall } from '../services/geminiService
 import { apiTrade } from '../services/coinwiseApi';
 import { useCurrency } from '../services/currency';
 
+const VND_PER_USD = 25_400;
+const fmtVnd = (usd: number) => `${Math.round(usd * VND_PER_USD).toLocaleString('vi-VN')} ₫`;
+
 interface AIChatBotProps {
   userState: UserState;
   marketData: MarketData[];
@@ -20,11 +23,11 @@ interface ChatMessage {
 }
 
 const QUICK_PROMPTS = [
-  'Show my balance in VND',
-  'Điểm tín dụng của tôi là bao nhiêu?',
-  'Sentiment cho BTC và ETH?',
+  'Số dư của tôi là bao nhiêu?',
+  'Điểm tín dụng của tôi?',
+  'Sentiment BTC và ETH?',
   'Đề xuất danh mục rủi ro thấp',
-  'Mua giúp tôi 5 triệu VND BTC',
+  'Mua 5 triệu VND BTC',
 ];
 
 const ToolBadge: React.FC<{ name: string }> = ({ name }) => (
@@ -58,9 +61,10 @@ const AIChatBot: React.FC<AIChatBotProps> = ({ userState, marketData, onTradeExe
       id: 'welcome',
       role: 'ai',
       content:
-        `Xin chào ${userState.name.split(' ')[0]}! I'm the CoinWise agentic AI. ` +
-        `I can fetch your AI credit score, social sentiment, fear & greed, advise allocations, ` +
-        `or place trades for you via the custom OpenAPI server. Try one of the quick prompts below 👇`,
+        `Xin chào ${userState.name.split(' ')[0]}! Mình là CoinWise AI Agent. ` +
+        `Mình có thể tra cứu số dư, AI credit score, sentiment, fear & greed, ` +
+        `đề xuất danh mục, hoặc đặt lệnh giao dịch qua OpenAPI server. ` +
+        `Thử các gợi ý nhanh bên dưới 👇`,
     },
   ]);
   const [isLoading, setIsLoading] = useState(false);
@@ -113,14 +117,32 @@ const AIChatBot: React.FC<AIChatBotProps> = ({ userState, marketData, onTradeExe
       const execPrice = num(res?.executedPriceUsd);
       const newBal = num(res?.newBalanceUsd);
       const reasons = Array.isArray(res?.fraudCheck?.reasons) ? res.fraudCheck.reasons : [];
+      const sideStr = String(res?.side || pending.side);
+      const symStr = String(res?.symbol || pending.symbol);
+      const base = symStr.replace('USDT', '');
+
+      // Build a Vietnamese post-trade summary with remaining balance + buying power
+      // for the top tradable assets so user sees what they can still afford.
+      const topAssets = (marketData || [])
+        .filter((m) => m && Number.isFinite(m.price) && m.price > 0)
+        .slice(0, 3);
+      const buyingPower = topAssets
+        .map((m) => `${(newBal / m.price).toFixed(4)} ${m.symbol.replace('USDT', '')}`)
+        .join(' · ');
+
+      const successMsg =
+        `✅ Đã ${sideStr === 'BUY' ? 'mua' : 'bán'} ${execAmount.toFixed(6)} ${base} @ $${execPrice.toFixed(2)} qua OpenAPI server.\n\n` +
+        `💰 Số dư còn lại: $${newBal.toLocaleString('en-US', { maximumFractionDigits: 2 })} ≈ ${fmtVnd(newBal)}\n` +
+        (buyingPower ? `📊 Có thể mua tiếp: ${buyingPower}` : '');
+
       setMessages((prev) => [
         ...prev,
         {
           id: Math.random().toString(36).slice(2),
           role: 'system',
           content: res?.ok
-            ? `✅ Trade executed via OpenAPI server — ${String(res.side || pending.side)} ${execAmount.toFixed(6)} ${String(res.symbol || pending.symbol).replace('USDT', '')} @ $${execPrice.toFixed(2)}. New cash balance: ${format(newBal)}.`
-            : `🚫 Trade blocked by fraud shield: ${reasons.join(' · ') || 'unknown reason'}`,
+            ? successMsg
+            : `🚫 Giao dịch bị Fraud Shield chặn: ${reasons.join(' · ') || 'không rõ lý do'}`,
         },
       ]);
       if (res?.ok && execPrice > 0) {
