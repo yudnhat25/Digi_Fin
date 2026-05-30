@@ -4743,6 +4743,7 @@ var init_agent = __esm({
             if (!price || !Number.isFinite(price) || price <= 0) {
               throw new Error(`Could not fetch live price for ${symbol}. Try again in a moment.`);
             }
+            const FEE_RATE = 1e-3;
             let amountUsd;
             if (args.sellAll === true && side === "SELL") {
               const acc = getAccount(accountId);
@@ -4751,10 +4752,16 @@ var init_agent = __esm({
                 throw new Error(`B\u1EA1n kh\xF4ng s\u1EDF h\u1EEFu ${symbol.replace("USDT", "")} \u0111\u1EC3 b\xE1n.`);
               }
               amountUsd = pos.amount * price;
+            } else if (args.buyAllCash === true && side === "BUY") {
+              const acc = getAccount(accountId);
+              if (acc.cashUsd <= 0) {
+                throw new Error("S\u1ED1 d\u01B0 cash kh\xF4ng \u0111\u1EE7 \u0111\u1EC3 mua.");
+              }
+              amountUsd = acc.cashUsd / (1 + FEE_RATE);
             } else {
               amountUsd = Number(args.amountUsd ?? (args.amountVnd ? vndToUsd(Number(args.amountVnd)) : 0));
               if (!amountUsd || !Number.isFinite(amountUsd) || amountUsd <= 0) {
-                throw new Error("amountUsd, amountVnd, ho\u1EB7c sellAll=true b\u1EAFt bu\u1ED9c");
+                throw new Error("amountUsd, amountVnd, sellAll=true, ho\u1EB7c buyAllCash=true b\u1EAFt bu\u1ED9c");
               }
             }
             const baseAmount = amountUsd / price;

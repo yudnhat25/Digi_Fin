@@ -129,8 +129,11 @@ agentRouter.post('/execute', async (c) => {
         if (!price || !Number.isFinite(price) || price <= 0) {
           throw new Error(`Could not fetch live price for ${symbol}. Try again in a moment.`);
         }
-        // "Sell all" semantics: compute notional from the user's actual position
-        // (snapshot from client is already synced into acc.positions above).
+        // Special-case "sell all" and "buy all cash": derive the notional from
+        // the user's actual position / cash so it fits exactly (including the
+        // 10 bps fee — naively quoting amountUsd = cash fails because
+        // amountUsd + fee > cash).
+        const FEE_RATE = 0.001;
         let amountUsd: number;
         if (args.sellAll === true && side === 'SELL') {
           const acc = getAccount(accountId);
@@ -139,10 +142,17 @@ agentRouter.post('/execute', async (c) => {
             throw new Error(`Bạn không sở hữu ${symbol.replace('USDT', '')} để bán.`);
           }
           amountUsd = pos.amount * price;
+        } else if (args.buyAllCash === true && side === 'BUY') {
+          const acc = getAccount(accountId);
+          if (acc.cashUsd <= 0) {
+            throw new Error('Số dư cash không đủ để mua.');
+          }
+          // amountUsd + (amountUsd * FEE_RATE) = cash  →  amountUsd = cash / (1 + FEE_RATE)
+          amountUsd = acc.cashUsd / (1 + FEE_RATE);
         } else {
           amountUsd = Number(args.amountUsd ?? (args.amountVnd ? vndToUsd(Number(args.amountVnd)) : 0));
           if (!amountUsd || !Number.isFinite(amountUsd) || amountUsd <= 0) {
-            throw new Error('amountUsd, amountVnd, hoặc sellAll=true bắt buộc');
+            throw new Error('amountUsd, amountVnd, sellAll=true, hoặc buyAllCash=true bắt buộc');
           }
         }
         const baseAmount = amountUsd / price;
