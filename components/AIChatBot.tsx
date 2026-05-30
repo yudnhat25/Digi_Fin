@@ -106,11 +106,19 @@ const AIChatBot: React.FC<AIChatBotProps> = ({ userState, marketData, onTradeExe
     if (executing) return;
     setExecuting(true);
     try {
+      // Pass the live price from marketData as priceHint — backend's Binance
+      // fetch is geo-blocked on Vercel, so without this the trade endpoint
+      // would 502.
+      const liveQuote = marketData.find((m) => m?.symbol === pending.symbol);
+      const priceHint = liveQuote && Number.isFinite(liveQuote.price) && liveQuote.price > 0
+        ? liveQuote.price
+        : Number(pending.priceUsd) || undefined;
       const res: any = await apiTrade(userState.accountId, {
         side: pending.side,
         symbol: pending.symbol,
         amountUsd: pending.amountUsd,
-      });
+        priceHint,
+      } as any);
       setMessages((prev) => prev.map((m) => m.id === msgId ? { ...m, awaitingConfirm: false } : m));
       const num = (v: any) => (Number.isFinite(Number(v)) ? Number(v) : 0);
       const execAmount = num(res?.executedAmount);

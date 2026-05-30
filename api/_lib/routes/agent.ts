@@ -97,7 +97,13 @@ agentRouter.post('/execute', async (c) => {
         if (!amountUsd || !Number.isFinite(amountUsd) || amountUsd <= 0) {
           throw new Error('amountUsd or amountVnd required');
         }
-        const price = await priceFor(symbol);
+        // Binance is geo-blocked from some Vercel function regions — fall back
+        // to the priceHint the client injects from its live marketData prop.
+        let price = await priceFor(symbol);
+        const hint = Number(args.priceHint);
+        if ((!price || !Number.isFinite(price) || price <= 0) && Number.isFinite(hint) && hint > 0) {
+          price = hint;
+        }
         if (!price || !Number.isFinite(price) || price <= 0) {
           throw new Error(`Could not fetch live price for ${symbol}. Try again in a moment.`);
         }

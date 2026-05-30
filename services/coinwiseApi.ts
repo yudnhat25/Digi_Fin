@@ -243,7 +243,11 @@ export const apiDepositVnd = (accountId: string, amountVnd: number, channel = 'V
   });
 export const apiTrade = (
   accountId: string,
-  payload: { side: 'BUY' | 'SELL'; symbol: string; amountUsd?: number; amountVnd?: number; amount?: number },
+  payload: {
+    side: 'BUY' | 'SELL'; symbol: string;
+    amountUsd?: number; amountVnd?: number; amount?: number;
+    priceHint?: number;
+  },
 ) => call<TradeResponse>(`/api/v1/accounts/${accountId}/trade`, {
   method: 'POST', body: JSON.stringify(payload),
 });

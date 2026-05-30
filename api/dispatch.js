@@ -4572,7 +4572,10 @@ var init_accounts = __esm({
       if (!body.side || !body.symbol) return c.json({ error: "side & symbol required" }, 400);
       const acc = getAccount(id);
       const symbol = body.symbol.toUpperCase();
-      const price = await priceFor(symbol);
+      let price = await priceFor(symbol);
+      if (!price && body.priceHint && Number.isFinite(body.priceHint) && body.priceHint > 0) {
+        price = body.priceHint;
+      }
       if (!price) return c.json({ error: "Failed to fetch market price" }, 502);
       const usdNotional = typeof body.amountUsd === "number" ? body.amountUsd : typeof body.amountVnd === "number" ? vndToUsd(body.amountVnd) : typeof body.amount === "number" ? body.amount * price : 0;
       if (!usdNotional || usdNotional <= 0) return c.json({ error: "Notional amount required" }, 400);
@@ -4716,7 +4719,11 @@ var init_agent = __esm({
             if (!amountUsd || !Number.isFinite(amountUsd) || amountUsd <= 0) {
               throw new Error("amountUsd or amountVnd required");
             }
-            const price = await priceFor2(symbol);
+            let price = await priceFor2(symbol);
+            const hint = Number(args.priceHint);
+            if ((!price || !Number.isFinite(price) || price <= 0) && Number.isFinite(hint) && hint > 0) {
+              price = hint;
+            }
             if (!price || !Number.isFinite(price) || price <= 0) {
               throw new Error(`Could not fetch live price for ${symbol}. Try again in a moment.`);
             }

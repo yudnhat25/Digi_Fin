@@ -86,12 +86,18 @@ accountsRouter.post('/:accountId/trade', async (c) => {
     amount?: number;
     amountUsd?: number;
     amountVnd?: number;
+    priceHint?: number;
   };
   if (!body.side || !body.symbol) return c.json({ error: 'side & symbol required' }, 400);
 
   const acc = getAccount(id);
   const symbol = body.symbol.toUpperCase();
-  const price = await priceFor(symbol);
+  // Binance is geo-blocked from some Vercel function regions — fall back to the
+  // client-provided priceHint (frontend already has a live price via marketData).
+  let price = await priceFor(symbol);
+  if (!price && body.priceHint && Number.isFinite(body.priceHint) && body.priceHint > 0) {
+    price = body.priceHint;
+  }
   if (!price) return c.json({ error: 'Failed to fetch market price' }, 502);
 
   const usdNotional =

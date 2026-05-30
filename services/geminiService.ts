@@ -181,6 +181,15 @@ ${marketData.slice(0, 8).map(m => `- ${m.symbol}: $${m.price.toLocaleString()} (
       for (const call of calls) {
         const name = call.name as string;
         const args = (call.args || {}) as Record<string, any>;
+        // Binance is geo-blocked from Vercel functions — inject the live price
+        // we already have on the client so the backend can quote the trade.
+        if (name === 'placeTrade') {
+          const sym = String(args.symbol || '').toUpperCase();
+          const live = marketData.find((m) => m?.symbol === sym);
+          if (live && Number.isFinite(live.price) && live.price > 0) {
+            args.priceHint = live.price;
+          }
+        }
         let toolResult: any;
         try {
           toolResult = await apiAgentExecute(userState.accountId, name, args);
