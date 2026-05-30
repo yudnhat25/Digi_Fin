@@ -94,9 +94,15 @@ agentRouter.post('/execute', async (c) => {
         const side = (args.side || 'BUY').toUpperCase();
         const symbol = String(args.symbol || 'BTCUSDT').toUpperCase();
         const amountUsd = Number(args.amountUsd ?? (args.amountVnd ? vndToUsd(Number(args.amountVnd)) : 0));
-        if (!amountUsd) throw new Error('amountUsd or amountVnd required');
+        if (!amountUsd || !Number.isFinite(amountUsd) || amountUsd <= 0) {
+          throw new Error('amountUsd or amountVnd required');
+        }
         const price = await priceFor(symbol);
+        if (!price || !Number.isFinite(price) || price <= 0) {
+          throw new Error(`Could not fetch live price for ${symbol}. Try again in a moment.`);
+        }
         const baseAmount = amountUsd / price;
+        const amountVnd = usdToVnd(amountUsd);
         const txCandidate = {
           type: side as 'BUY' | 'SELL', asset: symbol,
           amount: baseAmount, price,
@@ -106,12 +112,13 @@ agentRouter.post('/execute', async (c) => {
         return c.json({
           quoted: true,
           requiresUserConfirm: true,
-          side, symbol, amountUsd, amountVnd: usdToVnd(amountUsd),
+          side, symbol,
+          amountUsd, amountVnd,
           priceUsd: price, baseAmount,
           fraudCheck: fraud,
           message:
             `Quote: ${side} ${baseAmount.toFixed(6)} ${symbol.replace('USDT', '')} ` +
-            `≈ $${amountUsd.toFixed(2)} / ${usdToVnd(amountUsd).toLocaleString('vi-VN')} ₫. ` +
+            `≈ $${amountUsd.toFixed(2)} / ${amountVnd.toLocaleString('vi-VN')} ₫. ` +
             `Risk: ${fraud.verdict}.`,
         });
       }

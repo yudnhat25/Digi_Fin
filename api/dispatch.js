@@ -4713,9 +4713,15 @@ var init_agent = __esm({
             const side = (args.side || "BUY").toUpperCase();
             const symbol = String(args.symbol || "BTCUSDT").toUpperCase();
             const amountUsd = Number(args.amountUsd ?? (args.amountVnd ? vndToUsd(Number(args.amountVnd)) : 0));
-            if (!amountUsd) throw new Error("amountUsd or amountVnd required");
+            if (!amountUsd || !Number.isFinite(amountUsd) || amountUsd <= 0) {
+              throw new Error("amountUsd or amountVnd required");
+            }
             const price = await priceFor2(symbol);
+            if (!price || !Number.isFinite(price) || price <= 0) {
+              throw new Error(`Could not fetch live price for ${symbol}. Try again in a moment.`);
+            }
             const baseAmount = amountUsd / price;
+            const amountVnd = usdToVnd(amountUsd);
             const txCandidate = {
               type: side,
               asset: symbol,
@@ -4731,11 +4737,11 @@ var init_agent = __esm({
               side,
               symbol,
               amountUsd,
-              amountVnd: usdToVnd(amountUsd),
+              amountVnd,
               priceUsd: price,
               baseAmount,
               fraudCheck: fraud,
-              message: `Quote: ${side} ${baseAmount.toFixed(6)} ${symbol.replace("USDT", "")} \u2248 $${amountUsd.toFixed(2)} / ${usdToVnd(amountUsd).toLocaleString("vi-VN")} \u20AB. Risk: ${fraud.verdict}.`
+              message: `Quote: ${side} ${baseAmount.toFixed(6)} ${symbol.replace("USDT", "")} \u2248 $${amountUsd.toFixed(2)} / ${amountVnd.toLocaleString("vi-VN")} \u20AB. Risk: ${fraud.verdict}.`
             });
           }
           case "depositVnd": {

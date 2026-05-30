@@ -102,24 +102,34 @@ const AIChatBot: React.FC<AIChatBotProps> = ({ userState, marketData, onTradeExe
     if (executing) return;
     setExecuting(true);
     try {
-      const res = await apiTrade(userState.accountId, {
+      const res: any = await apiTrade(userState.accountId, {
         side: pending.side,
         symbol: pending.symbol,
         amountUsd: pending.amountUsd,
       });
       setMessages((prev) => prev.map((m) => m.id === msgId ? { ...m, awaitingConfirm: false } : m));
+      const num = (v: any) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+      const execAmount = num(res?.executedAmount);
+      const execPrice = num(res?.executedPriceUsd);
+      const newBal = num(res?.newBalanceUsd);
+      const reasons = Array.isArray(res?.fraudCheck?.reasons) ? res.fraudCheck.reasons : [];
       setMessages((prev) => [
         ...prev,
         {
           id: Math.random().toString(36).slice(2),
           role: 'system',
-          content: res.ok
-            ? `✅ Trade executed via OpenAPI server — ${res.side} ${res.executedAmount.toFixed(6)} ${res.symbol.replace('USDT', '')} @ $${res.executedPriceUsd.toFixed(2)}. New cash balance: ${format(res.newBalanceUsd)}.`
-            : `🚫 Trade blocked by fraud shield: ${res.fraudCheck.reasons.join(' · ')}`,
+          content: res?.ok
+            ? `✅ Trade executed via OpenAPI server — ${String(res.side || pending.side)} ${execAmount.toFixed(6)} ${String(res.symbol || pending.symbol).replace('USDT', '')} @ $${execPrice.toFixed(2)}. New cash balance: ${format(newBal)}.`
+            : `🚫 Trade blocked by fraud shield: ${reasons.join(' · ') || 'unknown reason'}`,
         },
       ]);
-      if (res.ok) {
-        onTradeExecuted?.({ symbol: res.symbol, side: res.side as 'BUY' | 'SELL', amountUsd: pending.amountUsd, price: res.executedPriceUsd });
+      if (res?.ok && execPrice > 0) {
+        onTradeExecuted?.({
+          symbol: String(res.symbol || pending.symbol),
+          side: (res.side || pending.side) as 'BUY' | 'SELL',
+          amountUsd: num(pending.amountUsd),
+          price: execPrice,
+        });
       }
     } catch (e) {
       setMessages((prev) => [
@@ -190,36 +200,53 @@ const AIChatBot: React.FC<AIChatBotProps> = ({ userState, marketData, onTradeExe
                       {m.toolCalls.map((c, i) => <ToolCallRow key={i} call={c} />)}
                     </div>
                   )}
-                  {m.awaitingConfirm && m.pendingTrade && (
-                    <div className="mt-3 bg-slate-950 border border-amber-500/30 rounded-xl p-3">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-amber-300 mb-2">⚠️ Confirm trade</p>
-                      <p className="text-xs text-slate-200 mb-1">
-                        {m.pendingTrade.side} <b>{m.pendingTrade.baseAmount.toFixed(6)} {m.pendingTrade.symbol.replace('USDT', '')}</b>
-                      </p>
-                      <p className="text-[10px] text-slate-400">
-                        ≈ ${m.pendingTrade.amountUsd.toFixed(2)} / {m.pendingTrade.amountVnd.toLocaleString('vi-VN')} ₫ @ ${m.pendingTrade.priceUsd.toFixed(2)}
-                      </p>
-                      <p className={`text-[10px] mt-1 font-black ${m.pendingTrade.fraudCheck.verdict === 'SAFE' ? 'text-emerald-400' : m.pendingTrade.fraudCheck.verdict === 'REVIEW' ? 'text-amber-400' : 'text-rose-400'}`}>
-                        Risk: {m.pendingTrade.fraudCheck.verdict} ({(m.pendingTrade.fraudCheck.riskScore * 100).toFixed(0)}%)
-                      </p>
-                      <div className="flex gap-2 mt-3">
-                        <button
-                          disabled={executing || m.pendingTrade.fraudCheck.verdict === 'BLOCK'}
-                          onClick={() => confirmTrade(m.id, m.pendingTrade)}
-                          className="flex-1 bg-emerald-500 text-slate-950 font-black text-[10px] uppercase tracking-widest px-3 py-2 rounded-lg disabled:opacity-40"
-                        >
-                          {executing ? 'Executing…' : 'Confirm'}
-                        </button>
-                        <button
-                          disabled={executing}
-                          onClick={() => cancelTrade(m.id)}
-                          className="flex-1 bg-slate-800 text-slate-300 font-black text-[10px] uppercase tracking-widest px-3 py-2 rounded-lg"
-                        >
-                          Cancel
-                        </button>
+                  {m.awaitingConfirm && m.pendingTrade && (() => {
+                    const pt = m.pendingTrade;
+                    const n = (v: any) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+                    const side = String(pt.side || 'BUY');
+                    const symbol = String(pt.symbol || '');
+                    const base = symbol.replace('USDT', '');
+                    const baseAmount = n(pt.baseAmount);
+                    const amountUsd = n(pt.amountUsd);
+                    const amountVnd = n(pt.amountVnd);
+                    const priceUsd = n(pt.priceUsd);
+                    const verdict = pt.fraudCheck?.verdict || 'REVIEW';
+                    const risk = n(pt.fraudCheck?.riskScore);
+                    const canConfirm = priceUsd > 0 && baseAmount > 0 && verdict !== 'BLOCK';
+                    return (
+                      <div className="mt-3 bg-slate-950 border border-amber-500/30 rounded-xl p-3">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-amber-300 mb-2">⚠️ Confirm trade</p>
+                        <p className="text-xs text-slate-200 mb-1">
+                          {side} <b>{baseAmount.toFixed(6)} {base}</b>
+                        </p>
+                        <p className="text-[10px] text-slate-400">
+                          ≈ ${amountUsd.toFixed(2)} / {amountVnd.toLocaleString('vi-VN')} ₫ @ ${priceUsd.toFixed(2)}
+                        </p>
+                        <p className={`text-[10px] mt-1 font-black ${verdict === 'SAFE' ? 'text-emerald-400' : verdict === 'REVIEW' ? 'text-amber-400' : 'text-rose-400'}`}>
+                          Risk: {verdict} ({(risk * 100).toFixed(0)}%)
+                        </p>
+                        {priceUsd <= 0 && (
+                          <p className="text-[10px] text-rose-400 mt-1">⚠️ Price unavailable — quote may be stale. Try again.</p>
+                        )}
+                        <div className="flex gap-2 mt-3">
+                          <button
+                            disabled={executing || !canConfirm}
+                            onClick={() => confirmTrade(m.id, pt)}
+                            className="flex-1 bg-emerald-500 text-slate-950 font-black text-[10px] uppercase tracking-widest px-3 py-2 rounded-lg disabled:opacity-40"
+                          >
+                            {executing ? 'Executing…' : 'Confirm'}
+                          </button>
+                          <button
+                            disabled={executing}
+                            onClick={() => cancelTrade(m.id)}
+                            className="flex-1 bg-slate-800 text-slate-300 font-black text-[10px] uppercase tracking-widest px-3 py-2 rounded-lg"
+                          >
+                            Cancel
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
               </div>
             ))}
