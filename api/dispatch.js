@@ -4735,10 +4735,6 @@ var init_agent = __esm({
             if (!accountId) throw new Error("accountId required");
             const side = (args.side || "BUY").toUpperCase();
             const symbol = String(args.symbol || "BTCUSDT").toUpperCase();
-            const amountUsd = Number(args.amountUsd ?? (args.amountVnd ? vndToUsd(Number(args.amountVnd)) : 0));
-            if (!amountUsd || !Number.isFinite(amountUsd) || amountUsd <= 0) {
-              throw new Error("amountUsd or amountVnd required");
-            }
             let price = await priceFor2(symbol);
             const hint = Number(args.priceHint);
             if ((!price || !Number.isFinite(price) || price <= 0) && Number.isFinite(hint) && hint > 0) {
@@ -4746,6 +4742,20 @@ var init_agent = __esm({
             }
             if (!price || !Number.isFinite(price) || price <= 0) {
               throw new Error(`Could not fetch live price for ${symbol}. Try again in a moment.`);
+            }
+            let amountUsd;
+            if (args.sellAll === true && side === "SELL") {
+              const acc = getAccount(accountId);
+              const pos = acc.positions.find((p) => p.symbol === symbol);
+              if (!pos || pos.amount <= 0) {
+                throw new Error(`B\u1EA1n kh\xF4ng s\u1EDF h\u1EEFu ${symbol.replace("USDT", "")} \u0111\u1EC3 b\xE1n.`);
+              }
+              amountUsd = pos.amount * price;
+            } else {
+              amountUsd = Number(args.amountUsd ?? (args.amountVnd ? vndToUsd(Number(args.amountVnd)) : 0));
+              if (!amountUsd || !Number.isFinite(amountUsd) || amountUsd <= 0) {
+                throw new Error("amountUsd, amountVnd, ho\u1EB7c sellAll=true b\u1EAFt bu\u1ED9c");
+              }
             }
             const baseAmount = amountUsd / price;
             const amountVnd = usdToVnd(amountUsd);

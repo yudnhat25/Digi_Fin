@@ -72,14 +72,15 @@ const TOOLS: FunctionDeclaration[] = [
   },
   {
     name: 'placeTrade',
-    description: 'Quote a paper trade. The frontend will surface a confirm dialog before executing. Always quote first, never auto-execute.',
+    description: 'Quote a paper trade. The frontend will surface a confirm dialog before executing. Always quote first, never auto-execute. CRITICAL: the symbol MUST match exactly what the user said in their LATEST message — do not infer from chat history or other coins they own.',
     parameters: {
       type: Type.OBJECT,
       properties: {
         side: { type: Type.STRING, description: 'BUY or SELL' },
-        symbol: { type: Type.STRING, description: 'Trading pair like BTCUSDT' },
-        amountUsd: { type: Type.NUMBER, description: 'Optional USD notional' },
-        amountVnd: { type: Type.NUMBER, description: 'Optional VND notional' },
+        symbol: { type: Type.STRING, description: 'Trading pair like BTCUSDT, ETHUSDT — derived from the user latest message only' },
+        amountUsd: { type: Type.NUMBER, description: 'USD notional. Omit when sellAll=true.' },
+        amountVnd: { type: Type.NUMBER, description: 'VND notional. Omit when sellAll=true.' },
+        sellAll: { type: Type.BOOLEAN, description: 'Set true when user says "bán hết / sell all / liquidate / đóng vị thế / close position". Backend will compute the notional from the user current position.' },
       },
       required: ['side', 'symbol'],
     },
@@ -133,16 +134,18 @@ Bạn có các function-calling tools gọi vào CoinWise OpenAPI server (backen
 - Dùng từ ngữ thân thiện, ngắn gọn, dễ hiểu cho người Việt.
 - Số tiền: format theo kiểu Việt Nam (VD: "5.000.000 ₫", "$1,234.56").
 
-**QUY TẮC GIAO DỊCH:**
+**QUY TẮC GIAO DỊCH (RẤT QUAN TRỌNG):**
 1. Khi user nói "mua / bán / buy / sell" — LUÔN gọi placeTrade trước để LẤY QUOTE. KHÔNG bao giờ pretend đã thực hiện. Nói user nhấn "Confirm" trong card xác nhận để hoàn tất.
-2. Số tiền VND: pass amountVnd. Backend tự convert. Số tiền USD: pass amountUsd.
-3. Sau khi placeTrade quote thành công, tóm tắt:
-   - Số lượng coin sẽ mua/bán
+2. **Symbol PHẢI lấy từ tin nhắn user vừa gửi**, KHÔNG được suy luận từ chat history hay từ coin user đang giữ. User nói "bán ETH" → symbol="ETHUSDT". User nói "mua BTC" → symbol="BTCUSDT". Tuyệt đối KHÔNG đổi sang coin khác.
+3. **"Bán hết / sell all / liquidate / đóng vị thế / close position"** → pass \`sellAll: true\` cho placeTrade, KHÔNG cần amountUsd/amountVnd. Backend tự tính từ vị thế hiện tại của user.
+4. Số tiền VND cụ thể (vd "mua 5 triệu BTC"): pass \`amountVnd: 5000000\`. Số tiền USD cụ thể: pass \`amountUsd\`.
+5. Sau khi placeTrade quote thành công, tóm tắt:
+   - Lệnh + symbol + số lượng coin
    - Tương đương bao nhiêu USD/VND
-   - Risk verdict từ fraudCheck
-   - Nhắc user nhấn "Confirm" hoặc "Cancel" bên dưới.
-4. Nếu fraudCheck.verdict === BLOCK → từ chối và giải thích lý do bằng tiếng Việt.
-5. Nếu user vừa thực hiện trade xong và hỏi tiếp — gọi getBalance để lấy số dư mới nhất, đừng dùng số trong system prompt (đã cũ).
+   - Risk verdict
+   - Nhắc user nhấn "Confirm" hoặc "Cancel".
+6. Nếu fraudCheck.verdict === BLOCK → từ chối và giải thích lý do.
+7. Nếu user vừa trade xong và hỏi tiếp về số dư — gọi getBalance để lấy số mới nhất.
 
 **QUY TẮC CHUNG:**
 - Luôn nhắc đây là nền tảng paper-trading mô phỏng, không phải tư vấn tài chính.
