@@ -158,12 +158,21 @@ accountsRouter.post('/:accountId/trade', async (c) => {
     const positionAvailable = Number.isFinite(body.currentPositionAmount)
       ? Number(body.currentPositionAmount)
       : (acc.positions.find((p) => p.symbol === symbol)?.amount ?? 0);
-    if (positionAvailable < baseAmount) {
+    // Epsilon tolerance for floating-point: if baseAmount overshoots position
+    // by less than 1e-6 (effectively dust), clamp down to position so the
+    // user can actually sell their full holdings. Truly over-budget orders
+    // (e.g. trying to sell 2× what you own) still get rejected.
+    const EPSILON = 1e-6;
+    let baseAmountClamped = baseAmount;
+    if (baseAmountClamped > positionAvailable && baseAmountClamped - positionAvailable <= EPSILON) {
+      baseAmountClamped = positionAvailable;
+    }
+    if (positionAvailable + EPSILON < baseAmountClamped) {
       return c.json({ error: 'Insufficient position' }, 400);
     }
     const pos = acc.positions.find((p) => p.symbol === symbol);
     if (pos) {
-      pos.amount = Math.max(0, positionAvailable - baseAmount);
+      pos.amount = Math.max(0, positionAvailable - baseAmountClamped);
       if (pos.amount < 1e-9) acc.positions = acc.positions.filter((p) => p.symbol !== symbol);
     }
     const cashBase = Number.isFinite(body.currentCashUsd) ? Number(body.currentCashUsd) : acc.cashUsd;

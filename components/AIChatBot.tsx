@@ -116,14 +116,23 @@ const AIChatBot: React.FC<AIChatBotProps> = ({ userState, marketData, onTradeExe
         ? liveQuote.price
         : Number(pending.priceUsd) || undefined;
       const currentPosition = (userState.assets || []).find((a) => a?.symbol === pending.symbol)?.amount ?? 0;
-      const res: any = await apiTrade(userState.accountId, {
+      // For SELL pass the exact baseAmount the quote promised (coin units) so
+      // price drift between quote and confirm cannot inflate baseAmount past
+      // the user's actual holdings. For BUY keep the USD notional so dollar
+      // intent (e.g. "mua 5tr VND BTC") is preserved.
+      const payload: any = {
         side: pending.side,
         symbol: pending.symbol,
-        amountUsd: pending.amountUsd,
         priceHint,
         currentCashUsd: Number.isFinite(userState.balance) ? userState.balance : 0,
         currentPositionAmount: Number.isFinite(currentPosition) ? currentPosition : 0,
-      } as any);
+      };
+      if (pending.side === 'SELL' && Number.isFinite(Number(pending.baseAmount)) && Number(pending.baseAmount) > 0) {
+        payload.amount = Number(pending.baseAmount);
+      } else {
+        payload.amountUsd = pending.amountUsd;
+      }
+      const res: any = await apiTrade(userState.accountId, payload);
       setMessages((prev) => prev.map((m) => m.id === msgId ? { ...m, awaitingConfirm: false } : m));
       const num = (v: any) => (Number.isFinite(Number(v)) ? Number(v) : 0);
       const execAmount = num(res?.executedAmount);
