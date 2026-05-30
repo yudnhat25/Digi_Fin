@@ -129,11 +129,12 @@ agentRouter.post('/execute', async (c) => {
         if (!price || !Number.isFinite(price) || price <= 0) {
           throw new Error(`Could not fetch live price for ${symbol}. Try again in a moment.`);
         }
-        // Special-case "sell all" and "buy all cash": derive the notional from
-        // the user's actual position / cash so it fits exactly (including the
-        // 10 bps fee — naively quoting amountUsd = cash fails because
-        // amountUsd + fee > cash).
+        // Special-case "sell all", "buy all cash", and percent-of-position /
+        // percent-of-cash semantics so the chatbot can fulfill "bán 50% BTC",
+        // "mua 30% cash ETH", etc. without quoting fragile USD amounts.
         const FEE_RATE = 0.001;
+        const sellPct = Number(args.sellPercent);
+        const buyPct = Number(args.buyPercent);
         let amountUsd: number;
         if (args.sellAll === true && side === 'SELL') {
           const acc = getAccount(accountId);
@@ -142,17 +143,33 @@ agentRouter.post('/execute', async (c) => {
             throw new Error(`Bạn không sở hữu ${symbol.replace('USDT', '')} để bán.`);
           }
           amountUsd = pos.amount * price;
+        } else if (Number.isFinite(sellPct) && sellPct > 0 && side === 'SELL') {
+          const acc = getAccount(accountId);
+          const pos = acc.positions.find((p) => p.symbol === symbol);
+          if (!pos || pos.amount <= 0) {
+            throw new Error(`Bạn không sở hữu ${symbol.replace('USDT', '')} để bán.`);
+          }
+          const pct = Math.min(100, Math.max(0, sellPct));
+          amountUsd = pos.amount * (pct / 100) * price;
         } else if (args.buyAllCash === true && side === 'BUY') {
           const acc = getAccount(accountId);
           if (acc.cashUsd <= 0) {
             throw new Error('Số dư cash không đủ để mua.');
           }
-          // amountUsd + (amountUsd * FEE_RATE) = cash  →  amountUsd = cash / (1 + FEE_RATE)
           amountUsd = acc.cashUsd / (1 + FEE_RATE);
+        } else if (Number.isFinite(buyPct) && buyPct > 0 && side === 'BUY') {
+          const acc = getAccount(accountId);
+          if (acc.cashUsd <= 0) {
+            throw new Error('Số dư cash không đủ để mua.');
+          }
+          const pct = Math.min(100, Math.max(0, buyPct));
+          // Spend pct% of cash, accounting for fee so notional + fee fits.
+          const target = acc.cashUsd * (pct / 100);
+          amountUsd = target / (1 + FEE_RATE);
         } else {
           amountUsd = Number(args.amountUsd ?? (args.amountVnd ? vndToUsd(Number(args.amountVnd)) : 0));
           if (!amountUsd || !Number.isFinite(amountUsd) || amountUsd <= 0) {
-            throw new Error('amountUsd, amountVnd, sellAll=true, hoặc buyAllCash=true bắt buộc');
+            throw new Error('amountUsd, amountVnd, sellAll, buyAllCash, sellPercent, hoặc buyPercent bắt buộc');
           }
         }
         // Safety clamp: if Gemini quoted amountUsd ≈ cash without using

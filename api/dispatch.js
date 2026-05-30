@@ -4759,6 +4759,8 @@ var init_agent = __esm({
               throw new Error(`Could not fetch live price for ${symbol}. Try again in a moment.`);
             }
             const FEE_RATE = 1e-3;
+            const sellPct = Number(args.sellPercent);
+            const buyPct = Number(args.buyPercent);
             let amountUsd;
             if (args.sellAll === true && side === "SELL") {
               const acc = getAccount(accountId);
@@ -4767,16 +4769,32 @@ var init_agent = __esm({
                 throw new Error(`B\u1EA1n kh\xF4ng s\u1EDF h\u1EEFu ${symbol.replace("USDT", "")} \u0111\u1EC3 b\xE1n.`);
               }
               amountUsd = pos.amount * price;
+            } else if (Number.isFinite(sellPct) && sellPct > 0 && side === "SELL") {
+              const acc = getAccount(accountId);
+              const pos = acc.positions.find((p) => p.symbol === symbol);
+              if (!pos || pos.amount <= 0) {
+                throw new Error(`B\u1EA1n kh\xF4ng s\u1EDF h\u1EEFu ${symbol.replace("USDT", "")} \u0111\u1EC3 b\xE1n.`);
+              }
+              const pct = Math.min(100, Math.max(0, sellPct));
+              amountUsd = pos.amount * (pct / 100) * price;
             } else if (args.buyAllCash === true && side === "BUY") {
               const acc = getAccount(accountId);
               if (acc.cashUsd <= 0) {
                 throw new Error("S\u1ED1 d\u01B0 cash kh\xF4ng \u0111\u1EE7 \u0111\u1EC3 mua.");
               }
               amountUsd = acc.cashUsd / (1 + FEE_RATE);
+            } else if (Number.isFinite(buyPct) && buyPct > 0 && side === "BUY") {
+              const acc = getAccount(accountId);
+              if (acc.cashUsd <= 0) {
+                throw new Error("S\u1ED1 d\u01B0 cash kh\xF4ng \u0111\u1EE7 \u0111\u1EC3 mua.");
+              }
+              const pct = Math.min(100, Math.max(0, buyPct));
+              const target = acc.cashUsd * (pct / 100);
+              amountUsd = target / (1 + FEE_RATE);
             } else {
               amountUsd = Number(args.amountUsd ?? (args.amountVnd ? vndToUsd(Number(args.amountVnd)) : 0));
               if (!amountUsd || !Number.isFinite(amountUsd) || amountUsd <= 0) {
-                throw new Error("amountUsd, amountVnd, sellAll=true, ho\u1EB7c buyAllCash=true b\u1EAFt bu\u1ED9c");
+                throw new Error("amountUsd, amountVnd, sellAll, buyAllCash, sellPercent, ho\u1EB7c buyPercent b\u1EAFt bu\u1ED9c");
               }
             }
             if (side === "BUY") {
