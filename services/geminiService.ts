@@ -160,7 +160,7 @@ ${marketData.slice(0, 8).map(m => `- ${m.symbol}: $${m.price.toLocaleString()} (
   const toolCalls: AgentToolCall[] = [];
   let pendingAction: AgentResponse['pendingAction'];
 
-  const MODEL = 'gemini-2.5-flash-lite';
+  const MODEL = 'gemini-3.1-flash-lite';
 
   try {
     let response = await ai.models.generateContent({
