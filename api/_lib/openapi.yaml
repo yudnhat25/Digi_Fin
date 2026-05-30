@@ -14,8 +14,10 @@ info:
     name: CoinWise AI Team
     email: hello@coinwise.ai
 servers:
+  - url: https://digi-fin.vercel.app
+    description: Production (Vercel)
   - url: http://localhost:3001
-    description: Local dev server
+    description: Local dev server (npm run dev:api)
 tags:
   - name: Health
   - name: FX (VND Localization)
