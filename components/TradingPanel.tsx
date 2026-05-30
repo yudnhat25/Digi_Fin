@@ -9,15 +9,17 @@ interface TradingPanelProps {
   onDeposit: (amount: number) => void;
   selectedAsset: string;
   onAssetChange: (symbol: string) => void;
+  showToast?: (msg: string, type?: 'success' | 'error' | 'info') => void;
 }
 
-const TradingPanel: React.FC<TradingPanelProps> = ({ 
-  marketData, 
-  userState, 
-  onTrade, 
-  onDeposit, 
-  selectedAsset, 
-  onAssetChange 
+const TradingPanel: React.FC<TradingPanelProps> = ({
+  marketData,
+  userState,
+  onTrade,
+  onDeposit,
+  selectedAsset,
+  onAssetChange,
+  showToast,
 }) => {
   const [tradeType, setTradeType] = useState<'BUY' | 'SELL'>('BUY');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -54,7 +56,14 @@ const TradingPanel: React.FC<TradingPanelProps> = ({
 
   const handleTrade = () => {
     const numAmount = parseFloat(amount);
-    if (isNaN(numAmount) || numAmount <= 0) return;
+    if (isNaN(numAmount) || numAmount <= 0) {
+      showToast?.('Enter an amount greater than 0.', 'error');
+      return;
+    }
+    if (displayPrice <= 0) {
+      showToast?.('Price unavailable — wait for market data to load.', 'error');
+      return;
+    }
     onTrade(tradeType, selectedAsset, numAmount, displayPrice);
     setAmount('0');
     setPriceOverride(null);
@@ -200,12 +209,22 @@ const TradingPanel: React.FC<TradingPanelProps> = ({
             </div>
           </div>
 
-          <button 
+          <button
             onClick={handleTrade}
-            disabled={totalCost > userState.balance && tradeType === 'BUY'}
-            className={`w-full py-5 rounded-2xl font-black text-lg uppercase tracking-widest transition-all active:scale-95 shadow-xl disabled:opacity-50 disabled:cursor-not-allowed ${tradeType === 'BUY' ? 'bg-emerald-500 text-slate-950 shadow-emerald-500/20' : 'bg-rose-500 text-slate-950 shadow-rose-500/20'}`}
+            disabled={
+              (parseFloat(amount) || 0) <= 0 ||
+              displayPrice <= 0 ||
+              (totalCost > userState.balance && tradeType === 'BUY')
+            }
+            className={`w-full py-5 rounded-2xl font-black text-lg uppercase tracking-widest transition-all active:scale-95 shadow-xl disabled:opacity-40 disabled:cursor-not-allowed ${tradeType === 'BUY' ? 'bg-emerald-500 text-slate-950 shadow-emerald-500/20' : 'bg-rose-500 text-slate-950 shadow-rose-500/20'}`}
           >
-            {tradeType} {selectedAsset.replace('USDT', '')}
+            {(parseFloat(amount) || 0) <= 0
+              ? `Enter amount`
+              : displayPrice <= 0
+              ? `Waiting for price…`
+              : totalCost > userState.balance && tradeType === 'BUY'
+              ? `Insufficient balance`
+              : `${tradeType} ${selectedAsset.replace('USDT', '')}`}
           </button>
         </div>
       </div>

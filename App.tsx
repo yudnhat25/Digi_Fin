@@ -179,9 +179,27 @@ const App: React.FC = () => {
   };
 
   const handleTrade = (type: 'BUY' | 'SELL', symbol: string, amount: number, price: number) => {
-    if (!currentUser) return;
+    if (!currentUser) {
+      showToast('Session not loaded yet. Try again in a moment.', 'error');
+      return;
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      showToast('Invalid amount.', 'error');
+      return;
+    }
+    if (!Number.isFinite(price) || price <= 0) {
+      showToast('Invalid price.', 'error');
+      return;
+    }
     const total = amount * price;
-    let updatedUser: UserState = { ...currentUser };
+    // Defensive — Firebase RTDB can serialize arrays as numeric-keyed objects.
+    const currentAssets = Array.isArray(currentUser.assets)
+      ? currentUser.assets
+      : (currentUser.assets && typeof currentUser.assets === 'object' ? Object.values(currentUser.assets) as typeof currentUser.assets : []);
+    const currentTxs = Array.isArray(currentUser.transactions)
+      ? currentUser.transactions
+      : (currentUser.transactions && typeof currentUser.transactions === 'object' ? Object.values(currentUser.transactions) as typeof currentUser.transactions : []);
+    let updatedUser: UserState = { ...currentUser, assets: currentAssets, transactions: currentTxs };
 
     if (type === 'BUY') {
       if (updatedUser.balance < total) {
@@ -190,7 +208,7 @@ const App: React.FC = () => {
       }
       const existingAssetIndex = updatedUser.assets.findIndex(a => a.symbol === symbol);
       const newAssets = [...updatedUser.assets];
-      if (existingAssetIndex >= 0) newAssets[existingAssetIndex].amount += amount;
+      if (existingAssetIndex >= 0) newAssets[existingAssetIndex] = { ...newAssets[existingAssetIndex], amount: newAssets[existingAssetIndex].amount + amount };
       else newAssets.push({ symbol, amount });
       updatedUser = {
         ...updatedUser,
@@ -206,7 +224,7 @@ const App: React.FC = () => {
         return;
       }
       const newAssets = [...updatedUser.assets];
-      newAssets[existingAssetIndex].amount -= amount;
+      newAssets[existingAssetIndex] = { ...newAssets[existingAssetIndex], amount: newAssets[existingAssetIndex].amount - amount };
       const finalAssets = newAssets.filter(a => a.amount > 0);
       updatedUser = {
         ...updatedUser,
@@ -444,6 +462,7 @@ const App: React.FC = () => {
               onDeposit={handleDeposit}
               selectedAsset={selectedAsset}
               onAssetChange={setSelectedAsset}
+              showToast={showToast}
             />
             <div className="grid grid-cols-1 gap-6">
               <TopMoversWidget marketData={marketPrices} user={currentUser} onSelectAsset={setSelectedAsset} />
