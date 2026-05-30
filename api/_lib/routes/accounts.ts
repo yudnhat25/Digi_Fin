@@ -105,14 +105,29 @@ accountsRouter.post('/:accountId/trade', async (c) => {
   }
   if (!price) return c.json({ error: 'Failed to fetch market price' }, 502);
 
-  const usdNotional =
+  let usdNotional =
     typeof body.amountUsd === 'number' ? body.amountUsd :
     typeof body.amountVnd === 'number' ? vndToUsd(body.amountVnd) :
     typeof body.amount === 'number' ? body.amount * price : 0;
   if (!usdNotional || usdNotional <= 0) return c.json({ error: 'Notional amount required' }, 400);
 
+  const FEE_RATE = 0.001; // 10 bps demo fee
+  // Safety clamp for BUY: if notional alone fits cash but notional+fee does
+  // not (Gemini quoted ≈cash without using the buyAllCash semantics),
+  // shrink notional to the fee-safe maximum. Truly over-budget orders
+  // (notional > cash) still hit the rejection below.
+  if (body.side === 'BUY') {
+    const cashForClamp = Number.isFinite(body.currentCashUsd) ? Number(body.currentCashUsd) : 0;
+    if (cashForClamp > 0) {
+      const maxBuyNotional = cashForClamp / (1 + FEE_RATE);
+      if (usdNotional <= cashForClamp && usdNotional > maxBuyNotional) {
+        usdNotional = maxBuyNotional;
+      }
+    }
+  }
+
   const baseAmount = usdNotional / price;
-  const fee = usdNotional * 0.001; // 10 bps demo fee
+  const fee = usdNotional * FEE_RATE;
   const txCandidate = {
     type: body.side,
     asset: symbol,

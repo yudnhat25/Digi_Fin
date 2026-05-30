@@ -4577,10 +4577,20 @@ var init_accounts = __esm({
         price = body.priceHint;
       }
       if (!price) return c.json({ error: "Failed to fetch market price" }, 502);
-      const usdNotional = typeof body.amountUsd === "number" ? body.amountUsd : typeof body.amountVnd === "number" ? vndToUsd(body.amountVnd) : typeof body.amount === "number" ? body.amount * price : 0;
+      let usdNotional = typeof body.amountUsd === "number" ? body.amountUsd : typeof body.amountVnd === "number" ? vndToUsd(body.amountVnd) : typeof body.amount === "number" ? body.amount * price : 0;
       if (!usdNotional || usdNotional <= 0) return c.json({ error: "Notional amount required" }, 400);
+      const FEE_RATE = 1e-3;
+      if (body.side === "BUY") {
+        const cashForClamp = Number.isFinite(body.currentCashUsd) ? Number(body.currentCashUsd) : 0;
+        if (cashForClamp > 0) {
+          const maxBuyNotional = cashForClamp / (1 + FEE_RATE);
+          if (usdNotional <= cashForClamp && usdNotional > maxBuyNotional) {
+            usdNotional = maxBuyNotional;
+          }
+        }
+      }
       const baseAmount = usdNotional / price;
-      const fee = usdNotional * 1e-3;
+      const fee = usdNotional * FEE_RATE;
       const txCandidate = {
         type: body.side,
         asset: symbol,
@@ -4762,6 +4772,13 @@ var init_agent = __esm({
               amountUsd = Number(args.amountUsd ?? (args.amountVnd ? vndToUsd(Number(args.amountVnd)) : 0));
               if (!amountUsd || !Number.isFinite(amountUsd) || amountUsd <= 0) {
                 throw new Error("amountUsd, amountVnd, sellAll=true, ho\u1EB7c buyAllCash=true b\u1EAFt bu\u1ED9c");
+              }
+            }
+            if (side === "BUY") {
+              const acc = getAccount(accountId);
+              const maxBuyNotional = acc.cashUsd / (1 + FEE_RATE);
+              if (amountUsd <= acc.cashUsd && amountUsd > maxBuyNotional) {
+                amountUsd = maxBuyNotional;
               }
             }
             const baseAmount = amountUsd / price;

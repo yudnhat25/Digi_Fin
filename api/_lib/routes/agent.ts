@@ -155,6 +155,17 @@ agentRouter.post('/execute', async (c) => {
             throw new Error('amountUsd, amountVnd, sellAll=true, hoặc buyAllCash=true bắt buộc');
           }
         }
+        // Safety clamp: if Gemini quoted amountUsd ≈ cash without using
+        // buyAllCash, the fee push it over budget. Auto-shrink to fee-safe
+        // when notional <= cash but notional + fee > cash. If notional itself
+        // exceeds cash, let the /trade endpoint reject as truly over-budget.
+        if (side === 'BUY') {
+          const acc = getAccount(accountId);
+          const maxBuyNotional = acc.cashUsd / (1 + FEE_RATE);
+          if (amountUsd <= acc.cashUsd && amountUsd > maxBuyNotional) {
+            amountUsd = maxBuyNotional;
+          }
+        }
         const baseAmount = amountUsd / price;
         const amountVnd = usdToVnd(amountUsd);
         const txCandidate = {
