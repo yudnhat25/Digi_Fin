@@ -24,11 +24,14 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
 
   // Function to calculate a user's current live PNL using the strict $1,000,000 formula
   const getLiveStats = (targetUser: UserState) => {
-    const assetValue = targetUser.assets.reduce((acc, asset) => {
-      const price = marketPrices.find(m => m.symbol === asset.symbol)?.price || 0;
+    const userAssets = Array.isArray(targetUser?.assets) ? targetUser.assets : [];
+    const userPrices = Array.isArray(marketPrices) ? marketPrices : [];
+    const assetValue = userAssets.reduce((acc, asset) => {
+      const price = userPrices.find(m => m.symbol === asset.symbol)?.price || 0;
       return acc + (asset.amount * price);
     }, 0);
-    const currentWorth = targetUser.balance + assetValue;
+    const balance = typeof targetUser?.balance === 'number' ? targetUser.balance : 0;
+    const currentWorth = balance + assetValue;
     
     const pnl = (targetUser.competition?.isCompeting)
       ? ((currentWorth - BASELINE_NET_WORTH) / BASELINE_NET_WORTH) * 100 

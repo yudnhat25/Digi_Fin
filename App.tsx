@@ -53,8 +53,10 @@ const App: React.FC = () => {
       set(ref(db, `users/${uid}`), updatedUser);
 
       if (updatedUser.competition?.isCompeting) {
-        const currentAssetValue = updatedUser.assets.reduce((acc, curr) => {
-          const price = marketPrices.find(m => m.symbol === curr.symbol)?.price || 0;
+        const safeAssets = Array.isArray(updatedUser.assets) ? updatedUser.assets : [];
+        const safePrices = Array.isArray(marketPrices) ? marketPrices : [];
+        const currentAssetValue = safeAssets.reduce((acc, curr) => {
+          const price = safePrices.find(m => m.symbol === curr.symbol)?.price || 0;
           return acc + (curr.amount * price);
         }, 0);
 
@@ -80,15 +82,27 @@ const App: React.FC = () => {
         const userRef = ref(db, `users/${firebaseUser.uid}`);
         const snapshot = await get(userRef);
         if (snapshot.exists()) {
-          const data = snapshot.val();
-          // Firebase Realtime DB strips empty arrays — restore defaults so .reduce() etc. don't crash.
-          if (!Array.isArray(data.assets)) data.assets = [];
-          if (!Array.isArray(data.transactions)) data.transactions = [];
+          const rawData = snapshot.val();
+          const data: any = rawData && typeof rawData === 'object' ? { ...rawData } : {};
+          // Firebase Realtime DB serializes empty arrays as undefined and sparse arrays as
+          // objects keyed by index — coerce every array-shaped field defensively.
+          const toArray = (v: any) => Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.values(v) : []);
+          data.assets = toArray(data.assets);
+          data.transactions = toArray(data.transactions);
+          data.watchlist = toArray(data.watchlist);
+          if (data.watchlist.length === 0) {
+            data.watchlist = [
+              { symbol: 'BTCUSDT', addedAt: Date.now() },
+              { symbol: 'ETHUSDT', addedAt: Date.now() },
+              { symbol: 'SOLUSDT', addedAt: Date.now() },
+            ];
+          }
+          data.stakes = toArray(data.stakes);
+          data.enrollments = toArray(data.enrollments);
           if (!data.tier) data.tier = 'STARTER';
-          if (!Array.isArray(data.watchlist)) data.watchlist = [{ symbol: 'BTCUSDT', addedAt: Date.now() }, { symbol: 'ETHUSDT', addedAt: Date.now() }, { symbol: 'SOLUSDT', addedAt: Date.now() }];
-          if (!Array.isArray(data.stakes)) data.stakes = [];
-          if (!Array.isArray(data.enrollments)) data.enrollments = [];
-          if (!data.competition) data.competition = { isCompeting: false, entryNetWorth: 0, entryTime: 0, pnlPercent: 0, currentRank: 0 };
+          if (!data.competition || typeof data.competition !== 'object') {
+            data.competition = { isCompeting: false, entryNetWorth: 0, entryTime: 0, pnlPercent: 0, currentRank: 0 };
+          }
           if (data.referralEarnings === undefined) data.referralEarnings = 0;
           if (data.referralCount === undefined) data.referralCount = 0;
           if (typeof data.balance !== 'number') data.balance = 1000000;

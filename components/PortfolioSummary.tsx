@@ -10,13 +10,16 @@ interface PortfolioSummaryProps {
 
 const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({ userState, marketPrices }) => {
   const { format, currency, formatUSD } = useCurrency();
-  const assets = userState.assets || [];
-  const balance = typeof userState.balance === 'number' ? userState.balance : 0;
+  // Firebase Realtime DB can serialize empty arrays as objects/null when written
+  // from a different client — coerce defensively before any .reduce() / .find().
+  const assets = Array.isArray(userState?.assets) ? userState.assets : [];
+  const prices = Array.isArray(marketPrices) ? marketPrices : [];
+  const balance = typeof userState?.balance === 'number' ? userState.balance : 0;
 
   const assetValue = useMemo(() => assets.reduce((acc, asset) => {
-    const marketPrice = marketPrices.find(m => m.symbol === asset.symbol)?.price || 0;
+    const marketPrice = prices.find(m => m.symbol === asset.symbol)?.price || 0;
     return acc + (asset.amount * marketPrice);
-  }, 0), [assets, marketPrices]);
+  }, 0), [assets, prices]);
 
   const totalValue = balance + assetValue;
   const initialValue = 1_000_000;
@@ -25,10 +28,10 @@ const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({ userState, marketPr
   const isGain = pnlAbs >= 0;
 
   const todayPnl = useMemo(() => assets.reduce((acc, a) => {
-    const m = marketPrices.find(x => x.symbol === a.symbol);
+    const m = prices.find(x => x.symbol === a.symbol);
     if (!m) return acc;
     return acc + (a.amount * m.price * m.change24h / 100);
-  }, 0), [assets, marketPrices]);
+  }, 0), [assets, prices]);
 
   return (
     <div className="space-y-5">

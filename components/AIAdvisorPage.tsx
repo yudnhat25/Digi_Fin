@@ -133,9 +133,10 @@ const AIAdvisorPage: React.FC<{ user: UserState }> = ({ user }) => {
 };
 
 const DonutAllocation: React.FC<{ allocations: AdvisorResult['targetAllocation']; cashBufferPct: number }> = ({ allocations, cashBufferPct }) => {
+  const safeAllocations = Array.isArray(allocations) ? allocations : [];
   const slices = [
-    ...allocations.map((a) => ({ label: a.symbol.replace('USDT', ''), value: a.weight * 100 })),
-    { label: 'Cash', value: cashBufferPct },
+    ...safeAllocations.map((a) => ({ label: a.symbol.replace('USDT', ''), value: a.weight * 100 })),
+    { label: 'Cash', value: cashBufferPct || 0 },
   ];
   const total = slices.reduce((s, x) => s + x.value, 0) || 1;
   let acc = 0;
