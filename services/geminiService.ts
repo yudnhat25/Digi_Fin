@@ -147,9 +147,11 @@ ${marketData.slice(0, 8).map(m => `- ${m.symbol}: $${m.price.toLocaleString()} (
   const toolCalls: AgentToolCall[] = [];
   let pendingAction: AgentResponse['pendingAction'];
 
+  const MODEL = 'gemini-2.5-flash-lite';
+
   try {
     let response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: MODEL,
       contents,
       config: {
         systemInstruction,
@@ -158,8 +160,7 @@ ${marketData.slice(0, 8).map(m => `- ${m.symbol}: $${m.price.toLocaleString()} (
       },
     });
 
-    // Function-calling loop (up to 4 hops for safety).
-    for (let hop = 0; hop < 4; hop++) {
+    for (let hop = 0; hop < 2; hop++) {
       const calls = response.functionCalls || [];
       if (!calls.length) break;
 
@@ -183,7 +184,7 @@ ${marketData.slice(0, 8).map(m => `- ${m.symbol}: $${m.price.toLocaleString()} (
       }
 
       const grounded = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: MODEL,
         contents: [
           ...contents,
           { role: 'model', parts: calls.map((c) => ({ functionCall: c })) },
@@ -205,8 +206,25 @@ ${marketData.slice(0, 8).map(m => `- ${m.symbol}: $${m.price.toLocaleString()} (
     };
   } catch (error) {
     console.error('Gemini agent error:', error);
+    const msg = String((error as any)?.message || error);
+    const status = (error as any)?.status ?? (error as any)?.error?.code;
+
+    if (status === 429 || /RESOURCE_EXHAUSTED|quota/i.test(msg)) {
+      const retryMatch = msg.match(/"retryDelay"\s*:\s*"(\d+)s"/);
+      const wait = retryMatch ? `~${retryMatch[1]}s` : '~1 phút';
+      return {
+        text: `⏳ Hết quota Gemini free tier (15 req/phút). Chờ ${wait} rồi thử lại — hoặc dùng trực tiếp các tool ở side panel (Sentiment / Credit Score / Advisor).`,
+        toolCalls,
+      };
+    }
+    if (status === 401 || status === 403 || /API key/i.test(msg)) {
+      return {
+        text: '🔑 Gemini API key không hợp lệ. Kiểm tra lại GEMINI_API_KEY trong Vercel Environment Variables.',
+        toolCalls,
+      };
+    }
     return {
-      text: 'I hit an error talking to my reasoning engine. Please try again — the CoinWise OpenAPI tools may still be reachable on the side panels.',
+      text: 'Mình gặp lỗi khi gọi Gemini. Thử lại sau — hoặc dùng các tool ở side panel.',
       toolCalls,
     };
   }

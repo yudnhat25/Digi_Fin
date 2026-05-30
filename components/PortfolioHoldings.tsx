@@ -7,39 +7,39 @@ interface PortfolioHoldingsProps {
 }
 
 const PortfolioHoldings: React.FC<PortfolioHoldingsProps> = ({ userState, marketPrices }) => {
-    // Calculate holdings with PNL
-    const holdings = userState.assets.map(asset => {
-        const currentPrice = marketPrices.find(m => m.symbol === asset.symbol)?.price || 0;
+    // Firebase RTDB can serialise empty/sparse arrays as objects or null — coerce
+    // defensively before any .map/.filter/.reduce.
+    const assets = Array.isArray(userState?.assets) ? userState.assets : [];
+    const transactions = Array.isArray(userState?.transactions) ? userState.transactions : [];
+    const prices = Array.isArray(marketPrices) ? marketPrices : [];
 
-        // Find the average buy price from transactions
-        const buyTransactions = userState.transactions.filter(t => t.asset === asset.symbol && t.type === 'BUY');
-        const totalCost = buyTransactions.reduce((acc, t) => acc + (t.amount * t.price), 0);
-        const totalAmount = buyTransactions.reduce((acc, t) => acc + t.amount, 0);
-        const avgBuyPrice = totalAmount > 0 ? totalCost / totalAmount : 0;
+    const holdings = assets
+        .filter(asset => asset && typeof asset.symbol === 'string')
+        .map(asset => {
+            const amount = Number.isFinite(asset.amount) ? asset.amount : 0;
+            const currentPrice = prices.find(m => m?.symbol === asset.symbol)?.price || 0;
 
-        const currentValue = asset.amount * currentPrice;
-        const costBasis = asset.amount * avgBuyPrice;
-        const pnl = currentValue - costBasis;
-        const pnlPercent = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
+            const buyTransactions = transactions.filter(t => t?.asset === asset.symbol && t?.type === 'BUY');
+            const totalCost = buyTransactions.reduce((acc, t) => acc + ((t.amount || 0) * (t.price || 0)), 0);
+            const totalAmount = buyTransactions.reduce((acc, t) => acc + (t.amount || 0), 0);
+            const avgBuyPrice = totalAmount > 0 ? totalCost / totalAmount : 0;
 
-        return {
-            symbol: asset.symbol,
-            amount: asset.amount,
-            avgBuyPrice,
-            currentPrice,
-            currentValue,
-            costBasis,
-            pnl,
-            pnlPercent
-        };
-    });
+            const currentValue = amount * currentPrice;
+            const costBasis = amount * avgBuyPrice;
+            const pnl = currentValue - costBasis;
+            const pnlPercent = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
 
-    console.log('Portfolio Holdings Debug:', {
-        assetsCount: userState.assets.length,
-        assets: userState.assets,
-        holdingsCount: holdings.length,
-        holdings: holdings
-    });
+            return {
+                symbol: asset.symbol,
+                amount,
+                avgBuyPrice,
+                currentPrice,
+                currentValue,
+                costBasis,
+                pnl,
+                pnlPercent
+            };
+        });
 
     return (
         <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl mb-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
