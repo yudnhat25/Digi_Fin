@@ -2335,26 +2335,98 @@ var init_cors = __esm({
 });
 
 // api/_lib/fx.ts
-function jitter(amplitude) {
+function synthetic() {
   const t = (Date.now() - startedAt) / 1e3;
-  return Math.sin(t / 37) * amplitude + (Math.random() - 0.5) * amplitude * 0.25;
-}
-function getRates() {
-  const usdVnd = 24850 + jitter(120);
-  const usdEur = 0.92 + jitter(4e-3);
-  const usdJpy = 156.4 + jitter(0.8);
-  const usdSgd = 1.34 + jitter(0.01);
+  const j = (amp) => Math.sin(t / 37) * amp + (Math.random() - 0.5) * amp * 0.25;
   return {
     base: "USD",
     asOf: (/* @__PURE__ */ new Date()).toISOString(),
     rates: {
       USD: 1,
-      VND: Math.round(usdVnd),
-      EUR: Number(usdEur.toFixed(4)),
-      JPY: Number(usdJpy.toFixed(3)),
-      SGD: Number(usdSgd.toFixed(4))
-    }
+      VND: Math.round(25400 + j(120)),
+      EUR: Number((0.92 + j(4e-3)).toFixed(4)),
+      JPY: Number((156.4 + j(0.8)).toFixed(3)),
+      SGD: Number((1.34 + j(0.01)).toFixed(4)),
+      GBP: Number((0.79 + j(4e-3)).toFixed(4)),
+      CNY: Number((7.24 + j(0.02)).toFixed(4)),
+      KRW: Number((1370 + j(5)).toFixed(2)),
+      THB: Number((35.8 + j(0.15)).toFixed(3))
+    },
+    source: "synthetic"
   };
+}
+async function withTimeout(p, ms) {
+  return new Promise((resolve2, reject) => {
+    const timer = setTimeout(() => reject(new Error("timeout")), ms);
+    p.then((v) => {
+      clearTimeout(timer);
+      resolve2(v);
+    }, (e) => {
+      clearTimeout(timer);
+      reject(e);
+    });
+  });
+}
+async function fetchPrimary() {
+  try {
+    const r = await withTimeout(
+      fetch("https://open.er-api.com/v6/latest/USD", { headers: { Accept: "application/json" } }),
+      FETCH_TIMEOUT_MS
+    );
+    if (!r.ok) return null;
+    const j = await r.json();
+    if (j.result !== "success" || !j.rates) return null;
+    return j.rates;
+  } catch {
+    return null;
+  }
+}
+async function fetchFallback() {
+  try {
+    const r = await withTimeout(
+      fetch("https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json"),
+      FETCH_TIMEOUT_MS
+    );
+    if (!r.ok) return null;
+    const j = await r.json();
+    if (!j.usd) return null;
+    const upper = {};
+    for (const [k, v] of Object.entries(j.usd)) upper[k.toUpperCase()] = v;
+    return upper;
+  } catch {
+    return null;
+  }
+}
+async function refreshRates() {
+  const primary = await fetchPrimary();
+  const raw2 = primary || await fetchFallback();
+  if (!raw2) return;
+  const rates = { USD: 1 };
+  for (const code of SUPPORTED) {
+    const v = Number(raw2[code]);
+    if (Number.isFinite(v) && v > 0) {
+      rates[code] = code === "VND" || code === "KRW" ? Math.round(v) : Number(v.toFixed(6));
+    }
+  }
+  if (!rates.VND) return;
+  cache = {
+    base: "USD",
+    asOf: (/* @__PURE__ */ new Date()).toISOString(),
+    rates,
+    source: primary ? "open.er-api.com" : "jsdelivr-fawazahmed0"
+  };
+  cacheTs = Date.now();
+}
+function maybeRefresh() {
+  if (Date.now() - cacheTs < TTL_MS) return;
+  if (inflight) return;
+  inflight = refreshRates().finally(() => {
+    inflight = null;
+  });
+}
+function getRates() {
+  maybeRefresh();
+  return cache;
 }
 function convert(amount, from, to) {
   const { rates } = getRates();
@@ -2386,14 +2458,29 @@ function formatCurrency(amount, currency) {
       return `\xA5${Math.round(amount).toLocaleString("ja-JP")}`;
     case "SGD":
       return `S$${amount.toFixed(2)}`;
+    case "GBP":
+      return `\xA3${amount.toFixed(2)}`;
+    case "CNY":
+      return `\xA5${amount.toFixed(2)}`;
+    case "KRW":
+      return `\u20A9${Math.round(amount).toLocaleString("ko-KR")}`;
+    case "THB":
+      return `\u0E3F${amount.toFixed(2)}`;
     default:
       return `$${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
 }
-var startedAt;
+var startedAt, TTL_MS, FETCH_TIMEOUT_MS, SUPPORTED, cache, cacheTs, inflight;
 var init_fx = __esm({
   "api/_lib/fx.ts"() {
     startedAt = Date.now();
+    TTL_MS = 10 * 60 * 1e3;
+    FETCH_TIMEOUT_MS = 4e3;
+    SUPPORTED = ["VND", "EUR", "JPY", "SGD", "GBP", "CNY", "KRW", "THB"];
+    cache = synthetic();
+    cacheTs = 0;
+    inflight = null;
+    maybeRefresh();
   }
 });
 
@@ -2658,7 +2745,7 @@ function parseChildren(json) {
 async function fetchSubredditHot(subreddit, limit = 50) {
   const key = `sub:${subreddit}:${limit}`;
   const hit = CACHE.get(key);
-  if (hit && Date.now() - hit.ts < TTL_MS) return hit.data;
+  if (hit && Date.now() - hit.ts < TTL_MS2) return hit.data;
   const url = `https://www.reddit.com/r/${encodeURIComponent(subreddit)}/hot.json?limit=${limit}&t=day`;
   const json = await fetchJson(url);
   const posts = parseChildren(json);
@@ -2702,11 +2789,11 @@ async function pingReddit() {
     return { ok: false, latencyMs: Date.now() - t0, error: e.message };
   }
 }
-var CACHE, TTL_MS, USER_AGENT, PER_COIN_SUBS;
+var CACHE, TTL_MS2, USER_AGENT, PER_COIN_SUBS;
 var init_reddit = __esm({
   "api/_lib/ai/sources/reddit.ts"() {
     CACHE = /* @__PURE__ */ new Map();
-    TTL_MS = 5 * 60 * 1e3;
+    TTL_MS2 = 5 * 60 * 1e3;
     USER_AGENT = "web:coinwise-ai:v1.0.0 (by /u/coinwise_dev)";
     PER_COIN_SUBS = {
       BTC: ["Bitcoin", "BitcoinMarkets"],
@@ -2731,7 +2818,7 @@ var init_reddit = __esm({
 async function fetchSearch(query, page = 0) {
   const key = `hn:${query}:${page}`;
   const hit = CACHE2.get(key);
-  if (hit && Date.now() - hit.ts < TTL_MS2) return hit.data;
+  if (hit && Date.now() - hit.ts < TTL_MS3) return hit.data;
   const url = new URL("https://hn.algolia.com/api/v1/search");
   url.searchParams.set("query", query);
   url.searchParams.set("tags", "story");
@@ -2787,11 +2874,11 @@ async function pingHackerNews() {
     return { ok: false, latencyMs: Date.now() - t0, error: e.message };
   }
 }
-var CACHE2, TTL_MS2, USER_AGENT2, COIN_QUERIES;
+var CACHE2, TTL_MS3, USER_AGENT2, COIN_QUERIES;
 var init_hackerNews = __esm({
   "api/_lib/ai/sources/hackerNews.ts"() {
     CACHE2 = /* @__PURE__ */ new Map();
-    TTL_MS2 = 10 * 60 * 1e3;
+    TTL_MS3 = 10 * 60 * 1e3;
     USER_AGENT2 = "CoinWiseAI/1.0";
     COIN_QUERIES = {
       BTC: ["bitcoin", "BTC"],
@@ -2814,7 +2901,7 @@ var init_hackerNews = __esm({
 
 // api/_lib/ai/sources/fearGreed.ts
 async function fetchFearGreedReal() {
-  if (CACHE3 && Date.now() - CACHE3.ts < TTL_MS3) return CACHE3.data;
+  if (CACHE3 && Date.now() - CACHE3.ts < TTL_MS4) return CACHE3.data;
   try {
     const url = "https://api.alternative.me/fng/?limit=30&format=json";
     const res = await fetch(url, { headers: { "User-Agent": USER_AGENT3 } });
@@ -2851,11 +2938,11 @@ async function pingFearGreed() {
   const err = "error" in r ? r.error : "unknown";
   return { ok: false, latencyMs: Date.now() - t0, error: err };
 }
-var CACHE3, TTL_MS3, USER_AGENT3;
+var CACHE3, TTL_MS4, USER_AGENT3;
 var init_fearGreed = __esm({
   "api/_lib/ai/sources/fearGreed.ts"() {
     CACHE3 = null;
-    TTL_MS3 = 30 * 60 * 1e3;
+    TTL_MS4 = 30 * 60 * 1e3;
     USER_AGENT3 = "CoinWiseAI/1.0 (Vietnam fintech assignment)";
   }
 });
@@ -2868,7 +2955,7 @@ async function fetchCoinGecko(symbol) {
     return { ok: false, coinId: base, error: "unknown_coin_id", fetchedAt: (/* @__PURE__ */ new Date()).toISOString() };
   }
   const hit = CACHE4.get(coinId);
-  if (hit && Date.now() - hit.ts < TTL_MS4) return hit.data;
+  if (hit && Date.now() - hit.ts < TTL_MS5) return hit.data;
   try {
     const url = `https://api.coingecko.com/api/v3/coins/${coinId}?localization=false&tickers=false&market_data=false&community_data=true&developer_data=true&sparkline=false`;
     const res = await fetch(url, { headers: { "User-Agent": USER_AGENT4, "Accept": "application/json" } });
@@ -2905,7 +2992,7 @@ async function pingCoinGecko() {
     return { ok: false, latencyMs: Date.now() - t0, error: e.message };
   }
 }
-var COIN_IDS, CACHE4, TTL_MS4, USER_AGENT4;
+var COIN_IDS, CACHE4, TTL_MS5, USER_AGENT4;
 var init_coingecko = __esm({
   "api/_lib/ai/sources/coingecko.ts"() {
     COIN_IDS = {
@@ -2929,7 +3016,7 @@ var init_coingecko = __esm({
       OP: "optimism"
     };
     CACHE4 = /* @__PURE__ */ new Map();
-    TTL_MS4 = 10 * 60 * 1e3;
+    TTL_MS5 = 10 * 60 * 1e3;
     USER_AGENT4 = "CoinWiseAI/1.0 (Vietnam fintech assignment)";
   }
 });

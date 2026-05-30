@@ -4,9 +4,6 @@ import { getGeminiAgentResponse, AgentToolCall } from '../services/geminiService
 import { apiTrade } from '../services/coinwiseApi';
 import { useCurrency } from '../services/currency';
 
-const VND_PER_USD = 25_400;
-const fmtVnd = (usd: number) => `${Math.round(usd * VND_PER_USD).toLocaleString('vi-VN')} ₫`;
-
 interface AIChatBotProps {
   userState: UserState;
   marketData: MarketData[];
@@ -53,7 +50,8 @@ const ToolCallRow: React.FC<{ call: AgentToolCall }> = ({ call }) => {
 };
 
 const AIChatBot: React.FC<AIChatBotProps> = ({ userState, marketData, onTradeExecuted }) => {
-  const { format, currency } = useCurrency();
+  const { format, currency, formatVND, usdVnd } = useCurrency();
+  const fmtVnd = (usd: number) => formatVND(usd * usdVnd);
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([
