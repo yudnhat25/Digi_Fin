@@ -205,11 +205,20 @@ ${marketData.slice(0, 8).map(m => `- ${m.symbol}: $${m.price.toLocaleString()} (
         });
       }
 
+      // Gemini 3.x "thinking" models attach a thought_signature to each
+      // functionCall part that MUST be echoed back unchanged to keep the
+      // model's reasoning state aligned — stripping it (or rebuilding the
+      // model turn from scratch via calls.map(...)) yields a 400
+      // INVALID_ARGUMENT "Function call is missing a thought_signature".
+      // So pass the original model content through verbatim.
+      const modelContent = (response as any).candidates?.[0]?.content
+        ?? { role: 'model', parts: calls.map((c) => ({ functionCall: c })) };
+
       const grounded = await ai.models.generateContent({
         model: MODEL,
         contents: [
           ...contents,
-          { role: 'model', parts: calls.map((c) => ({ functionCall: c })) },
+          modelContent,
           { role: 'user', parts: responseParts },
         ],
         config: {
