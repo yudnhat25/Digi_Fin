@@ -102,14 +102,14 @@ const CompetitionPaymentModal: React.FC<CompetitionPaymentModalProps> = ({ accou
             <div className="flex items-start gap-3 p-3 bg-rose-50 rounded-xl border border-rose-100">
               <svg className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
               <p className="text-[11px] text-rose-700 font-medium leading-relaxed">
-                Số dư không đủ. <a href="/bank" target="_blank" rel="noreferrer" className="underline font-bold">Mở CoinWise Bank để nạp tiền →</a>
+                Số dư không đủ. <a href="/bank.html" target="_blank" rel="noreferrer" className="underline font-bold">Mở CoinWise Bank để nạp tiền →</a>
               </p>
             </div>
           ) : (
             <div className="flex items-start gap-3 p-3 bg-emerald-50 rounded-xl border border-emerald-100">
               <svg className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4"></path></svg>
               <p className="text-[10px] text-emerald-700 font-medium leading-relaxed">
-                Phí <b>${ENTRY_FEE.toFixed(2)}</b> được quy đổi qua OpenAPI <code>/fx/convert</code> và trừ trực tiếp bằng VND từ tài khoản CoinWise Bank của bạn. Cần nạp thêm? <a href="/bank" target="_blank" rel="noreferrer" className="underline font-bold">Mở CoinWise Bank →</a>
+                Phí <b>${ENTRY_FEE.toFixed(2)}</b> được quy đổi qua OpenAPI <code>/fx/convert</code> và trừ trực tiếp bằng VND từ tài khoản CoinWise Bank của bạn. Cần nạp thêm? <a href="/bank.html" target="_blank" rel="noreferrer" className="underline font-bold">Mở CoinWise Bank →</a>
               </p>
             </div>
           )}
