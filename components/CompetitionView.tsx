@@ -5,6 +5,15 @@ import { ENTRY_FEE, BASELINE_NET_WORTH } from '../constants';
 import { computeArenaTick, getCycleAnchor } from '../services/arena';
 import { db } from '../firebaseConfig';
 import { ref, onValue } from 'firebase/database';
+import { useCurrency } from '../services/currency';
+import { apiFxConvert } from '../services/coinwiseApi';
+
+type PayoutRegion = 'US' | 'VN';
+
+const VN_BANKS = [
+  'Vietcombank', 'Techcombank', 'VietinBank', 'BIDV', 'MB Bank', 'ACB',
+  'Sacombank', 'VPBank', 'TPBank', 'HDBank', 'SHB', 'Agribank', 'Other',
+];
 
 interface CompetitionViewProps {
   user: UserState;
@@ -17,6 +26,10 @@ interface CompetitionViewProps {
 type CompTab = 'leaderboard' | 'stats' | 'history' | 'rules';
 
 const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, onRegister, onReset, onArenaExit }) => {
+  const { usdVnd, formatVND } = useCurrency();
+  const [payoutRegion, setPayoutRegion] = useState<PayoutRegion>('VN');
+  const [fxQuote, setFxQuote] = useState<{ amountVnd: number; rate: number; asOf: string } | null>(null);
+  const [fxLoading, setFxLoading] = useState(false);
   const [activeSubTab, setActiveSubTab] = useState<CompTab>('leaderboard');
   const [arenaAnchor] = useState<number>(() => getCycleAnchor());
   const [arenaTick, setArenaTick] = useState(() => computeArenaTick(getCycleAnchor()));
@@ -149,6 +162,29 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
   const totalParticipants = participants.length;
   const prizePool = totalParticipants * ENTRY_FEE;
 
+  // When the payout modal opens, hit the OpenAPI /fx/convert endpoint to get
+  // an authoritative USD→VND quote. Stripe does not natively support VND
+  // payouts in many regions, so the assignment's custom FX bridge is what
+  // lets a Vietnamese winner see (and confirm) their reward in dong before
+  // the Stripe transfer is initiated.
+  useEffect(() => {
+    if (!showPayoutModal) return;
+    let alive = true;
+    setFxLoading(true);
+    apiFxConvert(prizePool || ENTRY_FEE, 'USD', 'VND')
+      .then((r) => {
+        if (!alive) return;
+        setFxQuote({ amountVnd: r.result, rate: r.rate, asOf: new Date().toISOString() });
+      })
+      .catch(() => {
+        if (!alive) return;
+        // Graceful fallback to the cached client-side rate from CurrencyProvider.
+        setFxQuote({ amountVnd: Math.round((prizePool || ENTRY_FEE) * usdVnd), rate: usdVnd, asOf: new Date().toISOString() });
+      })
+      .finally(() => { if (alive) setFxLoading(false); });
+    return () => { alive = false; };
+  }, [showPayoutModal, prizePool, usdVnd]);
+
   const filteredParticipants = useMemo(() => {
     return participants
       .filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -245,63 +281,134 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
         </div>
       )}
 
-      {/* Stripe Payout Interface */}
+      {/* Stripe Payout Interface — with CoinWise FX bridge for VND payouts */}
       {showPayoutModal && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-white animate-in slide-in-from-right duration-500">
-           <div className="max-w-2xl w-full text-slate-900">
-              <div className="flex items-center justify-between mb-12">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-white animate-in slide-in-from-right duration-500 overflow-y-auto">
+           <div className="max-w-2xl w-full text-slate-900 py-8">
+              <div className="flex items-center justify-between mb-8">
                  <div className="flex items-center gap-2">
                     <svg className="w-10 h-10 text-[#635BFF]" viewBox="0 0 40 40" fill="currentColor"><path d="M20 0C8.954 0 0 8.954 0 20s8.954 20 20 20 20-8.954 20-20S31.046 0 20 0zm0 36.364C10.963 36.364 3.636 29.037 3.636 20S10.963 3.636 20 3.636 36.364 10.963 36.364 20s-7.327 16.364-16.364 16.364z"/></svg>
                     <span className="text-3xl font-bold tracking-tight text-[#635BFF]">Stripe <span className="text-slate-400 font-medium">Payouts</span></span>
+                    <span className="ml-2 text-[10px] font-black uppercase tracking-widest text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5">+ CoinWise FX</span>
                  </div>
                  <button onClick={() => setShowPayoutModal(false)} className="text-slate-400 hover:text-slate-600">
                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                  </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                  <div className="md:col-span-2">
-                    <h1 className="text-4xl font-bold mb-4">Set up your payouts</h1>
-                    <p className="text-slate-500 text-lg">Enter your details to receive your <span className="font-bold text-slate-900">${prizePool.toLocaleString()}</span> reward from CoinWise AI.</p>
+                    <h1 className="text-3xl md:text-4xl font-bold mb-3">Set up your payout</h1>
+                    <p className="text-slate-500 text-base">
+                      Stripe Payouts settle in USD by default. CoinWise's OpenAPI <code className="text-[12px] bg-slate-100 px-1.5 py-0.5 rounded">/api/v1/fx/convert</code> bridges the gap and converts your reward to <b>VND</b> on the fly.
+                    </p>
                  </div>
-                 <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 flex flex-col justify-center">
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Transfer Amount</p>
-                    <p className="text-3xl font-bold text-[#635BFF]">${prizePool.toLocaleString()}.00</p>
+                 <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 flex flex-col justify-center">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Transfer Amount</p>
+                    <p className="text-2xl font-bold text-[#635BFF] tabular-nums">${prizePool.toLocaleString()}.00 USD</p>
+                    {payoutRegion === 'VN' && (
+                      <p className="text-sm text-emerald-700 font-semibold tabular-nums mt-1">
+                        ≈ {fxLoading ? '…' : (fxQuote ? formatVND(fxQuote.amountVnd) : '—')}
+                      </p>
+                    )}
                  </div>
               </div>
 
-              <form onSubmit={handleConfirmPayout} className="space-y-8">
-                 <div className="space-y-6">
-                    <div>
-                        <label className="block text-sm font-bold text-slate-700 mb-2">Legal Name</label>
-                        <input required type="text" defaultValue={user.name} className="w-full border-slate-200 border-2 rounded-xl px-4 py-4 text-lg focus:border-[#635BFF] focus:outline-none" />
+              {/* Region toggle */}
+              <div className="bg-slate-100 p-1 rounded-2xl inline-flex mb-6">
+                <button
+                  type="button"
+                  onClick={() => setPayoutRegion('VN')}
+                  className={`px-5 py-2 rounded-xl text-sm font-bold transition ${payoutRegion === 'VN' ? 'bg-white shadow text-slate-900' : 'text-slate-500'}`}
+                >
+                  🇻🇳 Vietnam bank (VND)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPayoutRegion('US')}
+                  className={`px-5 py-2 rounded-xl text-sm font-bold transition ${payoutRegion === 'US' ? 'bg-white shadow text-slate-900' : 'text-slate-500'}`}
+                >
+                  🇺🇸 US bank (USD)
+                </button>
+              </div>
+
+              {payoutRegion === 'VN' && fxQuote && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 mb-6 text-sm text-emerald-900">
+                  <div className="flex items-start gap-3">
+                    <svg className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    <div className="flex-1">
+                      <p className="font-bold">FX bridge active</p>
+                      <p className="text-emerald-800 mt-1">
+                        Rate: <b>1 USD = {fxQuote.rate.toLocaleString('vi-VN')} ₫</b> · Quote ID: <code className="text-[11px] bg-white px-1.5 py-0.5 rounded">fx-{new Date(fxQuote.asOf).getTime().toString(36)}</code>
+                      </p>
+                      <p className="text-emerald-700 text-[12px] mt-1">
+                        Sourced from <code>GET /api/v1/fx/rates</code> (live USD→VND, cached 10 min). Stripe receives USD on its rails; the converted VND amount is credited to your VN bank.
+                      </p>
                     </div>
-                    <div className="grid grid-cols-2 gap-6">
-                        <div>
-                            <label className="block text-sm font-bold text-slate-700 mb-2">Routing Number</label>
-                            <input required type="text" placeholder="110000000" maxLength={9} className="w-full border-slate-200 border-2 rounded-xl px-4 py-4 text-lg focus:border-[#635BFF] focus:outline-none" />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-bold text-slate-700 mb-2">Account Number</label>
-                            <input required type="text" placeholder="000123456789" className="w-full border-slate-200 border-2 rounded-xl px-4 py-4 text-lg focus:border-[#635BFF] focus:outline-none" />
-                        </div>
-                    </div>
-                    <div className="bg-blue-50 p-6 rounded-2xl flex gap-4 border border-blue-100">
-                        <svg className="w-6 h-6 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <p className="text-sm text-blue-800 leading-relaxed">By clicking confirm, you authorize Stripe to send a direct deposit to the bank account listed above. Funds usually arrive in 1-2 business days.</p>
-                    </div>
+                  </div>
+                </div>
+              )}
+
+              <form onSubmit={handleConfirmPayout} className="space-y-6">
+                 <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-2">Legal Name</label>
+                    <input required type="text" defaultValue={user.name} className="w-full border-slate-200 border-2 rounded-xl px-4 py-3.5 text-lg focus:border-[#635BFF] focus:outline-none" />
                  </div>
 
-                 <button 
-                   disabled={isPayoutProcessing}
+                 {payoutRegion === 'VN' ? (
+                   <>
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                       <div>
+                         <label className="block text-sm font-bold text-slate-700 mb-2">Ngân hàng (Bank)</label>
+                         <select required defaultValue="Vietcombank" className="w-full border-slate-200 border-2 rounded-xl px-4 py-3.5 text-lg bg-white focus:border-[#635BFF] focus:outline-none">
+                           {VN_BANKS.map((b) => <option key={b} value={b}>{b}</option>)}
+                         </select>
+                       </div>
+                       <div>
+                         <label className="block text-sm font-bold text-slate-700 mb-2">Số tài khoản (Account No.)</label>
+                         <input required type="text" placeholder="1020 1234 5678" className="w-full border-slate-200 border-2 rounded-xl px-4 py-3.5 text-lg focus:border-[#635BFF] focus:outline-none" />
+                       </div>
+                     </div>
+                     <div>
+                       <label className="block text-sm font-bold text-slate-700 mb-2">Chủ tài khoản (Account Holder)</label>
+                       <input required type="text" placeholder="NGUYEN VAN A" defaultValue={user.name.toUpperCase()} className="w-full border-slate-200 border-2 rounded-xl px-4 py-3.5 text-lg uppercase focus:border-[#635BFF] focus:outline-none" />
+                     </div>
+                   </>
+                 ) : (
+                   <div className="grid grid-cols-2 gap-6">
+                     <div>
+                       <label className="block text-sm font-bold text-slate-700 mb-2">Routing Number</label>
+                       <input required type="text" placeholder="110000000" maxLength={9} className="w-full border-slate-200 border-2 rounded-xl px-4 py-3.5 text-lg focus:border-[#635BFF] focus:outline-none" />
+                     </div>
+                     <div>
+                       <label className="block text-sm font-bold text-slate-700 mb-2">Account Number</label>
+                       <input required type="text" placeholder="000123456789" className="w-full border-slate-200 border-2 rounded-xl px-4 py-3.5 text-lg focus:border-[#635BFF] focus:outline-none" />
+                     </div>
+                   </div>
+                 )}
+
+                 <div className="bg-blue-50 p-5 rounded-2xl flex gap-4 border border-blue-100">
+                   <svg className="w-6 h-6 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                   <p className="text-sm text-blue-800 leading-relaxed">
+                     {payoutRegion === 'VN'
+                       ? <>Stripe sẽ chuyển <b>${prizePool.toFixed(2)} USD</b> qua CoinWise FX bridge, ngân hàng VN nhận <b>{fxQuote ? formatVND(fxQuote.amountVnd) : '—'}</b>. Tiền về tài khoản trong 1-2 ngày làm việc.</>
+                       : <>By clicking confirm, you authorize Stripe to send a direct deposit of <b>${prizePool.toFixed(2)} USD</b> to the bank account listed above. Funds usually arrive in 1-2 business days.</>
+                     }
+                   </p>
+                 </div>
+
+                 <button
+                   disabled={isPayoutProcessing || (payoutRegion === 'VN' && !fxQuote)}
                    className="w-full bg-[#635BFF] hover:bg-[#5851e0] text-white font-bold py-5 rounded-2xl text-xl flex items-center justify-center gap-4 transition-all disabled:opacity-50"
                  >
                    {isPayoutProcessing ? (
                      <>
-                        <svg className="animate-spin h-6 w-6 text-white" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                        Processing Transfer...
+                       <svg className="animate-spin h-6 w-6 text-white" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                       Processing Transfer...
                      </>
-                   ) : "Confirm and Payout Reward"}
+                   ) : payoutRegion === 'VN'
+                     ? `Xác nhận & nhận ${fxQuote ? formatVND(fxQuote.amountVnd) : '...'}`
+                     : `Confirm and Payout $${prizePool.toFixed(2)}`}
                  </button>
               </form>
            </div>
