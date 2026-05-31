@@ -12,15 +12,45 @@ interface CompetitionViewProps {
 
 type CompTab = 'leaderboard' | 'stats' | 'history' | 'rules';
 
+// Continuous-arena cycle: 3-minute round → 30-second break → repeat.
+// A shared anchor in localStorage keeps every viewer's clock aligned so the
+// whole platform ticks in unison. Math is anchor-relative (no drift across
+// reloads, no state-machine ping-pong).
+const ROUND_MS = 3 * 60 * 1000;
+const BREAK_MS = 30 * 1000;
+const CYCLE_MS = ROUND_MS + BREAK_MS;
+const ANCHOR_KEY = 'coinwise_arena_anchor';
+
+function getCycleAnchor(): number {
+  if (typeof window === 'undefined') return Date.now();
+  const stored = Number(localStorage.getItem(ANCHOR_KEY));
+  if (Number.isFinite(stored) && stored > 0) return stored;
+  const now = Date.now();
+  localStorage.setItem(ANCHOR_KEY, String(now));
+  return now;
+}
+
+function computeArenaTick(anchor: number) {
+  const elapsed = (Date.now() - anchor) % CYCLE_MS;
+  const phase: 'active' | 'break' = elapsed < ROUND_MS ? 'active' : 'break';
+  const remainingMs = phase === 'active' ? ROUND_MS - elapsed : CYCLE_MS - elapsed;
+  const roundIndex = Math.floor((Date.now() - anchor) / CYCLE_MS) + 1;
+  const m = Math.floor(remainingMs / 60000);
+  const s = Math.floor((remainingMs % 60000) / 1000);
+  const display = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  return { phase, remainingMs, roundIndex, display };
+}
+
 const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, onRegister, onReset }) => {
   const [activeSubTab, setActiveSubTab] = useState<CompTab>('leaderboard');
-  const [timeLeft, setTimeLeft] = useState('00:00');
-  const [isRaceFinished, setIsRaceFinished] = useState(false);
+  const [arenaAnchor] = useState<number>(() => getCycleAnchor());
+  const [arenaTick, setArenaTick] = useState(() => computeArenaTick(getCycleAnchor()));
   const [showPayoutModal, setShowPayoutModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'rank' | 'pnl'>('rank');
   const [participants, setParticipants] = useState<LeaderboardEntry[]>([]);
   const [isPayoutProcessing, setIsPayoutProcessing] = useState(false);
+  const [phaseFlash, setPhaseFlash] = useState<string | null>(null);
 
   // Function to calculate a user's current live PNL using the strict $1,000,000 formula
   const getLiveStats = (targetUser: UserState) => {
@@ -79,33 +109,40 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
     return () => clearInterval(interval);
   }, [marketPrices, user.accountId]);
 
-  // TEST TIMER: 1-Minute Countdown
+  // Perpetual arena clock: ticks every second, flashes a banner on phase change
+  // (round-end → break, break-end → new round). Anchor lives in localStorage so
+  // all clients stay synced across reloads.
   useEffect(() => {
-    const endTime = (user.competition as any)?.endTime || (Date.now() + 60000);
+    let lastPhase = arenaTick.phase;
+    let lastRound = arenaTick.roundIndex;
     const timer = setInterval(() => {
-      const now = Date.now();
-      const diff = Math.max(0, endTime - now);
-      
-      if (diff === 0 && !isRaceFinished) {
-        setIsRaceFinished(true);
-        clearInterval(timer);
+      const next = computeArenaTick(arenaAnchor);
+      setArenaTick(next);
+      if (next.phase !== lastPhase) {
+        if (next.phase === 'break') {
+          setPhaseFlash(`Round ${lastRound} ended — break for 30s`);
+        } else {
+          setPhaseFlash(`Round ${next.roundIndex} starts — 3 minutes`);
+        }
+        lastPhase = next.phase;
+        lastRound = next.roundIndex;
+        setTimeout(() => setPhaseFlash(null), 3500);
       }
-
-      const m = Math.floor((diff / (1000 * 60)) % 60);
-      const s = Math.floor((diff / 1000) % 60);
-      setTimeLeft(`${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`);
     }, 1000);
     return () => clearInterval(timer);
-  }, [user.competition, isRaceFinished]);
+  }, [arenaAnchor]);
+
+  const isBreak = arenaTick.phase === 'break';
 
   const { pnl: userPnl } = getLiveStats(user);
   const currentUserEntry = participants.find(p => p.isUser);
   const userRank = currentUserEntry?.rank || 0;
-  const isWinner = userRank === 1 && isRaceFinished;
+  // Winner banner shows during break if the user is leading at the round close.
+  const isWinner = userRank === 1 && isBreak && participants.length > 0;
 
   const totalParticipants = participants.length;
   const prizePool = totalParticipants * ENTRY_FEE;
-  
+
   const filteredParticipants = useMemo(() => {
     return participants
       .filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -114,12 +151,12 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
 
   const estPrize = useMemo(() => {
     if (!userRank) return 0;
-    if (isRaceFinished) {
+    if (isBreak) {
         return userRank === 1 ? prizePool : 0;
     }
     if (userRank <= totalParticipants * 0.10) return prizePool * 0.40 / (totalParticipants * 0.10 || 1);
     return 0;
-  }, [userRank, prizePool, totalParticipants, isRaceFinished]);
+  }, [userRank, prizePool, totalParticipants, isBreak]);
 
   const handleClaimReward = () => {
     setShowPayoutModal(true);
@@ -148,7 +185,7 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
           <p className="text-slate-400 text-lg mb-8">
             Enter the global "Best Investor" program. <br/>
             <span className="text-emerald-400 font-bold">Your net worth resets to $1,000,000.00.</span> <br/>
-            Test Mode: Race ends in 1 Minute. Only real users can win.
+            Continuous arena: 3-minute rounds, 30-second breaks, looping forever.
           </p>
           <button 
             onClick={onRegister}
@@ -163,6 +200,11 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
 
   return (
     <div className="space-y-6 relative">
+      {phaseFlash && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[80] bg-slate-900 border border-emerald-500/40 px-5 py-3 rounded-xl text-xs font-black uppercase tracking-widest text-emerald-300 shadow-2xl animate-in fade-in slide-in-from-top-4 duration-300">
+          {phaseFlash}
+        </div>
+      )}
       {/* Winner Congratulation Pop-up */}
       {isWinner && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-xl animate-in fade-in duration-500">
@@ -254,10 +296,12 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-slate-900/50 backdrop-blur border border-slate-800 p-5 rounded-2xl relative overflow-hidden group">
-          <div className="absolute inset-0 bg-emerald-500/5 translate-y-full group-hover:translate-y-0 transition-transform duration-500"></div>
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 relative z-10">Room 1 Test Timer</p>
-          <p className={`text-2xl font-black font-mono relative z-10 ${isRaceFinished ? 'text-rose-500 animate-pulse' : 'text-white'}`}>
-            {isRaceFinished ? 'RACE ENDED' : timeLeft}
+          <div className={`absolute inset-0 translate-y-full group-hover:translate-y-0 transition-transform duration-500 ${isBreak ? 'bg-amber-500/5' : 'bg-emerald-500/5'}`}></div>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 relative z-10">
+            {isBreak ? `Break · next round in` : `Round ${arenaTick.roundIndex} · time left`}
+          </p>
+          <p className={`text-2xl font-black font-mono relative z-10 ${isBreak ? 'text-amber-400' : 'text-white'}`}>
+            {arenaTick.display}
           </p>
         </div>
         <div className="bg-slate-900/50 backdrop-blur border border-slate-800 p-5 rounded-2xl">
@@ -372,12 +416,16 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
           {activeSubTab === 'rules' && (
             <div className="max-w-3xl space-y-6 text-sm text-slate-400 animate-in fade-in duration-300">
               <div className="space-y-4">
-                 <h5 className="text-white font-black uppercase tracking-widest text-xs">1. TEST MODE RULES</h5>
-                 <p>For testing purposes, the Best Investor race duration is reduced to 60 seconds from the moment of entry. This allows rapid verification of the winning mechanics and reward claiming flow.</p>
+                 <h5 className="text-white font-black uppercase tracking-widest text-xs">1. CYCLE RULES</h5>
+                 <p>The arena runs in perpetual cycles. Each cycle has an <span className="text-emerald-400 font-bold">active round of 3 minutes</span> followed by a <span className="text-amber-400 font-bold">30-second break</span>, then a new round starts automatically. Your PNL is cumulative across rounds.</p>
               </div>
               <div className="space-y-4">
                  <h5 className="text-white font-black uppercase tracking-widest text-xs">2. REAL USERS ONLY</h5>
-                 <p>All AlgoTrader (AI) accounts have been excluded. You are only competing against other real participants registered on the platform. Eligibility for rewards is strictly reserved for the top performing real user.</p>
+                 <p>All AlgoTrader (AI) accounts have been excluded. You are only competing against other real participants registered on the platform. Eligibility for rewards is strictly reserved for the top performing real user at the moment a round closes.</p>
+              </div>
+              <div className="space-y-4">
+                 <h5 className="text-white font-black uppercase tracking-widest text-xs">3. SYNCHRONISED CLOCK</h5>
+                 <p>The cycle anchor is shared via the browser, so every viewer on the same device sees the same round number and timer countdown. Reloads do not reset the cycle.</p>
               </div>
             </div>
           )}
