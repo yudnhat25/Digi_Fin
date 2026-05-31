@@ -81,8 +81,6 @@ export interface BankAccount {
   openedAt: number;
 }
 
-const bankStore = new Map<string, BankAccount>();
-
 // Deterministic 11-digit account number derived from the accountId so the same
 // user always sees the same number across cold starts (no Math.random drift).
 function deriveAccountNo(accountId: string): string {
@@ -98,17 +96,16 @@ const SEED_BALANCE_VND = 50_000_000;
 // ───────────────────────────────────────────────────────────────────────────
 // Firebase Realtime DB persistence for bank accounts.
 //
-// Vercel serverless function instances are ephemeral — the in-memory bankStore
-// resets on every cold start, AND parallel invocations may land on different
-// instances entirely. The Arena pay-entry endpoint would debit on one instance
-// while the bank web's GET /bank/:id read a fresh (untouched) seed on another,
-// making it look like the entry fee was never charged.
+// Vercel serverless function instances are ephemeral and parallel invocations
+// may land on different instances entirely. Persisting through Firebase RTDB
+// REST makes Firebase the single source of truth — accessible from both the
+// browser (bank web polls) and the serverless backend (every mutation).
 //
-// Persisting through Firebase RTDB via its REST API solves this without
-// adding a dependency: the same database the frontend already uses becomes
-// the single source of truth for bank balances, accessible from both the
-// browser and the serverless backend. In-memory cache stays as a hot path
-// for repeated reads within the same warm container.
+// We deliberately do NOT cache bank accounts in memory between requests.
+// Earlier code did, and a Firebase blip during cold-start loading would
+// short-circuit to "create new seed 50M + PUT", clobbering the user's real
+// balance. By always reading fresh from Firebase, we sacrifice ~200ms per
+// request for a state model that's correct under any Vercel routing.
 // ───────────────────────────────────────────────────────────────────────────
 const FIREBASE_DB_URL = 'https://gen-lang-client-0742583847-default-rtdb.asia-southeast1.firebasedatabase.app';
 
@@ -116,68 +113,77 @@ function bankFirebaseUrl(accountId: string): string {
   return `${FIREBASE_DB_URL}/banks/${encodeURIComponent(accountId)}.json`;
 }
 
+/**
+ * Reads the account from Firebase. Returns the parsed account on success, or
+ * `null` when Firebase responds 200 with a null body (i.e. the account
+ * legitimately doesn't exist yet). Throws on every other failure mode —
+ * network error, HTTP non-2xx, malformed JSON — so the caller MUST NOT
+ * confuse "Firebase had a hiccup" with "this user is new" and create a
+ * seed-50M account that would overwrite the real balance in Firebase.
+ */
 async function loadBankFromFirebase(accountId: string): Promise<BankAccount | null> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 4500);
+  let res: Response;
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 4000);
-    const res = await fetch(bankFirebaseUrl(accountId), { signal: ctrl.signal });
+    res = await fetch(bankFirebaseUrl(accountId), { signal: ctrl.signal });
+  } finally {
     clearTimeout(timer);
-    if (!res.ok) return null;
-    const data = (await res.json()) as BankAccount | null;
-    if (!data || typeof data !== 'object') return null;
-    // RTDB drops empty arrays — defensive normalization.
-    if (!Array.isArray(data.transactions)) data.transactions = [];
-    return data;
-  } catch {
-    return null;
   }
+  if (!res.ok) {
+    throw new Error(`Bank storage unreachable (HTTP ${res.status})`);
+  }
+  const data = (await res.json()) as BankAccount | null;
+  // Firebase returns null for non-existent paths under read-permitted nodes.
+  // That's the ONE case where we're allowed to seed a fresh account.
+  if (!data || typeof data !== 'object') return null;
+  if (!Array.isArray(data.transactions)) data.transactions = [];
+  return data;
 }
 
 export async function saveBankToFirebase(acc: BankAccount): Promise<void> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 4500);
+  let res: Response;
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 4000);
-    await fetch(bankFirebaseUrl(acc.accountId), {
+    res = await fetch(bankFirebaseUrl(acc.accountId), {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(acc),
       signal: ctrl.signal,
     });
+  } finally {
     clearTimeout(timer);
-  } catch {
-    // Best-effort persist. The in-memory copy stays consistent within this
-    // container; we'd rather not crash the response on a Firebase blip.
+  }
+  if (!res.ok) {
+    throw new Error(`Failed to persist bank account (HTTP ${res.status})`);
   }
 }
 
 export async function getBankAccount(accountId: string, holder?: string): Promise<BankAccount> {
-  // Warm-container fast path: trust the in-memory copy. Even if Firebase has
-  // newer data from a concurrent instance, the divergence window is bounded
-  // by Vercel's container lifetime (~minutes). The next cold start re-reads
-  // from Firebase, and every mutation writes back, so eventual consistency
-  // holds.
-  let acc = bankStore.get(accountId);
-  if (!acc) {
-    const remote = await loadBankFromFirebase(accountId);
-    if (remote) {
-      acc = remote;
-    } else {
-      acc = {
-        accountId,
-        holder: holder || 'CoinWise User',
-        bankAccountNo: deriveAccountNo(accountId),
-        balanceVnd: SEED_BALANCE_VND,
-        transactions: [],
-        openedAt: Date.now(),
-      };
-      // Persist immediately so a parallel request hitting another instance
-      // sees the same opened account instead of creating a duplicate one
-      // with a fresh seed.
-      await saveBankToFirebase(acc);
+  const remote = await loadBankFromFirebase(accountId);
+  if (remote) {
+    // Lazy holder backfill: the modal passes the user's name on first touch.
+    // Upgrade the placeholder once we have a real name.
+    if (holder && remote.holder === 'CoinWise User') {
+      remote.holder = holder;
+      // Persist the upgrade so the next reader sees it too.
+      await saveBankToFirebase(remote).catch(() => { /* non-critical */ });
     }
-    bankStore.set(accountId, acc);
+    return remote;
   }
-  if (holder && acc.holder === 'CoinWise User') acc.holder = holder;
+  // Legitimately new account (Firebase 200 + null body). Seed + persist so
+  // any concurrent reader on another instance sees the same opened account
+  // instead of inventing a duplicate.
+  const acc: BankAccount = {
+    accountId,
+    holder: holder || 'CoinWise User',
+    bankAccountNo: deriveAccountNo(accountId),
+    balanceVnd: SEED_BALANCE_VND,
+    transactions: [],
+    openedAt: Date.now(),
+  };
+  await saveBankToFirebase(acc);
   return acc;
 }
 

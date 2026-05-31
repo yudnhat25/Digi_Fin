@@ -2842,54 +2842,59 @@ function bankFirebaseUrl(accountId) {
   return `${FIREBASE_DB_URL}/banks/${encodeURIComponent(accountId)}.json`;
 }
 async function loadBankFromFirebase(accountId) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 4500);
+  let res;
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 4e3);
-    const res = await fetch(bankFirebaseUrl(accountId), { signal: ctrl.signal });
+    res = await fetch(bankFirebaseUrl(accountId), { signal: ctrl.signal });
+  } finally {
     clearTimeout(timer);
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (!data || typeof data !== "object") return null;
-    if (!Array.isArray(data.transactions)) data.transactions = [];
-    return data;
-  } catch {
-    return null;
   }
+  if (!res.ok) {
+    throw new Error(`Bank storage unreachable (HTTP ${res.status})`);
+  }
+  const data = await res.json();
+  if (!data || typeof data !== "object") return null;
+  if (!Array.isArray(data.transactions)) data.transactions = [];
+  return data;
 }
 async function saveBankToFirebase(acc) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 4500);
+  let res;
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 4e3);
-    await fetch(bankFirebaseUrl(acc.accountId), {
+    res = await fetch(bankFirebaseUrl(acc.accountId), {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(acc),
       signal: ctrl.signal
     });
+  } finally {
     clearTimeout(timer);
-  } catch {
+  }
+  if (!res.ok) {
+    throw new Error(`Failed to persist bank account (HTTP ${res.status})`);
   }
 }
 async function getBankAccount(accountId, holder) {
-  let acc = bankStore.get(accountId);
-  if (!acc) {
-    const remote = await loadBankFromFirebase(accountId);
-    if (remote) {
-      acc = remote;
-    } else {
-      acc = {
-        accountId,
-        holder: holder || "CoinWise User",
-        bankAccountNo: deriveAccountNo(accountId),
-        balanceVnd: SEED_BALANCE_VND,
-        transactions: [],
-        openedAt: Date.now()
-      };
-      await saveBankToFirebase(acc);
+  const remote = await loadBankFromFirebase(accountId);
+  if (remote) {
+    if (holder && remote.holder === "CoinWise User") {
+      remote.holder = holder;
+      await saveBankToFirebase(remote).catch(() => {
+      });
     }
-    bankStore.set(accountId, acc);
+    return remote;
   }
-  if (holder && acc.holder === "CoinWise User") acc.holder = holder;
+  const acc = {
+    accountId,
+    holder: holder || "CoinWise User",
+    bankAccountNo: deriveAccountNo(accountId),
+    balanceVnd: SEED_BALANCE_VND,
+    transactions: [],
+    openedAt: Date.now()
+  };
+  await saveBankToFirebase(acc);
   return acc;
 }
 function recordBankTxn(acc, type, amountVnd, note) {
@@ -2905,11 +2910,10 @@ function recordBankTxn(acc, type, amountVnd, note) {
   acc.transactions.push(txn);
   return txn;
 }
-var store, bankStore, SEED_BALANCE_VND, FIREBASE_DB_URL;
+var store, SEED_BALANCE_VND, FIREBASE_DB_URL;
 var init_state = __esm({
   "api/_lib/state.ts"() {
     store = /* @__PURE__ */ new Map();
-    bankStore = /* @__PURE__ */ new Map();
     SEED_BALANCE_VND = 5e7;
     FIREBASE_DB_URL = "https://gen-lang-client-0742583847-default-rtdb.asia-southeast1.firebasedatabase.app";
   }
