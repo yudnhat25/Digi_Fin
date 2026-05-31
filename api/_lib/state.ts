@@ -95,17 +95,86 @@ function deriveAccountNo(accountId: string): string {
 // the Arena immediately (~50,000,000 VND ≈ $2,000).
 const SEED_BALANCE_VND = 50_000_000;
 
-export function getBankAccount(accountId: string, holder?: string): BankAccount {
+// ───────────────────────────────────────────────────────────────────────────
+// Firebase Realtime DB persistence for bank accounts.
+//
+// Vercel serverless function instances are ephemeral — the in-memory bankStore
+// resets on every cold start, AND parallel invocations may land on different
+// instances entirely. The Arena pay-entry endpoint would debit on one instance
+// while the bank web's GET /bank/:id read a fresh (untouched) seed on another,
+// making it look like the entry fee was never charged.
+//
+// Persisting through Firebase RTDB via its REST API solves this without
+// adding a dependency: the same database the frontend already uses becomes
+// the single source of truth for bank balances, accessible from both the
+// browser and the serverless backend. In-memory cache stays as a hot path
+// for repeated reads within the same warm container.
+// ───────────────────────────────────────────────────────────────────────────
+const FIREBASE_DB_URL = 'https://gen-lang-client-0742583847-default-rtdb.asia-southeast1.firebasedatabase.app';
+
+function bankFirebaseUrl(accountId: string): string {
+  return `${FIREBASE_DB_URL}/banks/${encodeURIComponent(accountId)}.json`;
+}
+
+async function loadBankFromFirebase(accountId: string): Promise<BankAccount | null> {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4000);
+    const res = await fetch(bankFirebaseUrl(accountId), { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const data = (await res.json()) as BankAccount | null;
+    if (!data || typeof data !== 'object') return null;
+    // RTDB drops empty arrays — defensive normalization.
+    if (!Array.isArray(data.transactions)) data.transactions = [];
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveBankToFirebase(acc: BankAccount): Promise<void> {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4000);
+    await fetch(bankFirebaseUrl(acc.accountId), {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(acc),
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+  } catch {
+    // Best-effort persist. The in-memory copy stays consistent within this
+    // container; we'd rather not crash the response on a Firebase blip.
+  }
+}
+
+export async function getBankAccount(accountId: string, holder?: string): Promise<BankAccount> {
+  // Warm-container fast path: trust the in-memory copy. Even if Firebase has
+  // newer data from a concurrent instance, the divergence window is bounded
+  // by Vercel's container lifetime (~minutes). The next cold start re-reads
+  // from Firebase, and every mutation writes back, so eventual consistency
+  // holds.
   let acc = bankStore.get(accountId);
   if (!acc) {
-    acc = {
-      accountId,
-      holder: holder || 'CoinWise User',
-      bankAccountNo: deriveAccountNo(accountId),
-      balanceVnd: SEED_BALANCE_VND,
-      transactions: [],
-      openedAt: Date.now(),
-    };
+    const remote = await loadBankFromFirebase(accountId);
+    if (remote) {
+      acc = remote;
+    } else {
+      acc = {
+        accountId,
+        holder: holder || 'CoinWise User',
+        bankAccountNo: deriveAccountNo(accountId),
+        balanceVnd: SEED_BALANCE_VND,
+        transactions: [],
+        openedAt: Date.now(),
+      };
+      // Persist immediately so a parallel request hitting another instance
+      // sees the same opened account instead of creating a duplicate one
+      // with a fresh seed.
+      await saveBankToFirebase(acc);
+    }
     bankStore.set(accountId, acc);
   }
   if (holder && acc.holder === 'CoinWise User') acc.holder = holder;

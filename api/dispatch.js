@@ -2838,17 +2838,55 @@ function deriveAccountNo(accountId) {
   for (let i = 0; i < accountId.length; i++) h = h * 31 + accountId.charCodeAt(i) >>> 0;
   return (1e10 + h % 9e9).toString();
 }
-function getBankAccount(accountId, holder) {
+function bankFirebaseUrl(accountId) {
+  return `${FIREBASE_DB_URL}/banks/${encodeURIComponent(accountId)}.json`;
+}
+async function loadBankFromFirebase(accountId) {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4e3);
+    const res = await fetch(bankFirebaseUrl(accountId), { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data || typeof data !== "object") return null;
+    if (!Array.isArray(data.transactions)) data.transactions = [];
+    return data;
+  } catch {
+    return null;
+  }
+}
+async function saveBankToFirebase(acc) {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4e3);
+    await fetch(bankFirebaseUrl(acc.accountId), {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(acc),
+      signal: ctrl.signal
+    });
+    clearTimeout(timer);
+  } catch {
+  }
+}
+async function getBankAccount(accountId, holder) {
   let acc = bankStore.get(accountId);
   if (!acc) {
-    acc = {
-      accountId,
-      holder: holder || "CoinWise User",
-      bankAccountNo: deriveAccountNo(accountId),
-      balanceVnd: SEED_BALANCE_VND,
-      transactions: [],
-      openedAt: Date.now()
-    };
+    const remote = await loadBankFromFirebase(accountId);
+    if (remote) {
+      acc = remote;
+    } else {
+      acc = {
+        accountId,
+        holder: holder || "CoinWise User",
+        bankAccountNo: deriveAccountNo(accountId),
+        balanceVnd: SEED_BALANCE_VND,
+        transactions: [],
+        openedAt: Date.now()
+      };
+      await saveBankToFirebase(acc);
+    }
     bankStore.set(accountId, acc);
   }
   if (holder && acc.holder === "CoinWise User") acc.holder = holder;
@@ -2867,12 +2905,13 @@ function recordBankTxn(acc, type, amountVnd, note) {
   acc.transactions.push(txn);
   return txn;
 }
-var store, bankStore, SEED_BALANCE_VND;
+var store, bankStore, SEED_BALANCE_VND, FIREBASE_DB_URL;
 var init_state = __esm({
   "api/_lib/state.ts"() {
     store = /* @__PURE__ */ new Map();
     bankStore = /* @__PURE__ */ new Map();
     SEED_BALANCE_VND = 5e7;
+    FIREBASE_DB_URL = "https://gen-lang-client-0742583847-default-rtdb.asia-southeast1.firebasedatabase.app";
   }
 });
 
@@ -5113,8 +5152,8 @@ function usdToVnd2(usd) {
   const r = convert(usd, "USD", "VND");
   return { vnd: r.result, rate: r.rate };
 }
-function summary(accountId, holder) {
-  const acc = getBankAccount(accountId, holder);
+async function summary(accountId, holder) {
+  const acc = await getBankAccount(accountId, holder);
   const rate = getRates().rates.VND;
   return {
     accountId: acc.accountId,
@@ -5134,9 +5173,9 @@ var init_bank = __esm({
     init_fx();
     bankRouter = new Hono2();
     DEFAULT_ENTRY_FEE_USD = 5;
-    bankRouter.get("/:id", (c) => c.json(summary(c.req.param("id"))));
-    bankRouter.get("/:id/statement", (c) => {
-      const acc = getBankAccount(c.req.param("id"));
+    bankRouter.get("/:id", async (c) => c.json(await summary(c.req.param("id"))));
+    bankRouter.get("/:id/statement", async (c) => {
+      const acc = await getBankAccount(c.req.param("id"));
       return c.json(acc.transactions.slice(-100).reverse());
     });
     bankRouter.post("/:id/deposit", async (c) => {
@@ -5145,29 +5184,31 @@ var init_bank = __esm({
       const amt = Math.round(Number(body.amountVnd));
       if (!Number.isFinite(amt) || amt <= 0) return c.json({ error: "amountVnd must be a positive number" }, 400);
       if (amt > 1e9) return c.json({ error: "amountVnd exceeds 1,000,000,000 demo limit" }, 400);
-      const acc = getBankAccount(id, body.holder);
+      const acc = await getBankAccount(id, body.holder);
       acc.balanceVnd += amt;
       const txn = recordBankTxn(acc, "DEPOSIT", amt, "N\u1EA1p ti\u1EC1n v\xE0o t\xE0i kho\u1EA3n");
-      return c.json({ ok: true, ...summary(id), ref: txn.ref, transaction: txn });
+      await saveBankToFirebase(acc);
+      return c.json({ ok: true, ...await summary(id), ref: txn.ref, transaction: txn });
     });
     bankRouter.post("/:id/withdraw", async (c) => {
       const id = c.req.param("id");
       const body = await c.req.json().catch(() => ({}));
       const amt = Math.round(Number(body.amountVnd));
       if (!Number.isFinite(amt) || amt <= 0) return c.json({ error: "amountVnd must be a positive number" }, 400);
-      const acc = getBankAccount(id);
+      const acc = await getBankAccount(id);
       if (acc.balanceVnd < amt) {
         return c.json({ ok: false, error: "S\u1ED1 d\u01B0 kh\xF4ng \u0111\u1EE7", balanceVnd: acc.balanceVnd, required: amt }, 402);
       }
       acc.balanceVnd -= amt;
       const txn = recordBankTxn(acc, "WITHDRAW", -amt, "R\xFAt ti\u1EC1n kh\u1ECFi t\xE0i kho\u1EA3n");
-      return c.json({ ok: true, ...summary(id), ref: txn.ref, transaction: txn });
+      await saveBankToFirebase(acc);
+      return c.json({ ok: true, ...await summary(id), ref: txn.ref, transaction: txn });
     });
     bankRouter.post("/arena/pay-entry", async (c) => {
       const body = await c.req.json().catch(() => ({}));
       if (!body.accountId) return c.json({ error: "accountId required" }, 400);
       const usd = Number.isFinite(body.amountUsd) && Number(body.amountUsd) > 0 ? Number(body.amountUsd) : DEFAULT_ENTRY_FEE_USD;
-      const acc = getBankAccount(body.accountId, body.holder);
+      const acc = await getBankAccount(body.accountId, body.holder);
       const { vnd, rate } = usdToVnd2(usd);
       if (acc.balanceVnd < vnd) {
         return c.json(
@@ -5177,18 +5218,20 @@ var init_bank = __esm({
       }
       acc.balanceVnd -= vnd;
       const txn = recordBankTxn(acc, "ARENA_ENTRY", -vnd, `Ph\xED tham gia Arena${body.room ? ` \xB7 ${body.room}` : ""} ($${usd})`);
-      return c.json({ ok: true, paid: true, amountUsd: usd, amountVnd: vnd, rate, ref: txn.ref, ...summary(body.accountId) });
+      await saveBankToFirebase(acc);
+      return c.json({ ok: true, paid: true, amountUsd: usd, amountVnd: vnd, rate, ref: txn.ref, ...await summary(body.accountId) });
     });
     bankRouter.post("/arena/payout", async (c) => {
       const body = await c.req.json().catch(() => ({}));
       if (!body.accountId) return c.json({ error: "accountId required" }, 400);
       const usd = Number(body.amountUsd);
       if (!Number.isFinite(usd) || usd <= 0) return c.json({ error: "amountUsd must be a positive number" }, 400);
-      const acc = getBankAccount(body.accountId, body.holder);
+      const acc = await getBankAccount(body.accountId, body.holder);
       const { vnd, rate } = usdToVnd2(usd);
       acc.balanceVnd += vnd;
       const txn = recordBankTxn(acc, "ARENA_PRIZE", vnd, `Ti\u1EC1n th\u01B0\u1EDFng Arena ($${usd})`);
-      return c.json({ ok: true, credited: true, amountUsd: usd, amountVnd: vnd, rate, ref: txn.ref, ...summary(body.accountId) });
+      await saveBankToFirebase(acc);
+      return c.json({ ok: true, credited: true, amountUsd: usd, amountVnd: vnd, rate, ref: txn.ref, ...await summary(body.accountId) });
     });
   }
 });
