@@ -111,10 +111,16 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
   // their pre-arena snapshot. Fires exactly once thanks to the roundEndsAt
   // dependency — once it's cleared by the parent, the effect re-runs but the
   // guard prevents a second exit.
+  // Legacy cleanup: a session that has isCompeting=true but no roundEndsAt
+  // dates back to the old "60-second test race" flow. There is no snapshot to
+  // restore, so we just flip the flag and let the user see the new Start flow.
   useEffect(() => {
     if (!user.competition?.isCompeting) return;
     const endsAt = user.competition?.roundEndsAt;
-    if (!endsAt || !Number.isFinite(endsAt)) return;
+    if (!endsAt || !Number.isFinite(endsAt)) {
+      onArenaExit?.();
+      return;
+    }
     const tick = () => {
       if (Date.now() >= endsAt) {
         onArenaExit?.();
