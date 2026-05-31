@@ -66,28 +66,48 @@ const QUICK_AMOUNTS = [100_000, 500_000, 1_000_000, 5_000_000];
 
 /**
  * Resolve the accountId the bank app should default to. Priority:
- *   1. Last accountId the user explicitly typed into the bank login form
- *      (per-tab override, useful for testing other users).
- *   2. The accountId of whoever is signed in to the main CoinWise app
- *      (shared via localStorage 'coinwise_session'). This is the common case:
- *      same browser, same user, no re-login needed.
+ *   1. The accountId of whoever is signed in to the main CoinWise app
+ *      (shared via localStorage 'coinwise_session'). This is the authoritative
+ *      current user — any prize the Arena pays will land on THIS accountId,
+ *      so the bank web must default to viewing it.
+ *   2. A stale override from the bank's own login form, used only when the
+ *      user isn't signed in to the main app at all (anonymous demo).
  *   3. Hard-coded demo id 'CW-AI-8892-X' as a final fallback.
+ *
+ * Prior implementation had 1 and 2 swapped, which meant a user who once typed
+ * a different accountId into the bank login form would FOREVER see that
+ * account, even after signing in as someone else in the main app — leading to
+ * "I won the Arena but the prize didn't show up" because the prize went to
+ * the session accountId but the bank web was still pinned to the override.
  */
-function resolveDefaultAccountId(): { id: string; holderHint?: string } {
+function resolveDefaultAccountId(): { id: string; holderHint?: string; sessionId?: string } {
   if (typeof window === 'undefined') return { id: FALLBACK_ACCOUNT_ID };
-  try {
-    const override = localStorage.getItem(ACCOUNT_KEY);
-    if (override) return { id: override };
-  } catch { /* SecurityError in some browsers */ }
+  let sessionId: string | undefined;
+  let holderHint: string | undefined;
   try {
     const raw = localStorage.getItem(MAIN_SESSION_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as { accountId?: string; name?: string };
       if (parsed?.accountId) {
-        return { id: parsed.accountId, holderHint: parsed.name };
+        sessionId = parsed.accountId;
+        holderHint = parsed.name;
       }
     }
   } catch { /* malformed session */ }
+  if (sessionId) {
+    // Defensive cleanup: if a stale override doesn't match the current
+    // session, drop it so a future logout doesn't resurrect another user's
+    // accountId as the default.
+    try {
+      const override = localStorage.getItem(ACCOUNT_KEY);
+      if (override && override !== sessionId) localStorage.removeItem(ACCOUNT_KEY);
+    } catch { /* ignore */ }
+    return { id: sessionId, holderHint, sessionId };
+  }
+  try {
+    const override = localStorage.getItem(ACCOUNT_KEY);
+    if (override) return { id: override };
+  } catch { /* SecurityError */ }
   return { id: FALLBACK_ACCOUNT_ID };
 }
 
