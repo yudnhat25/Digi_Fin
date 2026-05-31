@@ -99,15 +99,15 @@ agentRouter.post('/execute', async (c) => {
         return c.json({
           sentiment: getSentiment(sym),
           whale: getWhaleFlow(sym),
-          fearGreed: getFearGreed(),
+          fearGreed: await getFearGreed(),
         });
       }
       case 'getFearGreed':
-        return c.json(getFearGreed());
+        return c.json(await getFearGreed());
       case 'getAdvisor': {
         if (!accountId) throw new Error('accountId required');
         const profile: RiskProfile = (args.riskProfile || 'BALANCED') as RiskProfile;
-        return c.json(buildAdvisor(accountId, profile));
+        return c.json(await buildAdvisor(accountId, profile));
       }
       case 'convertCurrency': {
         const amount = Number(args.amount);

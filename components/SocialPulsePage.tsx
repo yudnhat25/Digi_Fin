@@ -24,7 +24,18 @@ const FearGreedDial: React.FC<{ fg: FearGreed }> = ({ fg }) => {
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 relative overflow-hidden">
       <div className="absolute -top-12 -right-12 w-40 h-40 bg-amber-500/10 rounded-full blur-3xl" />
-      <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-3">Fear & Greed Index</p>
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Fear & Greed Index</p>
+        {fg.source === 'alternative.me' ? (
+          <span className="text-[9px] font-black uppercase tracking-widest text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full" title="Live data from alternative.me">
+            ● Live · alternative.me
+          </span>
+        ) : (
+          <span className="text-[9px] font-black uppercase tracking-widest text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-full" title="Synthetic demo data (real API unreachable)">
+            Demo
+          </span>
+        )}
+      </div>
       <div className="flex items-center gap-6">
         <div className="relative w-40 h-20 overflow-hidden">
           <svg viewBox="0 0 100 50" className="w-full h-full">
@@ -113,9 +124,27 @@ const SocialPulsePage: React.FC<{ onSelectAsset?: (symbol: string) => void }> = 
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Top Social Movers (24h)</p>
               <h3 className="text-lg font-black">Coins with the loudest crowd</h3>
             </div>
-            <span className="text-[10px] font-black text-fuchsia-300 bg-fuchsia-500/10 px-2 py-1 rounded">
-              {loading ? 'Loading…' : `${rows.length} tracked`}
-            </span>
+            <div className="flex items-center gap-2">
+              {(() => {
+                const live = rows.filter((r) => r.source === 'cryptopanic').length;
+                if (loading) return null;
+                if (live > 0) {
+                  return (
+                    <span className="text-[9px] font-black uppercase tracking-widest text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full" title="Live data from CryptoPanic news feed">
+                      ● {live} live · cryptopanic
+                    </span>
+                  );
+                }
+                return (
+                  <span className="text-[9px] font-black uppercase tracking-widest text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-full" title="Synthetic demo data — set CRYPTOPANIC_API_KEY env var for live">
+                    Demo
+                  </span>
+                );
+              })()}
+              <span className="text-[10px] font-black text-fuchsia-300 bg-fuchsia-500/10 px-2 py-1 rounded">
+                {loading ? 'Loading…' : `${rows.length} tracked`}
+              </span>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -164,17 +193,20 @@ const SocialPulsePage: React.FC<{ onSelectAsset?: (symbol: string) => void }> = 
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6">
         <h3 className="text-lg font-black mb-1">How we extract value from non-traditional data</h3>
         <p className="text-slate-400 text-xs mb-4">
-          The CoinWise OpenAPI <code className="text-fuchsia-300">/api/v1/market/*</code> endpoints blend three alt-data streams:
+          The CoinWise OpenAPI <code className="text-fuchsia-300">/api/v1/market/*</code> endpoints blend three alt-data streams. Live badges above mean we hit the real third-party source; "Demo" means the key is unset and we use a synthetic fallback so the UI never breaks.
         </p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {[
-            { title: '🐦 Social mentions', desc: 'Twitter/X & Reddit volume + tone, weighted by author influence.' },
-            { title: '🐋 On-chain whale flow', desc: 'Net large-wallet movement detects smart-money positioning ahead of price.' },
-            { title: '😱 Market mood', desc: 'Fear & Greed composite (volatility, momentum, search trends, dominance).' },
+            { title: '📰 News sentiment', desc: 'CryptoPanic posts aggregated per coin; positive vs negative community votes normalized to [-1, 1].', src: 'cryptopanic.com/api' },
+            { title: '🐋 On-chain whale flow', desc: 'Net large-wallet movement detects smart-money positioning ahead of price.', src: 'synthetic (etherscan-ready)' },
+            { title: '😱 Market mood', desc: 'Fear & Greed composite — volatility, momentum, search trends, dominance, social mentions.', src: 'alternative.me/fng' },
           ].map((c) => (
             <div key={c.title} className="bg-slate-950 border border-slate-800 rounded-2xl p-4">
               <p className="font-black text-sm mb-1">{c.title}</p>
-              <p className="text-xs text-slate-400 leading-relaxed">{c.desc}</p>
+              <p className="text-xs text-slate-400 leading-relaxed mb-2">{c.desc}</p>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                Source: <code className="text-fuchsia-300 normal-case">{c.src}</code>
+              </p>
             </div>
           ))}
         </div>

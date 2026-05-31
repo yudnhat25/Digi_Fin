@@ -65,10 +65,12 @@ export interface WhaleFlow {
 export interface FearGreed {
   value: number; classification: string; delta24h: number;
   history: { date: string; value: number }[];
+  source?: 'alternative.me' | 'synthetic';
 }
 export interface SocialPulseRow {
   symbol: string; mentions24h: number; sentiment: number;
   delta: number; momentum: 'Spike' | 'Rising' | 'Stable' | 'Cooling';
+  source?: 'cryptopanic' | 'synthetic';
 }
 export interface CreditFactor { key: string; label: string; impact: number; value: string }
 export interface CreditScore {
@@ -268,4 +270,64 @@ export const apiAgentExecute = (
   call<any>('/api/v1/agent/execute', {
     method: 'POST',
     body: JSON.stringify({ accountId, tool, args, accountSnapshot }),
+  });
+
+// ───── CoinWise Bank (simulated VND retail bank) ─────
+export interface BankAccountInfo {
+  accountId: string;
+  holder: string;
+  bankAccountNo: string;
+  balanceVnd: number;
+  balanceUsd: number;
+  rate: number;
+  openedAt: number;
+}
+export interface BankTxn {
+  id: string;
+  ref: string;
+  type: 'DEPOSIT' | 'WITHDRAW' | 'ARENA_ENTRY' | 'ARENA_PRIZE';
+  amountVnd: number;
+  balanceAfterVnd: number;
+  note: string;
+  timestamp: number;
+}
+export interface BankMutationResult extends BankAccountInfo {
+  ok: boolean;
+  ref?: string;
+  transaction?: BankTxn;
+}
+export interface ArenaEntryResult extends BankAccountInfo {
+  ok: boolean;
+  paid: boolean;
+  amountUsd: number;
+  amountVnd: number;
+  ref: string;
+}
+export interface ArenaPayoutResult extends BankAccountInfo {
+  ok: boolean;
+  credited: boolean;
+  amountUsd: number;
+  amountVnd: number;
+  ref: string;
+}
+
+export const apiBankAccount = (accountId: string) =>
+  call<BankAccountInfo>(`/api/v1/bank/${encodeURIComponent(accountId)}`);
+export const apiBankStatement = (accountId: string) =>
+  call<BankTxn[]>(`/api/v1/bank/${encodeURIComponent(accountId)}/statement`);
+export const apiBankDeposit = (accountId: string, amountVnd: number, holder?: string) =>
+  call<BankMutationResult>(`/api/v1/bank/${encodeURIComponent(accountId)}/deposit`, {
+    method: 'POST', body: JSON.stringify({ amountVnd, holder }),
+  });
+export const apiBankWithdraw = (accountId: string, amountVnd: number) =>
+  call<BankMutationResult>(`/api/v1/bank/${encodeURIComponent(accountId)}/withdraw`, {
+    method: 'POST', body: JSON.stringify({ amountVnd }),
+  });
+export const apiBankPayEntry = (accountId: string, amountUsd?: number, opts?: { holder?: string; room?: string }) =>
+  call<ArenaEntryResult>('/api/v1/bank/arena/pay-entry', {
+    method: 'POST', body: JSON.stringify({ accountId, amountUsd, holder: opts?.holder, room: opts?.room }),
+  });
+export const apiBankPayout = (accountId: string, amountUsd: number, holder?: string) =>
+  call<ArenaPayoutResult>('/api/v1/bank/arena/payout', {
+    method: 'POST', body: JSON.stringify({ accountId, amountUsd, holder }),
   });

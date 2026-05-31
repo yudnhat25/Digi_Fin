@@ -27,7 +27,7 @@ aiRouter.post('/fraud-check', async (c) => {
 aiRouter.post('/advisor', async (c) => {
   const body = await c.req.json().catch(() => ({})) as { accountId?: string; riskProfile?: RiskProfile };
   if (!body.accountId) return c.json({ error: 'accountId required' }, 400);
-  return c.json(buildAdvisor(body.accountId, body.riskProfile || 'BALANCED'));
+  return c.json(await buildAdvisor(body.accountId, body.riskProfile || 'BALANCED'));
 });
 
 aiRouter.post('/insight', async (c) => {
@@ -36,7 +36,7 @@ aiRouter.post('/insight', async (c) => {
   const sym = body.symbol.toUpperCase();
   const sentiment = getSentiment(sym);
   const whale = getWhaleFlow(sym);
-  const fg = getFearGreed();
+  const fg = await getFearGreed();
   const blendedSignal = signalFromSentiment(sentiment.score, whale.netFlow24hUsd > 0 ? 5 : -5);
   const confidence = Math.min(
     0.98,

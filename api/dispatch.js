@@ -2569,7 +2569,7 @@ function getWhaleFlow(symbol) {
     series
   };
 }
-function getFearGreed() {
+function getFearGreedSynthetic() {
   const rnd = pseudoRandom(Math.floor(Date.now() / (30 * 60 * 1e3)));
   const value = Math.round(20 + rnd() * 70);
   const delta = Math.round((rnd() - 0.5) * 12);
@@ -2581,19 +2581,137 @@ function getFearGreed() {
       value: Math.round(20 + r() * 70)
     };
   });
-  return { value, classification, delta24h: delta, history };
+  return { value, classification, delta24h: delta, history, source: "synthetic" };
 }
-function getSocialPulse() {
+async function getFearGreed() {
+  const now = Date.now();
+  if (fgCache && now - fgCache.ts < FG_CACHE_TTL_MS) return fgCache.data;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4500);
+    const res = await fetch("https://api.alternative.me/fng/?limit=15", { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!res.ok) throw new Error(`http ${res.status}`);
+    const json = await res.json();
+    const data = json.data || [];
+    if (!data.length) throw new Error("empty payload");
+    const today = data[0];
+    const yesterday = data[1] || today;
+    const history = data.slice(0, 14).map((r) => ({
+      date: new Date(Number(r.timestamp) * 1e3).toISOString().slice(0, 10),
+      value: Number(r.value)
+    })).reverse();
+    const result = {
+      value: Number(today.value),
+      classification: today.value_classification,
+      delta24h: Number(today.value) - Number(yesterday.value),
+      history,
+      source: "alternative.me"
+    };
+    fgCache = { data: result, ts: now };
+    return result;
+  } catch {
+    return getFearGreedSynthetic();
+  }
+}
+function momentumFromDelta(delta) {
+  if (delta > 0.3) return "Spike";
+  if (delta > 0.05) return "Rising";
+  if (delta < -0.2) return "Cooling";
+  return "Stable";
+}
+function getSocialPulseSynthetic() {
   return PULSE_SYMBOLS.map((sym) => {
     const s = getSentiment(sym);
     const delta = Number(((Math.random() - 0.5) * 0.8).toFixed(2));
-    const momentum = delta > 0.3 ? "Spike" : delta > 0.05 ? "Rising" : delta < -0.2 ? "Cooling" : "Stable";
     return {
       symbol: sym,
       mentions24h: s.mentions24h,
       sentiment: s.score,
       delta,
-      momentum
+      momentum: momentumFromDelta(delta),
+      source: "synthetic"
+    };
+  }).sort((a, b) => b.mentions24h - a.mentions24h);
+}
+async function loadCryptoPanic() {
+  const key = process.env.CRYPTOPANIC_API_KEY;
+  if (!key) return /* @__PURE__ */ new Map();
+  const now = Date.now();
+  if (cpCache && now - cpCache.ts < CP_CACHE_TTL_MS) return cpCache.data;
+  try {
+    const tracked = PULSE_SYMBOLS.map((s) => s.replace("USDT", "")).join(",");
+    const url = `https://cryptopanic.com/api/v1/posts/?auth_token=${encodeURIComponent(key)}&public=true&currencies=${tracked}`;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5500);
+    const res = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!res.ok) throw new Error(`http ${res.status}`);
+    const json = await res.json();
+    const posts = json.results || [];
+    if (!posts.length) throw new Error("empty");
+    const half = Math.floor(posts.length / 2);
+    const agg = /* @__PURE__ */ new Map();
+    posts.forEach((post, idx) => {
+      const votes = post.votes || {};
+      const positive = (votes.positive || 0) + (votes.liked || 0) + (votes.important || 0);
+      const negative = (votes.negative || 0) + (votes.disliked || 0) + (votes.toxic || 0);
+      for (const cur of post.currencies || []) {
+        const code = (cur.code || "").toUpperCase();
+        if (!code) continue;
+        const e = agg.get(code) || { posts: 0, pos: 0, neg: 0, recentPosts: 0, olderPosts: 0 };
+        e.posts += 1;
+        e.pos += positive;
+        e.neg += negative;
+        if (idx < half) e.recentPosts += 1;
+        else e.olderPosts += 1;
+        agg.set(code, e);
+      }
+    });
+    const result = /* @__PURE__ */ new Map();
+    for (const [code, e] of agg) {
+      const totalVotes = e.pos + e.neg;
+      const sentiment = totalVotes > 0 ? (e.pos - e.neg) / totalVotes : 0;
+      const olderRate = e.olderPosts || 1;
+      const delta = Math.max(-1, Math.min(1, (e.recentPosts - e.olderPosts) / olderRate));
+      result.set(code, {
+        posts: e.posts,
+        sentiment: Number(sentiment.toFixed(3)),
+        delta: Number(delta.toFixed(2))
+      });
+    }
+    cpCache = { data: result, ts: now };
+    return result;
+  } catch {
+    return /* @__PURE__ */ new Map();
+  }
+}
+async function getSocialPulse() {
+  const cp = await loadCryptoPanic();
+  if (cp.size === 0) return getSocialPulseSynthetic();
+  return PULSE_SYMBOLS.map((sym) => {
+    const base = sym.replace("USDT", "").toUpperCase();
+    const real = cp.get(base);
+    if (real) {
+      const mentions24h = Math.round(real.posts * 250 + 800);
+      return {
+        symbol: sym,
+        mentions24h,
+        sentiment: real.sentiment,
+        delta: real.delta,
+        momentum: momentumFromDelta(real.delta),
+        source: "cryptopanic"
+      };
+    }
+    const s = getSentiment(sym);
+    const delta = Number(((Math.random() - 0.5) * 0.5).toFixed(2));
+    return {
+      symbol: sym,
+      mentions24h: s.mentions24h,
+      sentiment: s.score,
+      delta,
+      momentum: momentumFromDelta(delta),
+      source: "synthetic"
     };
   }).sort((a, b) => b.mentions24h - a.mentions24h);
 }
@@ -2604,7 +2722,7 @@ function signalFromSentiment(sentiment, change24h) {
   if (Math.abs(blended) < 0.08) return "NEUTRAL";
   return "HOLD";
 }
-var SENTIMENT_THEMES, PULSE_SYMBOLS;
+var SENTIMENT_THEMES, FG_CACHE_TTL_MS, fgCache, PULSE_SYMBOLS, CP_CACHE_TTL_MS, cpCache;
 var init_altdata = __esm({
   "api/_lib/ai/altdata.ts"() {
     SENTIMENT_THEMES = {
@@ -2616,6 +2734,8 @@ var init_altdata = __esm({
       DOGE: ["Elon mention", "retail FOMO", "pump risk"],
       SHIB: ["burn rate", "community hype"]
     };
+    FG_CACHE_TTL_MS = 30 * 60 * 1e3;
+    fgCache = null;
     PULSE_SYMBOLS = [
       "BTCUSDT",
       "ETHUSDT",
@@ -2636,6 +2756,8 @@ var init_altdata = __esm({
       "ARBUSDT",
       "OPUSDT"
     ];
+    CP_CACHE_TTL_MS = 15 * 60 * 1e3;
+    cpCache = null;
   }
 });
 
@@ -2677,8 +2799,8 @@ var init_market = __esm({
     });
     marketRouter.get("/:symbol/sentiment", (c) => c.json(getSentiment(c.req.param("symbol"))));
     marketRouter.get("/:symbol/whale-flow", (c) => c.json(getWhaleFlow(c.req.param("symbol"))));
-    marketRouter.get("/fear-greed", (c) => c.json(getFearGreed()));
-    marketRouter.get("/social-pulse", (c) => c.json(getSocialPulse()));
+    marketRouter.get("/fear-greed", async (c) => c.json(await getFearGreed()));
+    marketRouter.get("/social-pulse", async (c) => c.json(await getSocialPulse()));
   }
 });
 
@@ -2701,10 +2823,46 @@ function getAccount(accountId) {
 function shortId(prefix = "tx") {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
-var store;
+function deriveAccountNo(accountId) {
+  let h = 0;
+  for (let i = 0; i < accountId.length; i++) h = h * 31 + accountId.charCodeAt(i) >>> 0;
+  return (1e10 + h % 9e9).toString();
+}
+function getBankAccount(accountId, holder) {
+  let acc = bankStore.get(accountId);
+  if (!acc) {
+    acc = {
+      accountId,
+      holder: holder || "CoinWise User",
+      bankAccountNo: deriveAccountNo(accountId),
+      balanceVnd: SEED_BALANCE_VND,
+      transactions: [],
+      openedAt: Date.now()
+    };
+    bankStore.set(accountId, acc);
+  }
+  if (holder && acc.holder === "CoinWise User") acc.holder = holder;
+  return acc;
+}
+function recordBankTxn(acc, type, amountVnd, note) {
+  const txn = {
+    id: shortId("bank"),
+    ref: shortId(type.toLowerCase()).toUpperCase(),
+    type,
+    amountVnd,
+    balanceAfterVnd: acc.balanceVnd,
+    note,
+    timestamp: Date.now()
+  };
+  acc.transactions.push(txn);
+  return txn;
+}
+var store, bankStore, SEED_BALANCE_VND;
 var init_state = __esm({
   "api/_lib/state.ts"() {
     store = /* @__PURE__ */ new Map();
+    bankStore = /* @__PURE__ */ new Map();
+    SEED_BALANCE_VND = 5e7;
   }
 });
 
@@ -4394,9 +4552,9 @@ var init_fraud = __esm({
 });
 
 // api/_lib/ai/advisor.ts
-function buildAdvisor(accountId, profile = "BALANCED") {
+async function buildAdvisor(accountId, profile = "BALANCED") {
   const acc = getAccount(accountId);
-  const fg = getFearGreed();
+  const fg = await getFearGreed();
   const raw2 = UNIVERSE.map((u) => {
     const sent = getSentiment(u.symbol);
     const whale = getWhaleFlow(u.symbol);
@@ -4504,7 +4662,7 @@ var init_ai = __esm({
     aiRouter.post("/advisor", async (c) => {
       const body = await c.req.json().catch(() => ({}));
       if (!body.accountId) return c.json({ error: "accountId required" }, 400);
-      return c.json(buildAdvisor(body.accountId, body.riskProfile || "BALANCED"));
+      return c.json(await buildAdvisor(body.accountId, body.riskProfile || "BALANCED"));
     });
     aiRouter.post("/insight", async (c) => {
       const body = await c.req.json().catch(() => ({}));
@@ -4512,7 +4670,7 @@ var init_ai = __esm({
       const sym = body.symbol.toUpperCase();
       const sentiment = getSentiment(sym);
       const whale = getWhaleFlow(sym);
-      const fg = getFearGreed();
+      const fg = await getFearGreed();
       const blendedSignal = signalFromSentiment(sentiment.score, whale.netFlow24hUsd > 0 ? 5 : -5);
       const confidence = Math.min(
         0.98,
@@ -4817,15 +4975,15 @@ var init_agent = __esm({
             return c.json({
               sentiment: getSentiment(sym),
               whale: getWhaleFlow(sym),
-              fearGreed: getFearGreed()
+              fearGreed: await getFearGreed()
             });
           }
           case "getFearGreed":
-            return c.json(getFearGreed());
+            return c.json(await getFearGreed());
           case "getAdvisor": {
             if (!accountId) throw new Error("accountId required");
             const profile = args.riskProfile || "BALANCED";
-            return c.json(buildAdvisor(accountId, profile));
+            return c.json(await buildAdvisor(accountId, profile));
           }
           case "convertCurrency": {
             const amount = Number(args.amount);
@@ -4940,6 +5098,91 @@ var init_agent = __esm({
   }
 });
 
+// api/_lib/routes/bank.ts
+function usdToVnd2(usd) {
+  const r = convert(usd, "USD", "VND");
+  return { vnd: r.result, rate: r.rate };
+}
+function summary(accountId, holder) {
+  const acc = getBankAccount(accountId, holder);
+  const rate = getRates().rates.VND;
+  return {
+    accountId: acc.accountId,
+    holder: acc.holder,
+    bankAccountNo: acc.bankAccountNo,
+    balanceVnd: acc.balanceVnd,
+    balanceUsd: Number((acc.balanceVnd / rate).toFixed(2)),
+    rate,
+    openedAt: acc.openedAt
+  };
+}
+var bankRouter, DEFAULT_ENTRY_FEE_USD;
+var init_bank = __esm({
+  "api/_lib/routes/bank.ts"() {
+    init_dist();
+    init_state();
+    init_fx();
+    bankRouter = new Hono2();
+    DEFAULT_ENTRY_FEE_USD = 5;
+    bankRouter.get("/:id", (c) => c.json(summary(c.req.param("id"))));
+    bankRouter.get("/:id/statement", (c) => {
+      const acc = getBankAccount(c.req.param("id"));
+      return c.json(acc.transactions.slice(-100).reverse());
+    });
+    bankRouter.post("/:id/deposit", async (c) => {
+      const id = c.req.param("id");
+      const body = await c.req.json().catch(() => ({}));
+      const amt = Math.round(Number(body.amountVnd));
+      if (!Number.isFinite(amt) || amt <= 0) return c.json({ error: "amountVnd must be a positive number" }, 400);
+      if (amt > 1e9) return c.json({ error: "amountVnd exceeds 1,000,000,000 demo limit" }, 400);
+      const acc = getBankAccount(id, body.holder);
+      acc.balanceVnd += amt;
+      const txn = recordBankTxn(acc, "DEPOSIT", amt, "N\u1EA1p ti\u1EC1n v\xE0o t\xE0i kho\u1EA3n");
+      return c.json({ ok: true, ...summary(id), ref: txn.ref, transaction: txn });
+    });
+    bankRouter.post("/:id/withdraw", async (c) => {
+      const id = c.req.param("id");
+      const body = await c.req.json().catch(() => ({}));
+      const amt = Math.round(Number(body.amountVnd));
+      if (!Number.isFinite(amt) || amt <= 0) return c.json({ error: "amountVnd must be a positive number" }, 400);
+      const acc = getBankAccount(id);
+      if (acc.balanceVnd < amt) {
+        return c.json({ ok: false, error: "S\u1ED1 d\u01B0 kh\xF4ng \u0111\u1EE7", balanceVnd: acc.balanceVnd, required: amt }, 402);
+      }
+      acc.balanceVnd -= amt;
+      const txn = recordBankTxn(acc, "WITHDRAW", -amt, "R\xFAt ti\u1EC1n kh\u1ECFi t\xE0i kho\u1EA3n");
+      return c.json({ ok: true, ...summary(id), ref: txn.ref, transaction: txn });
+    });
+    bankRouter.post("/arena/pay-entry", async (c) => {
+      const body = await c.req.json().catch(() => ({}));
+      if (!body.accountId) return c.json({ error: "accountId required" }, 400);
+      const usd = Number.isFinite(body.amountUsd) && Number(body.amountUsd) > 0 ? Number(body.amountUsd) : DEFAULT_ENTRY_FEE_USD;
+      const acc = getBankAccount(body.accountId, body.holder);
+      const { vnd, rate } = usdToVnd2(usd);
+      if (acc.balanceVnd < vnd) {
+        return c.json(
+          { ok: false, paid: false, error: "S\u1ED1 d\u01B0 ng\xE2n h\xE0ng kh\xF4ng \u0111\u1EE7 \u0111\u1EC3 thanh to\xE1n ph\xED tham gia", requiredVnd: vnd, amountUsd: usd, balanceVnd: acc.balanceVnd },
+          402
+        );
+      }
+      acc.balanceVnd -= vnd;
+      const txn = recordBankTxn(acc, "ARENA_ENTRY", -vnd, `Ph\xED tham gia Arena${body.room ? ` \xB7 ${body.room}` : ""} ($${usd})`);
+      return c.json({ ok: true, paid: true, amountUsd: usd, amountVnd: vnd, rate, ref: txn.ref, ...summary(body.accountId) });
+    });
+    bankRouter.post("/arena/payout", async (c) => {
+      const body = await c.req.json().catch(() => ({}));
+      if (!body.accountId) return c.json({ error: "accountId required" }, 400);
+      const usd = Number(body.amountUsd);
+      if (!Number.isFinite(usd) || usd <= 0) return c.json({ error: "amountUsd must be a positive number" }, 400);
+      const acc = getBankAccount(body.accountId, body.holder);
+      const { vnd, rate } = usdToVnd2(usd);
+      acc.balanceVnd += vnd;
+      const txn = recordBankTxn(acc, "ARENA_PRIZE", vnd, `Ti\u1EC1n th\u01B0\u1EDFng Arena ($${usd})`);
+      return c.json({ ok: true, credited: true, amountUsd: usd, amountVnd: vnd, rate, ref: txn.ref, ...summary(body.accountId) });
+    });
+  }
+});
+
 // api/_lib/app.ts
 var app_exports = {};
 __export(app_exports, {
@@ -4980,6 +5223,7 @@ var init_app = __esm({
     init_ai();
     init_accounts();
     init_agent();
+    init_bank();
     startedAt2 = Date.now();
     app = new Hono2();
     app.use("*", cors({ origin: "*", allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"] }));
@@ -5001,6 +5245,7 @@ var init_app = __esm({
     app.route("/api/v1/ai", aiRouter);
     app.route("/api/v1/accounts", accountsRouter);
     app.route("/api/v1/agent", agentRouter);
+    app.route("/api/v1/bank", bankRouter);
     app.get("/api/openapi.yaml", (c) => {
       const spec = loadSpec();
       if (!spec) return c.json({ error: "Spec file not in bundle. Check vercel.json includeFiles." }, 500);

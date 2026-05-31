@@ -50,6 +50,6 @@ marketRouter.get('/:symbol/sentiment', (c) => c.json(getSentiment(c.req.param('s
 
 marketRouter.get('/:symbol/whale-flow', (c) => c.json(getWhaleFlow(c.req.param('symbol'))));
 
-marketRouter.get('/fear-greed', (c) => c.json(getFearGreed()));
+marketRouter.get('/fear-greed', async (c) => c.json(await getFearGreed()));
 
-marketRouter.get('/social-pulse', (c) => c.json(getSocialPulse()));
+marketRouter.get('/social-pulse', async (c) => c.json(await getSocialPulse()));

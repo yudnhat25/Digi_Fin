@@ -125,9 +125,10 @@ export interface FearGreed {
   classification: string;
   delta24h: number;
   history: FearGreedRow[];
+  source?: 'alternative.me' | 'synthetic';
 }
 
-export function getFearGreed(): FearGreed {
+function getFearGreedSynthetic(): FearGreed {
   const rnd = pseudoRandom(Math.floor(Date.now() / (30 * 60 * 1000)));
   const value = Math.round(20 + rnd() * 70);
   const delta = Math.round((rnd() - 0.5) * 12);
@@ -140,7 +141,58 @@ export function getFearGreed(): FearGreed {
       value: Math.round(20 + r() * 70),
     };
   });
-  return { value, classification, delta24h: delta, history };
+  return { value, classification, delta24h: delta, history, source: 'synthetic' };
+}
+
+// In-memory cache. Alternative.me publishes one new data point per day at
+// 00:00 UTC, so 30-minute TTL is generous and avoids hammering the endpoint.
+const FG_CACHE_TTL_MS = 30 * 60 * 1000;
+let fgCache: { data: FearGreed; ts: number } | null = null;
+
+/**
+ * Fetches the live Fear & Greed Index from Alternative.me — the canonical
+ * source most crypto sites quote. Public, free, no API key. Falls back to the
+ * synthetic generator on network error or schema drift so the UI never breaks.
+ *
+ * Docs: https://alternative.me/crypto/fear-and-greed-index/
+ */
+export async function getFearGreed(): Promise<FearGreed> {
+  const now = Date.now();
+  if (fgCache && now - fgCache.ts < FG_CACHE_TTL_MS) return fgCache.data;
+
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4500);
+    const res = await fetch('https://api.alternative.me/fng/?limit=15', { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!res.ok) throw new Error(`http ${res.status}`);
+    const json = (await res.json()) as {
+      data: Array<{ value: string; value_classification: string; timestamp: string }>;
+    };
+    const data = json.data || [];
+    if (!data.length) throw new Error('empty payload');
+    const today = data[0];
+    const yesterday = data[1] || today;
+    // API returns newest first → reverse for chronological history.
+    const history: FearGreedRow[] = data
+      .slice(0, 14)
+      .map((r) => ({
+        date: new Date(Number(r.timestamp) * 1000).toISOString().slice(0, 10),
+        value: Number(r.value),
+      }))
+      .reverse();
+    const result: FearGreed = {
+      value: Number(today.value),
+      classification: today.value_classification,
+      delta24h: Number(today.value) - Number(yesterday.value),
+      history,
+      source: 'alternative.me',
+    };
+    fgCache = { data: result, ts: now };
+    return result;
+  } catch {
+    return getFearGreedSynthetic();
+  }
 }
 
 export interface SocialPulseRow {
@@ -149,6 +201,7 @@ export interface SocialPulseRow {
   sentiment: number;
   delta: number;
   momentum: 'Spike' | 'Rising' | 'Stable' | 'Cooling';
+  source?: 'cryptopanic' | 'synthetic';
 }
 
 const PULSE_SYMBOLS = [
@@ -157,18 +210,159 @@ const PULSE_SYMBOLS = [
   'WIFUSDT', 'PEPEUSDT', 'TIAUSDT', 'INJUSDT', 'ARBUSDT', 'OPUSDT'
 ];
 
-export function getSocialPulse(): SocialPulseRow[] {
+function momentumFromDelta(delta: number): SocialPulseRow['momentum'] {
+  if (delta > 0.3) return 'Spike';
+  if (delta > 0.05) return 'Rising';
+  if (delta < -0.2) return 'Cooling';
+  return 'Stable';
+}
+
+function getSocialPulseSynthetic(): SocialPulseRow[] {
   return PULSE_SYMBOLS.map((sym) => {
     const s = getSentiment(sym);
     const delta = Number(((Math.random() - 0.5) * 0.8).toFixed(2));
-    const momentum: SocialPulseRow['momentum'] =
-      delta > 0.3 ? 'Spike' : delta > 0.05 ? 'Rising' : delta < -0.2 ? 'Cooling' : 'Stable';
     return {
       symbol: sym,
       mentions24h: s.mentions24h,
       sentiment: s.score,
       delta,
-      momentum,
+      momentum: momentumFromDelta(delta),
+      source: 'synthetic' as const,
+    };
+  }).sort((a, b) => b.mentions24h - a.mentions24h);
+}
+
+interface CryptoPanicAggregate {
+  posts: number;
+  sentiment: number;
+  delta: number;
+}
+
+const CP_CACHE_TTL_MS = 15 * 60 * 1000;
+let cpCache: { data: Map<string, CryptoPanicAggregate>; ts: number } | null = null;
+
+/**
+ * Fetches recent crypto news from CryptoPanic and aggregates per-coin
+ * sentiment. The public API ranks posts with community votes (positive,
+ * negative, important, toxic, etc.); we treat positive+liked+important as
+ * bullish signal and negative+toxic+disliked as bearish, then normalize to
+ * [-1, 1].
+ *
+ * Requires a free API key at https://cryptopanic.com/developers/api/ exposed
+ * as the CRYPTOPANIC_API_KEY env var on Vercel. Without the key we silently
+ * return an empty map and the caller falls back to synthetic data.
+ *
+ * The "current vs previous half" delta gives us a momentum signal: if a coin
+ * is mentioned 8 times in the recent half of the feed but only 3 in the
+ * older half, that's a spike.
+ */
+async function loadCryptoPanic(): Promise<Map<string, CryptoPanicAggregate>> {
+  const key = process.env.CRYPTOPANIC_API_KEY;
+  if (!key) return new Map();
+  const now = Date.now();
+  if (cpCache && now - cpCache.ts < CP_CACHE_TTL_MS) return cpCache.data;
+
+  try {
+    const tracked = PULSE_SYMBOLS.map((s) => s.replace('USDT', '')).join(',');
+    const url = `https://cryptopanic.com/api/v1/posts/?auth_token=${encodeURIComponent(key)}&public=true&currencies=${tracked}`;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5500);
+    const res = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!res.ok) throw new Error(`http ${res.status}`);
+    const json = (await res.json()) as {
+      results?: Array<{
+        votes?: {
+          positive?: number; negative?: number; important?: number;
+          liked?: number; disliked?: number; toxic?: number;
+        };
+        currencies?: Array<{ code: string }>;
+        published_at?: string;
+      }>;
+    };
+    const posts = json.results || [];
+    if (!posts.length) throw new Error('empty');
+
+    // Bucket the feed into "recent half" vs "older half" so we can derive a
+    // 24h-ish delta. CryptoPanic's free endpoint returns ~50 latest posts; the
+    // boundary is just the median position.
+    const half = Math.floor(posts.length / 2);
+    const agg = new Map<string, { posts: number; pos: number; neg: number; recentPosts: number; olderPosts: number }>();
+    posts.forEach((post, idx) => {
+      const votes = post.votes || {};
+      const positive = (votes.positive || 0) + (votes.liked || 0) + (votes.important || 0);
+      const negative = (votes.negative || 0) + (votes.disliked || 0) + (votes.toxic || 0);
+      for (const cur of post.currencies || []) {
+        const code = (cur.code || '').toUpperCase();
+        if (!code) continue;
+        const e = agg.get(code) || { posts: 0, pos: 0, neg: 0, recentPosts: 0, olderPosts: 0 };
+        e.posts += 1;
+        e.pos += positive;
+        e.neg += negative;
+        if (idx < half) e.recentPosts += 1; else e.olderPosts += 1;
+        agg.set(code, e);
+      }
+    });
+
+    const result = new Map<string, CryptoPanicAggregate>();
+    for (const [code, e] of agg) {
+      const totalVotes = e.pos + e.neg;
+      // If a post has no votes (common in slow news cycles), treat as neutral
+      // so we don't penalize coins for low engagement.
+      const sentiment = totalVotes > 0 ? (e.pos - e.neg) / totalVotes : 0;
+      const olderRate = e.olderPosts || 1;
+      const delta = Math.max(-1, Math.min(1, (e.recentPosts - e.olderPosts) / olderRate));
+      result.set(code, {
+        posts: e.posts,
+        sentiment: Number(sentiment.toFixed(3)),
+        delta: Number(delta.toFixed(2)),
+      });
+    }
+    cpCache = { data: result, ts: now };
+    return result;
+  } catch {
+    return new Map();
+  }
+}
+
+/**
+ * Builds the Social Pulse leaderboard. When CRYPTOPANIC_API_KEY is set, each
+ * tracked symbol gets a real-news-derived row; coins with no recent coverage
+ * fall back to the synthetic generator so the table is never sparse. The
+ * `source` field tells the UI which rows are real vs filled-in.
+ */
+export async function getSocialPulse(): Promise<SocialPulseRow[]> {
+  const cp = await loadCryptoPanic();
+  if (cp.size === 0) return getSocialPulseSynthetic();
+
+  return PULSE_SYMBOLS.map((sym) => {
+    const base = sym.replace('USDT', '').toUpperCase();
+    const real = cp.get(base);
+    if (real) {
+      // Scale post count to look like "mentions" — CryptoPanic posts are
+      // articles, not tweets, so multiply by a plausible factor (~250
+      // mentions per article on social media) to stay in the same order of
+      // magnitude as the previous synthetic numbers.
+      const mentions24h = Math.round(real.posts * 250 + 800);
+      return {
+        symbol: sym,
+        mentions24h,
+        sentiment: real.sentiment,
+        delta: real.delta,
+        momentum: momentumFromDelta(real.delta),
+        source: 'cryptopanic' as const,
+      };
+    }
+    // No coverage in this batch — fall back per coin.
+    const s = getSentiment(sym);
+    const delta = Number(((Math.random() - 0.5) * 0.5).toFixed(2));
+    return {
+      symbol: sym,
+      mentions24h: s.mentions24h,
+      sentiment: s.score,
+      delta,
+      momentum: momentumFromDelta(delta),
+      source: 'synthetic' as const,
     };
   }).sort((a, b) => b.mentions24h - a.mentions24h);
 }

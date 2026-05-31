@@ -45,9 +45,9 @@ const CASH_BUFFER: Record<RiskProfile, number> = {
   CONSERVATIVE: 0.20, BALANCED: 0.10, GROWTH: 0.05, AGGRESSIVE: 0.02,
 };
 
-export function buildAdvisor(accountId: string, profile: RiskProfile = 'BALANCED'): AdvisorResult {
+export async function buildAdvisor(accountId: string, profile: RiskProfile = 'BALANCED'): Promise<AdvisorResult> {
   const acc = getAccount(accountId);
-  const fg = getFearGreed();
+  const fg = await getFearGreed();
 
   // Sentiment-tilted weights (boost weight when AI signal is BUY, dampen when SELL).
   const raw = UNIVERSE.map((u) => {
