@@ -39,27 +39,30 @@ export function computeArenaTick(anchor: number = getCycleAnchor()): ArenaTick {
 }
 
 /**
- * When the NEXT active round starts. Registration is gated to the 30-second
- * break window, so this is what we set as competition.roundStartsAt at the
- * moment of entry.
- *  - During break: the upcoming round starts at the break's end.
- *  - During an active round: the next round would start at end of current
- *    round + the following break (rarely used because we disable registration
- *    during active rounds, but provided as a defensive default).
+ * When the round that a user joining RIGHT NOW will start.
+ *  - During an active round: the user joins the round in progress, so it
+ *    "starts" for them right now (Date.now()).
+ *  - During a break: the user is queued and the round actually starts when
+ *    the break ends.
  */
 export function computeNextRoundStartsAt(anchor: number = getCycleAnchor()): number {
   const tick = computeArenaTick(anchor);
-  if (tick.phase === 'break') {
-    return Date.now() + tick.remainingMs;
+  if (tick.phase === 'active') {
+    return Date.now();
   }
-  return Date.now() + tick.remainingMs + BREAK_MS;
+  return Date.now() + tick.remainingMs;
 }
 
 /**
- * When the round that a user joining RIGHT NOW will end. Always equals
- * computeNextRoundStartsAt() + ROUND_MS so that a participant gets the full
- * 3 minutes of trading regardless of when in the break they registered.
+ * When the round that a user joining RIGHT NOW will end.
+ *  - During an active round: end of the current round (partial round, less
+ *    than 3 minutes of trading).
+ *  - During a break: end of the upcoming round (full 3 minutes).
  */
 export function computeRoundEndsAt(anchor: number = getCycleAnchor()): number {
-  return computeNextRoundStartsAt(anchor) + ROUND_MS;
+  const tick = computeArenaTick(anchor);
+  if (tick.phase === 'active') {
+    return Date.now() + tick.remainingMs;
+  }
+  return Date.now() + tick.remainingMs + ROUND_MS;
 }

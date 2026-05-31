@@ -218,11 +218,17 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
 
   if (!user.competition?.isCompeting) {
     const phaseLabel = isBreak
-      ? `Đăng ký mở · ${arenaTick.display} để bắt đầu Round ${arenaTick.roundIndex + 1}`
-      : `Round ${arenaTick.roundIndex} đang diễn ra · đợi ${arenaTick.display} đến đợt đăng ký`;
+      ? `Break · Round ${arenaTick.roundIndex + 1} bắt đầu sau ${arenaTick.display}`
+      : `Round ${arenaTick.roundIndex} đang diễn ra · còn ${arenaTick.display}`;
+    const buttonLabel = isBreak
+      ? `Đăng ký Round ${arenaTick.roundIndex + 1} (bắt đầu sau ${arenaTick.display}) — $${ENTRY_FEE.toFixed(2)}`
+      : `Tham gia Round ${arenaTick.roundIndex} ngay (còn ${arenaTick.display}) — $${ENTRY_FEE.toFixed(2)}`;
+    const hint = isBreak
+      ? 'Đang trong break: sau khi thanh toán bạn vào hàng chờ, round mới bắt đầu thì leaderboard mở.'
+      : 'Round đang chạy: thanh toán xong là vào ngay, trade phần thời gian còn lại của round.';
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center space-y-8 animate-in zoom-in duration-500">
-        <div className={`px-5 py-2 rounded-full border text-[10px] font-black uppercase tracking-widest ${isBreak ? 'border-amber-500/30 bg-amber-500/10 text-amber-300' : 'border-slate-500/30 bg-slate-500/10 text-slate-400'}`}>
+        <div className={`px-5 py-2 rounded-full border text-[10px] font-black uppercase tracking-widest ${isBreak ? 'border-amber-500/30 bg-amber-500/10 text-amber-300' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'}`}>
           {phaseLabel}
         </div>
         <div className="w-24 h-24 bg-emerald-500/10 text-emerald-500 rounded-3xl flex items-center justify-center">
@@ -231,25 +237,18 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
         <div className="max-w-xl">
           <h2 className="text-4xl font-black mb-4">The Best Investor Arena</h2>
           <p className="text-slate-400 text-lg mb-4">
-            Continuous arena: <span className="text-emerald-400 font-bold">3-minute rounds</span> with <span className="text-amber-400 font-bold">30-second breaks</span>. Đăng ký mở trong window break — mọi người bắt đầu cùng lúc khi round mới khởi động.
+            Continuous arena: <span className="text-emerald-400 font-bold">3-minute rounds</span> with <span className="text-amber-400 font-bold">30-second breaks</span>. Đăng ký được phép vào bất kỳ lúc nào — chỉ khác là vào break thì phải chờ round mới.
           </p>
           <p className="text-slate-500 text-sm mb-8 leading-relaxed">
-            Pay <span className="text-emerald-400 font-bold">${ENTRY_FEE.toFixed(2)}</span> để vào hàng chờ cho round tiếp theo. Portfolio thật của bạn được snapshot và bạn nhận baseline <span className="text-emerald-400 font-bold">$1,000,000</span>. Khi round kết thúc, cash + holdings + transactions cũ được khôi phục nguyên — chỉ mất entry fee.
+            Pay <span className="text-emerald-400 font-bold">${ENTRY_FEE.toFixed(2)}</span> để tham gia. Portfolio thật của bạn được snapshot và bạn nhận baseline <span className="text-emerald-400 font-bold">$1,000,000</span>. Khi round bạn tham gia kết thúc, cash + holdings + transactions cũ được khôi phục nguyên — chỉ mất entry fee.
           </p>
           <button
             onClick={onRegister}
-            disabled={!isBreak}
-            className="bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-slate-950 px-12 py-5 rounded-2xl font-black text-xl shadow-2xl shadow-emerald-500/30 active:scale-95 transition-all"
+            className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-12 py-5 rounded-2xl font-black text-base md:text-lg shadow-2xl shadow-emerald-500/30 active:scale-95 transition-all"
           >
-            {isBreak
-              ? `Đăng ký Round ${arenaTick.roundIndex + 1} — $${ENTRY_FEE.toFixed(2)}`
-              : `Đăng ký mở sau ${arenaTick.display}`}
+            {buttonLabel}
           </button>
-          <p className="text-[11px] text-slate-600 mt-4">
-            {isBreak
-              ? 'Sau khi thanh toán bạn sẽ đợi đến khi round mới bắt đầu, rồi trade trong đúng 3 phút.'
-              : 'Đăng ký chỉ mở trong window break 30 giây giữa 2 round.'}
-          </p>
+          <p className="text-[11px] text-slate-600 mt-4">{hint}</p>
         </div>
       </div>
     );
