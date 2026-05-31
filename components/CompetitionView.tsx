@@ -129,35 +129,37 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
 
   const isBreak = arenaTick.phase === 'break';
 
-  // Auto-exit: when the user's joined round closes, ask the parent to restore
-  // their pre-arena snapshot. Fires exactly once thanks to the roundEndsAt
-  // dependency — once it's cleared by the parent, the effect re-runs but the
-  // guard prevents a second exit.
-  // Legacy cleanup: a session that has isCompeting=true but no roundEndsAt
+  // Legacy cleanup ONLY: a session with isCompeting=true but no roundEndsAt
   // dates back to the old "60-second test race" flow. There is no snapshot to
-  // restore, so we just flip the flag and let the user see the new Start flow.
+  // restore, so we flip the flag and let the user see the new Start flow.
+  //
+  // IMPORTANT: we deliberately do NOT auto-exit at roundEndsAt anymore. The
+  // previous version did, which meant the user was bounced back to the
+  // registration screen the instant the round timer hit zero — they never saw
+  // the winner modal or the Stripe Payouts flow. Now the user stays in the
+  // arena view post-roundEndsAt and must explicitly claim (winner) or click
+  // "Return to Portfolio" (non-winner) for the snapshot restore to happen.
   useEffect(() => {
     if (!user.competition?.isCompeting) return;
     const endsAt = user.competition?.roundEndsAt;
     if (!endsAt || !Number.isFinite(endsAt)) {
       onArenaExit?.();
-      return;
     }
-    const tick = () => {
-      if (Date.now() >= endsAt) {
-        onArenaExit?.();
-      }
-    };
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
   }, [user.competition?.isCompeting, user.competition?.roundEndsAt, onArenaExit]);
 
   const { pnl: userPnl } = getLiveStats(user);
   const currentUserEntry = participants.find(p => p.isUser);
   const userRank = currentUserEntry?.rank || 0;
-  // Winner banner shows during break if the user is leading at the round close.
-  const isWinner = userRank === 1 && isBreak && participants.length > 0;
+  // Round-end detection: once Date.now() crosses the user's roundEndsAt, the
+  // trading window is over and the reward / result screen should be shown.
+  // Re-evaluated every second via the arenaTick interval re-render.
+  const roundEndsAtMs = user.competition?.roundEndsAt;
+  const isRoundEnded = !!(roundEndsAtMs && Number.isFinite(roundEndsAtMs) && Date.now() >= roundEndsAtMs);
+  // Winner banner: rank #1 once their joined round has closed. Detached from
+  // `isBreak` because the global cycle keeps rolling — by the time the user
+  // sees the modal, a new round may already be active, but their result is
+  // frozen against the round they actually played.
+  const isWinner = isRoundEnded && userRank === 1 && participants.length > 0;
 
   const totalParticipants = participants.length;
   const prizePool = totalParticipants * ENTRY_FEE;
@@ -211,8 +213,10 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
         setIsPayoutProcessing(false);
         alert("Reward successfully sent to your bank account via Stripe Payouts!");
         setShowPayoutModal(false);
-        // Reset everything and restart global competition
-        onReset();
+        // Restore the user's pre-arena portfolio. onReset would wipe the
+        // global competition pool for everyone — we only want to settle THIS
+        // user's session.
+        onArenaExit?.();
     }, 3000);
   };
 
@@ -306,12 +310,18 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
                  <p className="text-5xl font-black text-emerald-400 tracking-tight">${prizePool.toLocaleString()}</p>
               </div>
 
-              <button 
+              <button
                 onClick={handleClaimReward}
                 className="w-full bg-[#635BFF] hover:bg-[#5851e0] text-white font-black py-5 rounded-2xl text-xl transition-all active:scale-95 flex items-center justify-center gap-3 shadow-xl shadow-[#635BFF]/20"
               >
                 Claim Reward via Stripe
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path></svg>
+              </button>
+              <button
+                onClick={() => onArenaExit?.()}
+                className="mt-3 text-xs font-bold text-slate-500 hover:text-slate-300 uppercase tracking-widest"
+              >
+                Skip — return to portfolio
               </button>
            </div>
         </div>
@@ -448,6 +458,33 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
                  </button>
               </form>
            </div>
+        </div>
+      )}
+
+      {/* Round-complete banner for non-winners. Winner gets the full-screen
+          celebration modal above; here we just need a clear exit affordance
+          so non-winners aren't stuck in the arena view after their round
+          closed. Auto-exit was removed so the modal stays reachable; this
+          banner is the non-winner counterpart. */}
+      {isRoundEnded && !isWinner && (
+        <div className="bg-slate-900/80 backdrop-blur border-2 border-slate-700 rounded-3xl p-6 md:p-7 flex flex-col md:flex-row md:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-4 duration-500">
+          <div className="flex-1">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">Round complete</p>
+            <h3 className="text-2xl md:text-3xl font-black text-white mb-1">
+              Hết round — Rank #{userRank || '—'}
+            </h3>
+            <p className="text-slate-400 text-sm">
+              PNL cuối: <b className={userPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                {userPnl >= 0 ? '+' : ''}{userPnl.toFixed(2)}%
+              </b> · Portfolio gốc của bạn sẽ được khôi phục khi thoát.
+            </p>
+          </div>
+          <button
+            onClick={() => onArenaExit?.()}
+            className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black px-8 py-4 rounded-2xl shadow-xl shadow-emerald-500/20 active:scale-95 transition-all whitespace-nowrap"
+          >
+            Return to Portfolio
+          </button>
         </div>
       )}
 
