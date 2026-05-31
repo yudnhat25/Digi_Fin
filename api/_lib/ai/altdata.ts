@@ -201,7 +201,7 @@ export interface SocialPulseRow {
   sentiment: number;
   delta: number;
   momentum: 'Spike' | 'Rising' | 'Stable' | 'Cooling';
-  source?: 'cryptopanic' | 'synthetic';
+  source?: 'coingecko' | 'synthetic';
 }
 
 const PULSE_SYMBOLS = [
@@ -209,6 +209,17 @@ const PULSE_SYMBOLS = [
   'ADAUSDT', 'AVAXUSDT', 'LINKUSDT', 'DOTUSDT', 'SHIBUSDT', 'NEARUSDT',
   'WIFUSDT', 'PEPEUSDT', 'TIAUSDT', 'INJUSDT', 'ARBUSDT', 'OPUSDT'
 ];
+
+// Binance ticker symbol → CoinGecko coin ID. CoinGecko's API is keyed on the
+// canonical project slug, not the trading pair.
+const COINGECKO_ID_MAP: Record<string, string> = {
+  BTCUSDT: 'bitcoin', ETHUSDT: 'ethereum', SOLUSDT: 'solana',
+  BNBUSDT: 'binancecoin', XRPUSDT: 'ripple', DOGEUSDT: 'dogecoin',
+  ADAUSDT: 'cardano', AVAXUSDT: 'avalanche-2', LINKUSDT: 'chainlink',
+  DOTUSDT: 'polkadot', SHIBUSDT: 'shiba-inu', NEARUSDT: 'near',
+  WIFUSDT: 'dogwifcoin', PEPEUSDT: 'pepe', TIAUSDT: 'celestia',
+  INJUSDT: 'injective-protocol', ARBUSDT: 'arbitrum', OPUSDT: 'optimism',
+};
 
 function momentumFromDelta(delta: number): SocialPulseRow['momentum'] {
   if (delta > 0.3) return 'Spike';
@@ -232,128 +243,125 @@ function getSocialPulseSynthetic(): SocialPulseRow[] {
   }).sort((a, b) => b.mentions24h - a.mentions24h);
 }
 
-interface CryptoPanicAggregate {
-  posts: number;
-  sentiment: number;
-  delta: number;
+interface CoinGeckoSnapshot {
+  sentiment: number;     // [-1, 1] from sentiment_votes_up - down
+  mentions24h: number;   // composite of Reddit posts/comments + Twitter followers
+  delta: number;         // [-1, 1] derived from 24h price change as momentum proxy
 }
 
-const CP_CACHE_TTL_MS = 15 * 60 * 1000;
-let cpCache: { data: Map<string, CryptoPanicAggregate>; ts: number } | null = null;
+const CG_CACHE_TTL_MS = 15 * 60 * 1000;
+let cgCache: { data: Map<string, CoinGeckoSnapshot>; ts: number } | null = null;
 
 /**
- * Fetches recent crypto news from CryptoPanic and aggregates per-coin
- * sentiment. The public API ranks posts with community votes (positive,
- * negative, important, toxic, etc.); we treat positive+liked+important as
- * bullish signal and negative+toxic+disliked as bearish, then normalize to
- * [-1, 1].
+ * Fetches per-coin community + sentiment data from CoinGecko's free Public
+ * API (no key required). For each tracked symbol we hit:
  *
- * Requires a free API key at https://cryptopanic.com/developers/api/ exposed
- * as the CRYPTOPANIC_API_KEY env var on Vercel. Without the key we silently
- * return an empty map and the caller falls back to synthetic data.
+ *   GET /api/v3/coins/{id}?community_data=true&market_data=true&...
  *
- * The "current vs previous half" delta gives us a momentum signal: if a coin
- * is mentioned 8 times in the recent half of the feed but only 3 in the
- * older half, that's a spike.
+ * and extract:
+ *   - sentiment_votes_up_percentage / down_percentage → sentiment in [-1, 1]
+ *   - community_data.reddit_average_posts_48h + reddit_average_comments_48h
+ *     + twitter_followers/5000 → "mentions24h" composite engagement score
+ *   - market_data.price_change_percentage_24h / 20 → momentum delta proxy
+ *
+ * 18 requests are fired in parallel with a 4s per-call timeout; failures
+ * (rate-limit, network, schema drift) drop to per-coin synthetic fallback.
+ * Result cached 15 minutes — CoinGecko free tier permits ~10-30 calls/min,
+ * so one full refresh every quarter-hour is well below the limit.
  */
-async function loadCryptoPanic(): Promise<Map<string, CryptoPanicAggregate>> {
-  const key = process.env.CRYPTOPANIC_API_KEY;
-  if (!key) return new Map();
+async function loadCoinGecko(): Promise<Map<string, CoinGeckoSnapshot>> {
   const now = Date.now();
-  if (cpCache && now - cpCache.ts < CP_CACHE_TTL_MS) return cpCache.data;
+  if (cgCache && now - cgCache.ts < CG_CACHE_TTL_MS) return cgCache.data;
 
-  try {
-    const tracked = PULSE_SYMBOLS.map((s) => s.replace('USDT', '')).join(',');
-    const url = `https://cryptopanic.com/api/v1/posts/?auth_token=${encodeURIComponent(key)}&public=true&currencies=${tracked}`;
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 5500);
-    const res = await fetch(url, { signal: ctrl.signal });
-    clearTimeout(timer);
-    if (!res.ok) throw new Error(`http ${res.status}`);
-    const json = (await res.json()) as {
-      results?: Array<{
-        votes?: {
-          positive?: number; negative?: number; important?: number;
-          liked?: number; disliked?: number; toxic?: number;
-        };
-        currencies?: Array<{ code: string }>;
-        published_at?: string;
-      }>;
-    };
-    const posts = json.results || [];
-    if (!posts.length) throw new Error('empty');
-
-    // Bucket the feed into "recent half" vs "older half" so we can derive a
-    // 24h-ish delta. CryptoPanic's free endpoint returns ~50 latest posts; the
-    // boundary is just the median position.
-    const half = Math.floor(posts.length / 2);
-    const agg = new Map<string, { posts: number; pos: number; neg: number; recentPosts: number; olderPosts: number }>();
-    posts.forEach((post, idx) => {
-      const votes = post.votes || {};
-      const positive = (votes.positive || 0) + (votes.liked || 0) + (votes.important || 0);
-      const negative = (votes.negative || 0) + (votes.disliked || 0) + (votes.toxic || 0);
-      for (const cur of post.currencies || []) {
-        const code = (cur.code || '').toUpperCase();
-        if (!code) continue;
-        const e = agg.get(code) || { posts: 0, pos: 0, neg: 0, recentPosts: 0, olderPosts: 0 };
-        e.posts += 1;
-        e.pos += positive;
-        e.neg += negative;
-        if (idx < half) e.recentPosts += 1; else e.olderPosts += 1;
-        agg.set(code, e);
-      }
-    });
-
-    const result = new Map<string, CryptoPanicAggregate>();
-    for (const [code, e] of agg) {
-      const totalVotes = e.pos + e.neg;
-      // If a post has no votes (common in slow news cycles), treat as neutral
-      // so we don't penalize coins for low engagement.
-      const sentiment = totalVotes > 0 ? (e.pos - e.neg) / totalVotes : 0;
-      const olderRate = e.olderPosts || 1;
-      const delta = Math.max(-1, Math.min(1, (e.recentPosts - e.olderPosts) / olderRate));
-      result.set(code, {
-        posts: e.posts,
-        sentiment: Number(sentiment.toFixed(3)),
-        delta: Number(delta.toFixed(2)),
+  const fetchOne = async (sym: string, id: string): Promise<[string, CoinGeckoSnapshot] | null> => {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 4500);
+      const url =
+        `https://api.coingecko.com/api/v3/coins/${id}` +
+        `?localization=false&tickers=false&market_data=true` +
+        `&community_data=true&developer_data=false&sparkline=false`;
+      const res = await fetch(url, {
+        signal: ctrl.signal,
+        headers: { 'accept': 'application/json' },
       });
+      clearTimeout(timer);
+      if (!res.ok) throw new Error(`http ${res.status}`);
+      const json = (await res.json()) as {
+        sentiment_votes_up_percentage?: number;
+        sentiment_votes_down_percentage?: number;
+        community_data?: {
+          twitter_followers?: number;
+          reddit_average_posts_48h?: number;
+          reddit_average_comments_48h?: number;
+          reddit_subscribers?: number;
+        };
+        market_data?: {
+          price_change_percentage_24h?: number;
+        };
+      };
+      const up = Number(json.sentiment_votes_up_percentage || 0);
+      const down = Number(json.sentiment_votes_down_percentage || 0);
+      const sentiment = up + down > 0 ? (up - down) / 100 : 0;
+      const cd = json.community_data || {};
+      const posts = Number(cd.reddit_average_posts_48h || 0);
+      const comments = Number(cd.reddit_average_comments_48h || 0);
+      const twitter = Number(cd.twitter_followers || 0);
+      // Composite engagement score. Reddit posts/comments are the most
+      // dynamic signal; Twitter followers add a (heavily-dampened) baseline
+      // so high-profile coins still rank above obscure ones. +800 floor
+      // keeps everything visible on the bar chart.
+      const mentions24h = Math.round((posts + comments) * 18 + twitter / 4000 + 800);
+      const priceChange = Number(json.market_data?.price_change_percentage_24h || 0);
+      // Use price change as a momentum proxy; clamped to [-1, 1] at ±20%.
+      const delta = Math.max(-1, Math.min(1, priceChange / 20));
+      return [sym, {
+        sentiment: Number(sentiment.toFixed(3)),
+        mentions24h,
+        delta: Number(delta.toFixed(2)),
+      }];
+    } catch {
+      return null;
     }
-    cpCache = { data: result, ts: now };
-    return result;
-  } catch {
-    return new Map();
+  };
+
+  const results = await Promise.all(
+    Object.entries(COINGECKO_ID_MAP).map(([sym, id]) => fetchOne(sym, id))
+  );
+  const map = new Map<string, CoinGeckoSnapshot>();
+  for (const r of results) {
+    if (r) map.set(r[0], r[1]);
   }
+  // Only cache if at least some calls succeeded — otherwise the next request
+  // will retry instead of being stuck with an empty cache for 15 min.
+  if (map.size > 0) cgCache = { data: map, ts: now };
+  return map;
 }
 
 /**
- * Builds the Social Pulse leaderboard. When CRYPTOPANIC_API_KEY is set, each
- * tracked symbol gets a real-news-derived row; coins with no recent coverage
- * fall back to the synthetic generator so the table is never sparse. The
- * `source` field tells the UI which rows are real vs filled-in.
+ * Builds the Social Pulse leaderboard. Each tracked symbol gets a real row
+ * from CoinGecko when available; coins whose call failed (rate-limit,
+ * timeout, etc.) fall back to the synthetic generator so the table is never
+ * sparse. The `source` field tells the UI which rows are live.
  */
 export async function getSocialPulse(): Promise<SocialPulseRow[]> {
-  const cp = await loadCryptoPanic();
-  if (cp.size === 0) return getSocialPulseSynthetic();
+  const cg = await loadCoinGecko();
+  if (cg.size === 0) return getSocialPulseSynthetic();
 
   return PULSE_SYMBOLS.map((sym) => {
-    const base = sym.replace('USDT', '').toUpperCase();
-    const real = cp.get(base);
+    const real = cg.get(sym);
     if (real) {
-      // Scale post count to look like "mentions" — CryptoPanic posts are
-      // articles, not tweets, so multiply by a plausible factor (~250
-      // mentions per article on social media) to stay in the same order of
-      // magnitude as the previous synthetic numbers.
-      const mentions24h = Math.round(real.posts * 250 + 800);
       return {
         symbol: sym,
-        mentions24h,
+        mentions24h: real.mentions24h,
         sentiment: real.sentiment,
         delta: real.delta,
         momentum: momentumFromDelta(real.delta),
-        source: 'cryptopanic' as const,
+        source: 'coingecko' as const,
       };
     }
-    // No coverage in this batch — fall back per coin.
+    // Per-coin fallback — keeps the leaderboard full even if one symbol's
+    // CoinGecko fetch hit a 429.
     const s = getSentiment(sym);
     const delta = Number(((Math.random() - 0.5) * 0.5).toFixed(2));
     return {

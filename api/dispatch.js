@@ -2634,73 +2634,63 @@ function getSocialPulseSynthetic() {
     };
   }).sort((a, b) => b.mentions24h - a.mentions24h);
 }
-async function loadCryptoPanic() {
-  const key = process.env.CRYPTOPANIC_API_KEY;
-  if (!key) return /* @__PURE__ */ new Map();
+async function loadCoinGecko() {
   const now = Date.now();
-  if (cpCache && now - cpCache.ts < CP_CACHE_TTL_MS) return cpCache.data;
-  try {
-    const tracked = PULSE_SYMBOLS.map((s) => s.replace("USDT", "")).join(",");
-    const url = `https://cryptopanic.com/api/v1/posts/?auth_token=${encodeURIComponent(key)}&public=true&currencies=${tracked}`;
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 5500);
-    const res = await fetch(url, { signal: ctrl.signal });
-    clearTimeout(timer);
-    if (!res.ok) throw new Error(`http ${res.status}`);
-    const json = await res.json();
-    const posts = json.results || [];
-    if (!posts.length) throw new Error("empty");
-    const half = Math.floor(posts.length / 2);
-    const agg = /* @__PURE__ */ new Map();
-    posts.forEach((post, idx) => {
-      const votes = post.votes || {};
-      const positive = (votes.positive || 0) + (votes.liked || 0) + (votes.important || 0);
-      const negative = (votes.negative || 0) + (votes.disliked || 0) + (votes.toxic || 0);
-      for (const cur of post.currencies || []) {
-        const code = (cur.code || "").toUpperCase();
-        if (!code) continue;
-        const e = agg.get(code) || { posts: 0, pos: 0, neg: 0, recentPosts: 0, olderPosts: 0 };
-        e.posts += 1;
-        e.pos += positive;
-        e.neg += negative;
-        if (idx < half) e.recentPosts += 1;
-        else e.olderPosts += 1;
-        agg.set(code, e);
-      }
-    });
-    const result = /* @__PURE__ */ new Map();
-    for (const [code, e] of agg) {
-      const totalVotes = e.pos + e.neg;
-      const sentiment = totalVotes > 0 ? (e.pos - e.neg) / totalVotes : 0;
-      const olderRate = e.olderPosts || 1;
-      const delta = Math.max(-1, Math.min(1, (e.recentPosts - e.olderPosts) / olderRate));
-      result.set(code, {
-        posts: e.posts,
-        sentiment: Number(sentiment.toFixed(3)),
-        delta: Number(delta.toFixed(2))
+  if (cgCache && now - cgCache.ts < CG_CACHE_TTL_MS) return cgCache.data;
+  const fetchOne = async (sym, id) => {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 4500);
+      const url = `https://api.coingecko.com/api/v3/coins/${id}?localization=false&tickers=false&market_data=true&community_data=true&developer_data=false&sparkline=false`;
+      const res = await fetch(url, {
+        signal: ctrl.signal,
+        headers: { "accept": "application/json" }
       });
+      clearTimeout(timer);
+      if (!res.ok) throw new Error(`http ${res.status}`);
+      const json = await res.json();
+      const up = Number(json.sentiment_votes_up_percentage || 0);
+      const down = Number(json.sentiment_votes_down_percentage || 0);
+      const sentiment = up + down > 0 ? (up - down) / 100 : 0;
+      const cd = json.community_data || {};
+      const posts = Number(cd.reddit_average_posts_48h || 0);
+      const comments = Number(cd.reddit_average_comments_48h || 0);
+      const twitter = Number(cd.twitter_followers || 0);
+      const mentions24h = Math.round((posts + comments) * 18 + twitter / 4e3 + 800);
+      const priceChange = Number(json.market_data?.price_change_percentage_24h || 0);
+      const delta = Math.max(-1, Math.min(1, priceChange / 20));
+      return [sym, {
+        sentiment: Number(sentiment.toFixed(3)),
+        mentions24h,
+        delta: Number(delta.toFixed(2))
+      }];
+    } catch {
+      return null;
     }
-    cpCache = { data: result, ts: now };
-    return result;
-  } catch {
-    return /* @__PURE__ */ new Map();
+  };
+  const results = await Promise.all(
+    Object.entries(COINGECKO_ID_MAP).map(([sym, id]) => fetchOne(sym, id))
+  );
+  const map = /* @__PURE__ */ new Map();
+  for (const r of results) {
+    if (r) map.set(r[0], r[1]);
   }
+  if (map.size > 0) cgCache = { data: map, ts: now };
+  return map;
 }
 async function getSocialPulse() {
-  const cp = await loadCryptoPanic();
-  if (cp.size === 0) return getSocialPulseSynthetic();
+  const cg = await loadCoinGecko();
+  if (cg.size === 0) return getSocialPulseSynthetic();
   return PULSE_SYMBOLS.map((sym) => {
-    const base = sym.replace("USDT", "").toUpperCase();
-    const real = cp.get(base);
+    const real = cg.get(sym);
     if (real) {
-      const mentions24h = Math.round(real.posts * 250 + 800);
       return {
         symbol: sym,
-        mentions24h,
+        mentions24h: real.mentions24h,
         sentiment: real.sentiment,
         delta: real.delta,
         momentum: momentumFromDelta(real.delta),
-        source: "cryptopanic"
+        source: "coingecko"
       };
     }
     const s = getSentiment(sym);
@@ -2722,7 +2712,7 @@ function signalFromSentiment(sentiment, change24h) {
   if (Math.abs(blended) < 0.08) return "NEUTRAL";
   return "HOLD";
 }
-var SENTIMENT_THEMES, FG_CACHE_TTL_MS, fgCache, PULSE_SYMBOLS, CP_CACHE_TTL_MS, cpCache;
+var SENTIMENT_THEMES, FG_CACHE_TTL_MS, fgCache, PULSE_SYMBOLS, COINGECKO_ID_MAP, CG_CACHE_TTL_MS, cgCache;
 var init_altdata = __esm({
   "api/_lib/ai/altdata.ts"() {
     SENTIMENT_THEMES = {
@@ -2756,8 +2746,28 @@ var init_altdata = __esm({
       "ARBUSDT",
       "OPUSDT"
     ];
-    CP_CACHE_TTL_MS = 15 * 60 * 1e3;
-    cpCache = null;
+    COINGECKO_ID_MAP = {
+      BTCUSDT: "bitcoin",
+      ETHUSDT: "ethereum",
+      SOLUSDT: "solana",
+      BNBUSDT: "binancecoin",
+      XRPUSDT: "ripple",
+      DOGEUSDT: "dogecoin",
+      ADAUSDT: "cardano",
+      AVAXUSDT: "avalanche-2",
+      LINKUSDT: "chainlink",
+      DOTUSDT: "polkadot",
+      SHIBUSDT: "shiba-inu",
+      NEARUSDT: "near",
+      WIFUSDT: "dogwifcoin",
+      PEPEUSDT: "pepe",
+      TIAUSDT: "celestia",
+      INJUSDT: "injective-protocol",
+      ARBUSDT: "arbitrum",
+      OPUSDT: "optimism"
+    };
+    CG_CACHE_TTL_MS = 15 * 60 * 1e3;
+    cgCache = null;
   }
 });
 

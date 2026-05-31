@@ -126,17 +126,17 @@ const SocialPulsePage: React.FC<{ onSelectAsset?: (symbol: string) => void }> = 
             </div>
             <div className="flex items-center gap-2">
               {(() => {
-                const live = rows.filter((r) => r.source === 'cryptopanic').length;
+                const live = rows.filter((r) => r.source === 'coingecko').length;
                 if (loading) return null;
                 if (live > 0) {
                   return (
-                    <span className="text-[9px] font-black uppercase tracking-widest text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full" title="Live data from CryptoPanic news feed">
-                      ● {live} live · cryptopanic
+                    <span className="text-[9px] font-black uppercase tracking-widest text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full" title="Live community + sentiment data from CoinGecko">
+                      ● {live} live · coingecko
                     </span>
                   );
                 }
                 return (
-                  <span className="text-[9px] font-black uppercase tracking-widest text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-full" title="Synthetic demo data — set CRYPTOPANIC_API_KEY env var for live">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-full" title="Synthetic demo data — CoinGecko unreachable">
                     Demo
                   </span>
                 );
@@ -197,7 +197,7 @@ const SocialPulsePage: React.FC<{ onSelectAsset?: (symbol: string) => void }> = 
         </p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {[
-            { title: '📰 News sentiment', desc: 'CryptoPanic posts aggregated per coin; positive vs negative community votes normalized to [-1, 1].', src: 'cryptopanic.com/api' },
+            { title: '👥 Community sentiment', desc: 'CoinGecko user vote ratio (sentiment_votes_up/down) plus Reddit posts + Twitter followers per coin.', src: 'coingecko.com/api/v3' },
             { title: '🐋 On-chain whale flow', desc: 'Net large-wallet movement detects smart-money positioning ahead of price.', src: 'synthetic (etherscan-ready)' },
             { title: '😱 Market mood', desc: 'Fear & Greed composite — volatility, momentum, search trends, dominance, social mentions.', src: 'alternative.me/fng' },
           ].map((c) => (

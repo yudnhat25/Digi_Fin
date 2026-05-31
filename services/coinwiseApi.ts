@@ -70,7 +70,7 @@ export interface FearGreed {
 export interface SocialPulseRow {
   symbol: string; mentions24h: number; sentiment: number;
   delta: number; momentum: 'Spike' | 'Rising' | 'Stable' | 'Cooling';
-  source?: 'cryptopanic' | 'synthetic';
+  source?: 'coingecko' | 'synthetic';
 }
 export interface CreditFactor { key: string; label: string; impact: number; value: string }
 export interface CreditScore {
