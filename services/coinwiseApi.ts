@@ -96,6 +96,15 @@ export interface AdvisorResult {
   rebalanceActions: string[];
   narrative: string;
 }
+export type InsightSource = 'real' | 'hybrid' | 'synthetic';
+export interface CoinInsightSources {
+  sentimentScore: InsightSource;
+  sentimentMentions: InsightSource;
+  whale: InsightSource;
+  fearGreed: InsightSource;
+  signal: InsightSource;
+  confidence: InsightSource;
+}
 export interface CoinInsight {
   symbol: string;
   signal: 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL' | 'NEUTRAL';
@@ -104,6 +113,15 @@ export interface CoinInsight {
   whale: WhaleFlow;
   fearGreed: FearGreed;
   narrative: string;
+  // Per-field provenance so the UI can stamp LIVE / HYBRID / DEMO badges on
+  // each datapoint instead of presenting synthetic and real numbers as if
+  // they were equivalent.
+  sources?: CoinInsightSources;
+  pipeline?: {
+    totalLatencyMs: number;
+    stages: Array<{ name: string; status: 'ok' | 'partial' | 'failed'; message?: string }>;
+    degraded: boolean;
+  };
 }
 
 export const apiSentiment = (symbol: string) => call<SentimentSnapshot>(`/api/v1/market/${symbol}/sentiment`);

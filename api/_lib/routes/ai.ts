@@ -30,37 +30,124 @@ aiRouter.post('/advisor', async (c) => {
   return c.json(await buildAdvisor(body.accountId, body.riskProfile || 'BALANCED'));
 });
 
+// Map pipeline's 5-label space to the legacy SentimentSnapshot enum the UI
+// expects (Bearish | Neutral | Bullish | Euphoric).
+function mapPipelineLabel(l: string): 'Bearish' | 'Neutral' | 'Bullish' | 'Euphoric' {
+  if (l === 'Euphoric') return 'Euphoric';
+  if (l === 'Bullish') return 'Bullish';
+  if (l === 'Bearish' || l === 'Capitulation') return 'Bearish';
+  return 'Neutral';
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => resolve(null), ms);
+    p.then((v) => { clearTimeout(t); resolve(v); })
+     .catch(() => { clearTimeout(t); resolve(null); });
+  });
+}
+
+const INSIGHT_PIPELINE_TIMEOUT_MS = 9_000;
+
 aiRouter.post('/insight', async (c) => {
   const body = await c.req.json().catch(() => ({})) as { symbol?: string };
   if (!body.symbol) return c.json({ error: 'symbol required' }, 400);
   const sym = body.symbol.toUpperCase();
-  const sentiment = getSentiment(sym);
+  const base = sym.replace(/USDT?$/, '');
+
+  // Real sentiment via the alt-data pipeline: Reddit (or HN fallback) corpus →
+  // VADER lexicon + trained Naive Bayes → blended with CoinGecko vote % and
+  // alternative.me Fear & Greed. Bounded at 9s so the card never hangs the UI.
+  const real = await withTimeout(runAltDataPipeline(base), INSIGHT_PIPELINE_TIMEOUT_MS);
+
+  // Whale flow has no free real source in this codebase — keep synthetic but
+  // label it so the UI can stamp DEMO badge on it.
   const whale = getWhaleFlow(sym);
   const fg = await getFearGreed();
-  const blendedSignal = signalFromSentiment(sentiment.score, whale.netFlow24hUsd > 0 ? 5 : -5);
-  const confidence = Math.min(
-    0.98,
-    0.45 + Math.abs(sentiment.score) * 0.35 + (Math.abs(whale.netFlow24hUsd) > 1_000_000 ? 0.15 : 0),
-  );
-  const signal =
-    blendedSignal === 'BUY' && sentiment.score > 0.5 ? 'STRONG_BUY' :
-    blendedSignal === 'SELL' && sentiment.score < -0.5 ? 'STRONG_SELL' :
-    blendedSignal;
+
+  let sentiment;
+  let signal: 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL' | 'NEUTRAL';
+  let confidence: number;
+  let sources: {
+    sentimentScore: 'real' | 'synthetic';
+    sentimentMentions: 'real' | 'synthetic';
+    whale: 'synthetic';
+    fearGreed: 'hybrid';
+    signal: 'real' | 'synthetic';
+    confidence: 'real' | 'synthetic';
+  };
+  let degraded: boolean;
+
+  if (real) {
+    const score = real.fusion.compositeScore;
+    const mentions = real.collected.totalDocs;
+    sentiment = {
+      symbol: sym,
+      score,
+      label: mapPipelineLabel(real.fusion.label),
+      mentions24h: mentions,
+      sources: { twitter: 0, reddit: 0, news: 0 },
+      topThemes: [],
+      aiSummary: `${base} — ${real.fusion.label} (${(score * 100).toFixed(0)}/100) from ${mentions} 24h docs.`,
+      updatedAt: new Date().toISOString(),
+    };
+    signal = (real.fusion.signal as typeof signal) || 'HOLD';
+    confidence = Number(real.fusion.confidence.toFixed(3));
+    sources = {
+      sentimentScore: 'real',
+      sentimentMentions: mentions > 0 ? 'real' : 'synthetic',
+      whale: 'synthetic',
+      fearGreed: 'hybrid',
+      signal: 'real',
+      confidence: 'real',
+    };
+    degraded = real.stages.some((s) => s.status === 'failed');
+  } else {
+    // Pipeline timed out or threw — degrade to the legacy synthetic path with
+    // a clearly-capped confidence so the UI doesn't oversell stale data.
+    const synth = getSentiment(sym);
+    sentiment = synth;
+    const blended = signalFromSentiment(synth.score, whale.netFlow24hUsd > 0 ? 5 : -5);
+    signal =
+      blended === 'BUY' && synth.score > 0.5 ? 'STRONG_BUY' :
+      blended === 'SELL' && synth.score < -0.5 ? 'STRONG_SELL' :
+      blended;
+    confidence = Number(Math.min(0.6, 0.4 + Math.abs(synth.score) * 0.2).toFixed(3));
+    sources = {
+      sentimentScore: 'synthetic',
+      sentimentMentions: 'synthetic',
+      whale: 'synthetic',
+      fearGreed: 'hybrid',
+      signal: 'synthetic',
+      confidence: 'synthetic',
+    };
+    degraded = true;
+  }
+
   const narrative =
-    `${sym.replace('USDT', '')} — Composite AI signal: ${signal} (confidence ${(confidence * 100).toFixed(0)}%). ` +
+    `${base} — Composite AI signal: ${signal} (confidence ${(confidence * 100).toFixed(0)}%). ` +
     `Sentiment is ${sentiment.label.toLowerCase()} (${(sentiment.score * 100).toFixed(0)}/100) across ` +
-    `${sentiment.mentions24h.toLocaleString()} 24h mentions. ` +
+    `${sentiment.mentions24h.toLocaleString()} 24h mentions` +
+    `${sources.sentimentMentions === 'real' ? ' (Reddit + HN)' : ''}. ` +
     `On-chain whales net ${whale.netFlow24hUsd >= 0 ? '+' : '-'}$${Math.abs(whale.netFlow24hUsd).toLocaleString()} — ` +
-    `${whale.verdict.toLowerCase()}. Market mood: ${fg.classification} (${fg.value}/100).`;
+    `${whale.verdict.toLowerCase()} (demo). Market mood: ${fg.classification} (${fg.value}/100).`;
 
   return c.json({
     symbol: sym,
     signal,
-    confidence: Number(confidence.toFixed(3)),
+    confidence,
     sentiment,
     whale,
     fearGreed: fg,
     narrative,
+    sources,
+    pipeline: real
+      ? {
+          totalLatencyMs: real.totalLatencyMs,
+          stages: real.stages.map((s: any) => ({ name: s.name ?? '', status: s.status, message: s.message })),
+          degraded,
+        }
+      : { totalLatencyMs: INSIGHT_PIPELINE_TIMEOUT_MS, stages: [], degraded: true },
   });
 });
 
