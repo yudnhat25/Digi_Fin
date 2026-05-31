@@ -6,7 +6,7 @@ import { computeArenaTick, getCycleAnchor } from '../services/arena';
 import { db } from '../firebaseConfig';
 import { ref, onValue } from 'firebase/database';
 import { useCurrency } from '../services/currency';
-import { apiFxConvert } from '../services/coinwiseApi';
+import { apiFxConvert, apiBankPayout } from '../services/coinwiseApi';
 
 type PayoutRegion = 'US' | 'VN';
 
@@ -206,18 +206,25 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
     setShowPayoutModal(true);
   };
 
-  const handleConfirmPayout = (e: React.FormEvent) => {
+  const handleConfirmPayout = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsPayoutProcessing(true);
-    setTimeout(() => {
-        setIsPayoutProcessing(false);
-        alert("Reward successfully sent to your bank account via Stripe Payouts!");
-        setShowPayoutModal(false);
-        // Restore the user's pre-arena portfolio. onReset would wipe the
-        // global competition pool for everyone — we only want to settle THIS
-        // user's session.
-        onArenaExit?.();
-    }, 3000);
+    try {
+      // Real credit of the prize (USD → VND) into the winner's CoinWise Bank
+      // account via the OpenAPI server — the same rail the entry fee was paid
+      // from. The Stripe-styled UI is just the wrapper around this transfer.
+      const res = await apiBankPayout(user.accountId, prizePool || ENTRY_FEE, user.name);
+      alert(`Đã chuyển ${formatVND(res.amountVnd)} tiền thưởng vào tài khoản CoinWise Bank của bạn!`);
+    } catch (err) {
+      alert(`Trả thưởng thất bại: ${(err as Error).message}`);
+    } finally {
+      setIsPayoutProcessing(false);
+      setShowPayoutModal(false);
+      // Restore the user's pre-arena portfolio. onReset would wipe the
+      // global competition pool for everyone — we only want to settle THIS
+      // user's session.
+      onArenaExit?.();
+    }
   };
 
   if (!user.competition?.isCompeting) {

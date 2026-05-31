@@ -20,6 +20,7 @@ import { marketRouter } from './routes/market';
 import { aiRouter } from './routes/ai';
 import { accountsRouter } from './routes/accounts';
 import { agentRouter } from './routes/agent';
+import { bankRouter } from './routes/bank';
 
 const startedAt = Date.now();
 
@@ -46,6 +47,7 @@ app.route('/api/v1/market', marketRouter);
 app.route('/api/v1/ai', aiRouter);
 app.route('/api/v1/accounts', accountsRouter);
 app.route('/api/v1/agent', agentRouter);
+app.route('/api/v1/bank', bankRouter);
 
 function loadSpec(): string | null {
   // Candidate paths cover: local tsx run (__dirname = server/), Vercel bundle (cwd/server/), and a fallback.

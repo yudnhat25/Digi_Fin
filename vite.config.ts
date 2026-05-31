@@ -19,6 +19,16 @@ export default defineConfig(({ mode }) => {
         alias: {
           '@': path.resolve(__dirname, '.'),
         }
+      },
+      build: {
+        rollupOptions: {
+          input: {
+            // Main CoinWise app and the standalone CoinWise Bank web are built
+            // as two separate entries → dist/index.html and dist/bank.html.
+            main: path.resolve(__dirname, 'index.html'),
+            bank: path.resolve(__dirname, 'bank.html'),
+          },
+        },
       }
     };
 });

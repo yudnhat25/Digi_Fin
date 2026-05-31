@@ -23,7 +23,7 @@ import AIInsightCard from './components/AIInsightCard';
 import LiveCandlestickChart from './components/LiveCandlestickChart';
 import { UserState, MarketData, LeaderboardEntry, SubscriptionTier, StakePosition } from './types';
 import { fetchMarketPrices } from './services/api';
-import { CRYPTO_SYMBOLS, ENTRY_FEE, BASELINE_NET_WORTH, EARN_PRODUCTS } from './constants';
+import { CRYPTO_SYMBOLS, BASELINE_NET_WORTH, EARN_PRODUCTS } from './constants';
 import { computeRoundEndsAt, computeNextRoundStartsAt } from './services/arena';
 
 import { auth, db } from './firebaseConfig';
@@ -148,8 +148,10 @@ const App: React.FC = () => {
     const realAssets = Array.isArray(currentUser.assets) ? currentUser.assets : [];
     const realTxs = Array.isArray(currentUser.transactions) ? currentUser.transactions : [];
     const realBalance = Number.isFinite(currentUser.balance) ? currentUser.balance : 0;
-    const fee = Math.min(ENTRY_FEE, Math.max(0, realBalance));
-    const snapshotBalance = realBalance - fee;
+    // The entry fee is now charged in real VND against the user's CoinWise Bank
+    // account inside CompetitionPaymentModal (OpenAPI /bank/arena/pay-entry), so
+    // we must NOT deduct it again from the $1M paper balance here.
+    const snapshotBalance = realBalance;
     const roundStartsAt = computeNextRoundStartsAt();
     const roundEndsAt = computeRoundEndsAt();
     const updatedUser: UserState = {
@@ -526,8 +528,13 @@ const App: React.FC = () => {
           handleTrade(side, symbol, amountUsd / price, price);
         }}
       />
-      {isCompPaymentOpen && (
-        <CompetitionPaymentModal onClose={() => setIsCompPaymentOpen(false)} onSuccess={handleCompleteCompetitionPayment} />
+      {isCompPaymentOpen && currentUser && (
+        <CompetitionPaymentModal
+          accountId={currentUser.accountId}
+          holder={currentUser.name}
+          onClose={() => setIsCompPaymentOpen(false)}
+          onSuccess={handleCompleteCompetitionPayment}
+        />
       )}
       {toast && (
         <div className={`fixed bottom-24 right-6 z-50 max-w-sm animate-in slide-in-from-bottom-4 fade-in duration-300 ${

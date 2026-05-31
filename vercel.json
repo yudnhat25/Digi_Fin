@@ -9,6 +9,7 @@
     { "source": "/api/openapi.yaml", "destination": "/api/dispatch" },
     { "source": "/api/docs", "destination": "/api/dispatch" },
     { "source": "/docs", "destination": "/api/dispatch" },
-    { "source": "/openapi.yaml", "destination": "/api/dispatch" }
+    { "source": "/openapi.yaml", "destination": "/api/dispatch" },
+    { "source": "/bank", "destination": "/bank.html" }
   ]
 }

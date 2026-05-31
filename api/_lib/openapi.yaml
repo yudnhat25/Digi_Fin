@@ -25,6 +25,10 @@ tags:
   - name: AI / Alternative Data
   - name: Accounts
   - name: Agent
+  - name: Bank (VND)
+    description: >-
+      Simulated VND retail bank (CoinWise Bank). Money rail for the standalone
+      bank web and the Arena — entry fees are debited and prizes credited here.
 paths:
   /api/v1/health:
     get:
@@ -290,6 +294,118 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+
+  /api/v1/bank/{id}:
+    get:
+      tags: [Bank (VND)]
+      summary: Bank account info (VND balance + derived USD)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+          description: CoinWise accountId
+      responses:
+        '200':
+          description: Bank account summary
+
+  /api/v1/bank/{id}/statement:
+    get:
+      tags: [Bank (VND)]
+      summary: Recent bank transactions (deposits, withdrawals, arena entries/prizes)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Transaction list
+
+  /api/v1/bank/{id}/deposit:
+    post:
+      tags: [Bank (VND)]
+      summary: Top up the VND bank balance
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amountVnd]
+              properties:
+                amountVnd: { type: number, example: 1000000 }
+      responses:
+        '200':
+          description: Updated balance + transaction
+
+  /api/v1/bank/{id}/withdraw:
+    post:
+      tags: [Bank (VND)]
+      summary: Withdraw VND from the bank balance
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amountVnd]
+              properties:
+                amountVnd: { type: number, example: 500000 }
+      responses:
+        '200':
+          description: Updated balance + transaction
+        '402':
+          description: Insufficient balance
+
+  /api/v1/bank/arena/pay-entry:
+    post:
+      tags: [Bank (VND)]
+      summary: Debit the Arena entry fee (USD → VND) from the bank account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [accountId]
+              properties:
+                accountId: { type: string, example: CW-AI-8892-X }
+                amountUsd: { type: number, example: 5 }
+                room: { type: string, example: BRONZE }
+      responses:
+        '200':
+          description: Entry paid, balance debited
+        '402':
+          description: Insufficient balance to pay the entry fee
+
+  /api/v1/bank/arena/payout:
+    post:
+      tags: [Bank (VND)]
+      summary: Credit an Arena prize (USD → VND) to the bank account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [accountId, amountUsd]
+              properties:
+                accountId: { type: string, example: CW-AI-8892-X }
+                amountUsd: { type: number, example: 50 }
+      responses:
+        '200':
+          description: Prize credited, balance increased
 
 components:
   schemas:
