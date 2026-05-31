@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { getBankAccount, recordBankTxn, saveBankToFirebase } from '../state';
+import { getBankAccount, recordBankTxn, saveBankToFirebase, BankPurchaseType } from '../state';
 import { convert, getRates } from '../fx';
 
 /**
@@ -91,6 +91,60 @@ bankRouter.post('/arena/pay-entry', async (c) => {
   const txn = recordBankTxn(acc, 'ARENA_ENTRY', -vnd, `Phí tham gia Arena${body.room ? ` · ${body.room}` : ''} ($${usd})`);
   await saveBankToFirebase(acc);
   return c.json({ ok: true, paid: true, amountUsd: usd, amountVnd: vnd, rate, ref: txn.ref, ...(await summary(body.accountId)) });
+});
+
+// ───── Generic purchase (debit) ─────
+// Single rail for every "buy X with USD" flow in the app — subscriptions,
+// Academy courses, Earn stakes, paper-trading top-ups. Mirrors /arena/pay-entry:
+// takes USD, converts on the SERVER via /fx (single source of truth), debits
+// VND, and stamps a typed transaction so the bank statement reads cleanly.
+const PURPOSE_TO_TYPE: Record<string, BankPurchaseType> = {
+  PREMIUM_UPGRADE: 'PREMIUM_UPGRADE',
+  COURSE_PURCHASE: 'COURSE_PURCHASE',
+  STAKE_LOCK:      'STAKE_LOCK',
+  ACCOUNT_TOPUP:   'ACCOUNT_TOPUP',
+};
+const PURPOSE_TO_VI: Record<string, string> = {
+  PREMIUM_UPGRADE: 'Nâng cấp gói thành viên',
+  COURSE_PURCHASE: 'Mua khóa học Academy',
+  STAKE_LOCK:      'Khoá vốn sản phẩm Earn',
+  ACCOUNT_TOPUP:   'Nạp vốn vào tài khoản giao dịch',
+};
+
+bankRouter.post('/pay-purchase', async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as {
+    accountId?: string; holder?: string;
+    amountUsd?: number; purpose?: string; label?: string;
+  };
+  if (!body.accountId) return c.json({ error: 'accountId required' }, 400);
+  const usd = Number(body.amountUsd);
+  if (!Number.isFinite(usd) || usd <= 0) {
+    return c.json({ error: 'amountUsd must be a positive number' }, 400);
+  }
+  const purposeKey = (body.purpose || '').toUpperCase();
+  const txnType = PURPOSE_TO_TYPE[purposeKey];
+  if (!txnType) {
+    return c.json({ error: `purpose must be one of ${Object.keys(PURPOSE_TO_TYPE).join(', ')}` }, 400);
+  }
+
+  const acc = await getBankAccount(body.accountId, body.holder);
+  const { vnd, rate } = usdToVnd(usd);
+  if (acc.balanceVnd < vnd) {
+    return c.json(
+      { ok: false, paid: false, error: 'Số dư ngân hàng không đủ', requiredVnd: vnd, amountUsd: usd, balanceVnd: acc.balanceVnd },
+      402,
+    );
+  }
+  acc.balanceVnd -= vnd;
+  const noteBase = PURPOSE_TO_VI[purposeKey];
+  const note = body.label ? `${noteBase} · ${body.label} ($${usd})` : `${noteBase} ($${usd})`;
+  const txn = recordBankTxn(acc, txnType, -vnd, note);
+  await saveBankToFirebase(acc);
+  return c.json({
+    ok: true, paid: true, purpose: purposeKey,
+    amountUsd: usd, amountVnd: vnd, rate, ref: txn.ref,
+    ...(await summary(body.accountId)),
+  });
 });
 
 // ───── Arena: pay out prize (credit) ─────

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { SubscriptionTier, UserState } from '../types';
+import BankCheckoutModal from './BankCheckoutModal';
 
 interface ProPlansPageProps {
   user: UserState;
@@ -241,53 +242,31 @@ const ProPlansPage: React.FC<ProPlansPageProps> = ({ user, onUpgrade }) => {
         </div>
       </div>
 
-      {/* Stripe-style Checkout Modal */}
-      {checkoutOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-xl animate-in fade-in duration-300">
-          <div className="bg-white text-slate-900 rounded-3xl max-w-md w-full overflow-hidden shadow-2xl animate-in zoom-in slide-in-from-bottom-4 duration-300">
-            <div className="bg-[#635BFF] text-white p-6 flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-widest opacity-80">Stripe Checkout</p>
-                <p className="text-2xl font-black">CoinWise {PLANS.find(p => p.id === checkoutOpen)?.name}</p>
-              </div>
-              <button onClick={() => setCheckoutOpen(null)} className="text-white/80 hover:text-white">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
-            </div>
-            <div className="p-6 space-y-5">
-              <div className="bg-slate-50 rounded-2xl p-4 flex justify-between">
-                <div>
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Subscription</p>
-                  <p className="font-black">{PLANS.find(p => p.id === checkoutOpen)?.name} ({billing})</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Total Today</p>
-                  <p className="font-black text-[#635BFF]">${billing === 'monthly' ? PLANS.find(p => p.id === checkoutOpen)?.priceMonthly : (PLANS.find(p => p.id === checkoutOpen)?.priceYearly || 0) * 12}.00</p>
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">Email</label>
-                <input defaultValue={user.accountId} className="w-full border-2 border-slate-200 rounded-xl px-3 py-3 text-sm focus:border-[#635BFF] outline-none" />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">Card Information</label>
-                <input placeholder="1234 1234 1234 1234" className="w-full border-2 border-slate-200 rounded-xl px-3 py-3 text-sm font-mono focus:border-[#635BFF] outline-none" />
-                <div className="grid grid-cols-2 gap-2 mt-2">
-                  <input placeholder="MM / YY" className="border-2 border-slate-200 rounded-xl px-3 py-3 text-sm focus:border-[#635BFF] outline-none" />
-                  <input placeholder="CVC" className="border-2 border-slate-200 rounded-xl px-3 py-3 text-sm focus:border-[#635BFF] outline-none" />
-                </div>
-              </div>
-              <button
-                onClick={() => { onUpgrade(checkoutOpen); setCheckoutOpen(null); }}
-                className="w-full bg-[#635BFF] hover:bg-[#5851e0] text-white font-bold py-4 rounded-xl text-lg transition"
-              >
-                Subscribe — ${billing === 'monthly' ? PLANS.find(p => p.id === checkoutOpen)?.priceMonthly : (PLANS.find(p => p.id === checkoutOpen)?.priceYearly || 0) * 12}.00
-              </button>
-              <p className="text-[10px] text-slate-500 text-center">By subscribing, you agree to CoinWise Terms. Cancel anytime. 7-day money-back guarantee.</p>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* CoinWise Bank checkout — same VND rail as Arena entry */}
+      {checkoutOpen && (() => {
+        const plan = PLANS.find((p) => p.id === checkoutOpen)!;
+        const amountUsd = billing === 'monthly' ? plan.priceMonthly : plan.priceYearly * 12;
+        if (amountUsd <= 0) {
+          // Starter is free — short-circuit; no debit needed.
+          onUpgrade(checkoutOpen);
+          setCheckoutOpen(null);
+          return null;
+        }
+        return (
+          <BankCheckoutModal
+            accountId={user.accountId}
+            holder={user.name}
+            amountUsd={amountUsd}
+            purpose="PREMIUM_UPGRADE"
+            title={`CoinWise ${plan.name}`}
+            subtitle={`Subscription · ${billing === 'monthly' ? 'billed monthly' : 'billed yearly'}`}
+            label={`${plan.id}/${billing}`}
+            ctaText={`Subscribe — pay $${amountUsd.toFixed(2)}`}
+            onClose={() => setCheckoutOpen(null)}
+            onSuccess={() => { onUpgrade(checkoutOpen); setCheckoutOpen(null); }}
+          />
+        );
+      })()}
     </div>
   );
 };

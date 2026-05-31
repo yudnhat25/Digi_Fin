@@ -63,10 +63,15 @@ export function shortId(prefix = 'tx'): string {
 // in-memory store resets on Vercel cold start — fine for the demo; production
 // would back this with Firebase Admin / Postgres.
 // ───────────────────────────────────────────────────────────────────────────
+export type BankPurchaseType =
+  | 'PREMIUM_UPGRADE'    // tier upgrade (PRO / ELITE)
+  | 'COURSE_PURCHASE'    // Academy course enrollment
+  | 'STAKE_LOCK'         // Earn product stake lock-in
+  | 'ACCOUNT_TOPUP';     // paper-trading USD top-up
 export interface BankTransaction {
   id: string;
   ref: string;
-  type: 'DEPOSIT' | 'WITHDRAW' | 'ARENA_ENTRY' | 'ARENA_PRIZE';
+  type: 'DEPOSIT' | 'WITHDRAW' | 'ARENA_ENTRY' | 'ARENA_PRIZE' | BankPurchaseType;
   amountVnd: number;        // signed: positive = credit, negative = debit
   balanceAfterVnd: number;
   note: string;

@@ -5237,7 +5237,7 @@ async function summary(accountId, holder) {
     openedAt: acc.openedAt
   };
 }
-var bankRouter, DEFAULT_ENTRY_FEE_USD;
+var bankRouter, DEFAULT_ENTRY_FEE_USD, PURPOSE_TO_TYPE, PURPOSE_TO_VI;
 var init_bank = __esm({
   "api/_lib/routes/bank.ts"() {
     init_dist();
@@ -5292,6 +5292,54 @@ var init_bank = __esm({
       const txn = recordBankTxn(acc, "ARENA_ENTRY", -vnd, `Ph\xED tham gia Arena${body.room ? ` \xB7 ${body.room}` : ""} ($${usd})`);
       await saveBankToFirebase(acc);
       return c.json({ ok: true, paid: true, amountUsd: usd, amountVnd: vnd, rate, ref: txn.ref, ...await summary(body.accountId) });
+    });
+    PURPOSE_TO_TYPE = {
+      PREMIUM_UPGRADE: "PREMIUM_UPGRADE",
+      COURSE_PURCHASE: "COURSE_PURCHASE",
+      STAKE_LOCK: "STAKE_LOCK",
+      ACCOUNT_TOPUP: "ACCOUNT_TOPUP"
+    };
+    PURPOSE_TO_VI = {
+      PREMIUM_UPGRADE: "N\xE2ng c\u1EA5p g\xF3i th\xE0nh vi\xEAn",
+      COURSE_PURCHASE: "Mua kh\xF3a h\u1ECDc Academy",
+      STAKE_LOCK: "Kho\xE1 v\u1ED1n s\u1EA3n ph\u1EA9m Earn",
+      ACCOUNT_TOPUP: "N\u1EA1p v\u1ED1n v\xE0o t\xE0i kho\u1EA3n giao d\u1ECBch"
+    };
+    bankRouter.post("/pay-purchase", async (c) => {
+      const body = await c.req.json().catch(() => ({}));
+      if (!body.accountId) return c.json({ error: "accountId required" }, 400);
+      const usd = Number(body.amountUsd);
+      if (!Number.isFinite(usd) || usd <= 0) {
+        return c.json({ error: "amountUsd must be a positive number" }, 400);
+      }
+      const purposeKey = (body.purpose || "").toUpperCase();
+      const txnType = PURPOSE_TO_TYPE[purposeKey];
+      if (!txnType) {
+        return c.json({ error: `purpose must be one of ${Object.keys(PURPOSE_TO_TYPE).join(", ")}` }, 400);
+      }
+      const acc = await getBankAccount(body.accountId, body.holder);
+      const { vnd, rate } = usdToVnd2(usd);
+      if (acc.balanceVnd < vnd) {
+        return c.json(
+          { ok: false, paid: false, error: "S\u1ED1 d\u01B0 ng\xE2n h\xE0ng kh\xF4ng \u0111\u1EE7", requiredVnd: vnd, amountUsd: usd, balanceVnd: acc.balanceVnd },
+          402
+        );
+      }
+      acc.balanceVnd -= vnd;
+      const noteBase = PURPOSE_TO_VI[purposeKey];
+      const note = body.label ? `${noteBase} \xB7 ${body.label} ($${usd})` : `${noteBase} ($${usd})`;
+      const txn = recordBankTxn(acc, txnType, -vnd, note);
+      await saveBankToFirebase(acc);
+      return c.json({
+        ok: true,
+        paid: true,
+        purpose: purposeKey,
+        amountUsd: usd,
+        amountVnd: vnd,
+        rate,
+        ref: txn.ref,
+        ...await summary(body.accountId)
+      });
     });
     bankRouter.post("/arena/payout", async (c) => {
       const body = await c.req.json().catch(() => ({}));

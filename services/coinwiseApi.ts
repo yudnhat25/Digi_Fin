@@ -300,10 +300,12 @@ export interface BankAccountInfo {
   rate: number;
   openedAt: number;
 }
+export type BankPurchasePurpose =
+  | 'PREMIUM_UPGRADE' | 'COURSE_PURCHASE' | 'STAKE_LOCK' | 'ACCOUNT_TOPUP';
 export interface BankTxn {
   id: string;
   ref: string;
-  type: 'DEPOSIT' | 'WITHDRAW' | 'ARENA_ENTRY' | 'ARENA_PRIZE';
+  type: 'DEPOSIT' | 'WITHDRAW' | 'ARENA_ENTRY' | 'ARENA_PRIZE' | BankPurchasePurpose;
   amountVnd: number;
   balanceAfterVnd: number;
   note: string;
@@ -348,4 +350,27 @@ export const apiBankPayEntry = (accountId: string, amountUsd?: number, opts?: { 
 export const apiBankPayout = (accountId: string, amountUsd: number, holder?: string) =>
   call<ArenaPayoutResult>('/api/v1/bank/arena/payout', {
     method: 'POST', body: JSON.stringify({ accountId, amountUsd, holder }),
+  });
+
+export interface BankPurchaseResult extends BankAccountInfo {
+  ok: boolean;
+  paid: boolean;
+  purpose: BankPurchasePurpose;
+  amountUsd: number;
+  amountVnd: number;
+  rate: number;
+  ref: string;
+}
+// Unified purchase rail — used by Pro upgrade, Academy courses, Earn stakes
+// and paper-trading top-ups. Same /fx/convert path as Arena entry; the bank
+// is the single source of truth for who paid what in VND.
+export const apiBankPayPurchase = (
+  accountId: string,
+  amountUsd: number,
+  purpose: BankPurchasePurpose,
+  opts?: { holder?: string; label?: string },
+) =>
+  call<BankPurchaseResult>('/api/v1/bank/pay-purchase', {
+    method: 'POST',
+    body: JSON.stringify({ accountId, amountUsd, purpose, holder: opts?.holder, label: opts?.label }),
   });

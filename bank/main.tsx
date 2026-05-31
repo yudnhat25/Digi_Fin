@@ -36,7 +36,8 @@ interface BankAccountInfo {
 }
 interface BankTxn {
   id: string; ref: string;
-  type: 'DEPOSIT' | 'WITHDRAW' | 'ARENA_ENTRY' | 'ARENA_PRIZE';
+  type: 'DEPOSIT' | 'WITHDRAW' | 'ARENA_ENTRY' | 'ARENA_PRIZE'
+      | 'PREMIUM_UPGRADE' | 'COURSE_PURCHASE' | 'STAKE_LOCK' | 'ACCOUNT_TOPUP';
   amountVnd: number; balanceAfterVnd: number; note: string; timestamp: number;
 }
 
@@ -52,11 +53,15 @@ const fmtVnd = (v: number) => `${Math.round(v).toLocaleString('vi-VN')} ₫`;
 const fmtUsd = (v: number) => `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmtTime = (t: number) => new Date(t).toLocaleString('vi-VN');
 
-const TXN_META: Record<BankTxn['type'], { label: string; color: string }> = {
-  DEPOSIT: { label: 'Nạp tiền', color: 'text-emerald-400' },
-  WITHDRAW: { label: 'Rút tiền', color: 'text-amber-400' },
-  ARENA_ENTRY: { label: 'Phí Arena', color: 'text-rose-400' },
-  ARENA_PRIZE: { label: 'Thưởng Arena', color: 'text-emerald-400' },
+const TXN_META: Record<BankTxn['type'], { label: string; color: string; icon: string }> = {
+  DEPOSIT:         { label: 'Nạp tiền',          color: 'text-emerald-400', icon: '↓' },
+  WITHDRAW:        { label: 'Rút tiền',          color: 'text-amber-400',   icon: '↑' },
+  ARENA_ENTRY:     { label: 'Phí Arena',         color: 'text-rose-400',    icon: '⚔' },
+  ARENA_PRIZE:     { label: 'Thưởng Arena',      color: 'text-emerald-400', icon: '🏆' },
+  PREMIUM_UPGRADE: { label: 'Gói thành viên',    color: 'text-violet-400',  icon: '★' },
+  COURSE_PURCHASE: { label: 'Khóa học Academy',  color: 'text-blue-400',    icon: '📘' },
+  STAKE_LOCK:      { label: 'Khoá vốn Earn',     color: 'text-cyan-400',    icon: '🔒' },
+  ACCOUNT_TOPUP:   { label: 'Nạp vốn giao dịch', color: 'text-teal-400',    icon: '↻' },
 };
 
 const FALLBACK_ACCOUNT_ID = 'CW-AI-8892-X';
@@ -296,7 +301,9 @@ const App: React.FC = () => {
               return (
                 <li key={t.id} className="py-3 flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <p className={`text-sm font-bold ${meta.color}`}>{meta.label}</p>
+                    <p className={`text-sm font-bold ${meta.color}`}>
+                      <span className="mr-1.5">{meta.icon}</span>{meta.label}
+                    </p>
                     <p className="text-[11px] text-slate-500 truncate">{t.note}</p>
                     <p className="text-[10px] text-slate-600 font-mono">{fmtTime(t.timestamp)} · {t.ref}</p>
                   </div>

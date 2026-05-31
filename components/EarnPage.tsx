@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { UserState, StakePosition, SubscriptionTier } from '../types';
 import { EARN_PRODUCTS } from '../constants';
+import BankCheckoutModal from './BankCheckoutModal';
 
 interface EarnPageProps {
   user: UserState;
@@ -15,6 +16,7 @@ const EarnPage: React.FC<EarnPageProps> = ({ user, onStake, onUnstake, onUpgrade
   const [selected, setSelected] = useState<string | null>(null);
   const [amount, setAmount] = useState('1000');
   const [risk, setRisk] = useState<'ALL' | 'Low' | 'Medium' | 'High'>('ALL');
+  const [stakeCheckoutOpen, setStakeCheckoutOpen] = useState(false);
 
   const tier = user.tier || 'STARTER';
   const userTierRank = TIER_RANK[tier];
@@ -229,14 +231,37 @@ const EarnPage: React.FC<EarnPageProps> = ({ user, onStake, onUnstake, onUpgrade
             </div>
 
             <button
-              onClick={() => { onStake(product.id, amountNum); setSelected(null); setAmount('1000'); }}
-              disabled={amountNum <= 0 || amountNum > user.balance}
+              onClick={() => setStakeCheckoutOpen(true)}
+              disabled={amountNum <= 0}
               className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 font-black py-4 rounded-xl text-lg transition"
             >
               Confirm Stake — ${amountNum.toLocaleString()}
             </button>
           </div>
         </div>
+      )}
+
+      {/* CoinWise Bank checkout for the stake lock — debits VND from the bank
+          like any other purchase. onSuccess fires onStake which locks the
+          position in user state. */}
+      {stakeCheckoutOpen && product && (
+        <BankCheckoutModal
+          accountId={user.accountId}
+          holder={user.name}
+          amountUsd={amountNum}
+          purpose="STAKE_LOCK"
+          title={product.name}
+          subtitle={`${(product.apy * 100).toFixed(2)}% APY · ${product.lockDays === 0 ? 'Flexible' : `${product.lockDays}d lock`}`}
+          label={product.id}
+          ctaText={`Lock $${amountNum.toLocaleString()} in ${product.symbol}`}
+          onClose={() => setStakeCheckoutOpen(false)}
+          onSuccess={() => {
+            onStake(product.id, amountNum);
+            setStakeCheckoutOpen(false);
+            setSelected(null);
+            setAmount('1000');
+          }}
+        />
       )}
 
       {/* Upgrade CTA */}

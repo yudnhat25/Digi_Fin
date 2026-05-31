@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { UserState } from '../types';
 import { ACADEMY_COURSES, TIER_LIMITS } from '../constants';
+import BankCheckoutModal from './BankCheckoutModal';
 
 interface AcademyPageProps {
   user: UserState;
@@ -204,35 +205,25 @@ const AcademyPage: React.FC<AcademyPageProps> = ({ user, onEnroll, onUpgradeClic
         </div>
       )}
 
-      {/* Checkout modal */}
+      {/* CoinWise Bank checkout — same VND rail as Arena entry */}
       {checkout && courseToEnroll && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur animate-in fade-in duration-300">
-          <div className="bg-white text-slate-900 rounded-3xl max-w-md w-full overflow-hidden shadow-2xl">
-            <div className="bg-[#635BFF] text-white p-6">
-              <p className="text-xs font-bold uppercase tracking-widest opacity-80">Course Enrollment</p>
-              <p className="text-xl font-black mt-1">{courseToEnroll.title}</p>
-            </div>
-            <div className="p-6 space-y-4">
-              <div className="bg-slate-50 rounded-2xl p-4 flex justify-between">
-                <div>
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Lifetime Access</p>
-                  <p className="font-black">{courseToEnroll.lessons} lessons · {courseToEnroll.duration}</p>
-                </div>
-                <p className="font-black text-[#635BFF] text-2xl">${finalCheckoutPrice}.00</p>
-              </div>
-              {finalCheckoutPrice < courseToEnroll.price && (
-                <p className="text-xs text-emerald-700 bg-emerald-50 p-3 rounded-xl">🎉 Your {tier} membership saves ${courseToEnroll.price - finalCheckoutPrice}</p>
-              )}
-              <button
-                onClick={() => { onEnroll(courseToEnroll.id, finalCheckoutPrice); setCheckout(null); }}
-                className="w-full bg-[#635BFF] hover:bg-[#5851e0] text-white font-bold py-4 rounded-xl text-lg transition"
-              >
-                Pay ${finalCheckoutPrice}.00 & Start Learning
-              </button>
-              <button onClick={() => setCheckout(null)} className="w-full text-slate-500 text-sm font-bold py-2">Cancel</button>
-            </div>
-          </div>
-        </div>
+        finalCheckoutPrice <= 0 ? (
+          // Free for ELITE or zero-price intro courses — skip bank rail.
+          (() => { onEnroll(courseToEnroll.id, 0); setCheckout(null); return null; })()
+        ) : (
+          <BankCheckoutModal
+            accountId={user.accountId}
+            holder={user.name}
+            amountUsd={finalCheckoutPrice}
+            purpose="COURSE_PURCHASE"
+            title={courseToEnroll.title}
+            subtitle={`${courseToEnroll.lessons} lessons · ${courseToEnroll.duration}`}
+            label={courseToEnroll.id}
+            ctaText={`Pay $${finalCheckoutPrice.toFixed(2)} & start learning`}
+            onClose={() => setCheckout(null)}
+            onSuccess={() => { onEnroll(courseToEnroll.id, finalCheckoutPrice); setCheckout(null); }}
+          />
+        )
       )}
     </div>
   );

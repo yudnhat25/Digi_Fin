@@ -1,13 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { UserState, MarketData } from '../types';
-import { loadStripe } from '@stripe/stripe-js';
-import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { Wallet, TrendingUp, Shield, Clock, ArrowUpRight, ArrowDownRight, CreditCard, DollarSign } from 'lucide-react';
 import PortfolioPieChart from './PortfolioPieChart';
-
-// Initialize Stripe
-const stripePromise = loadStripe('pk_test_51SmmvXEzg6BsPMWkBairxWMhSg73qqIuwgLtUSxB0kWYbNIVsvaj3TaDz4UokmyRj5HPghfn1QidmzRf3pxdxxzs00OaykiGBJ');
+import BankCheckoutModal from './BankCheckoutModal';
 
 interface UserAccountProps {
     user: UserState;
@@ -15,106 +11,67 @@ interface UserAccountProps {
     onDeposit: (amount: number) => void;
 }
 
-const CheckoutForm: React.FC<{ onSuccess: (amount: number) => void }> = ({ onSuccess }) => {
-    const stripe = useStripe();
-    const elements = useElements();
+/**
+ * Deposit form routed through CoinWise Bank — same VND rail Arena uses.
+ * User enters USD; on submit, BankCheckoutModal converts to ₫ via /fx/convert,
+ * debits the user's bank balance, then onSuccess credits paper-trading USD.
+ * No Stripe SDK dependency anymore; the bank is the single payment surface.
+ */
+const BankDepositForm: React.FC<{
+    accountId: string;
+    holder: string;
+    onSuccess: (amount: number) => void;
+}> = ({ accountId, holder, onSuccess }) => {
     const [amount, setAmount] = useState('1000');
-    const [isProcessing, setIsProcessing] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-
-    const handleSubmit = async (event: React.FormEvent) => {
-        event.preventDefault();
-        if (!stripe || !elements) return;
-
-        setIsProcessing(true);
-        setError(null);
-
-        // Simulate API call delay
-        await new Promise(resolve => setTimeout(resolve, 1500));
-
-        // In a real app, we would create a PaymentIntent on the server here.
-        // For this demo, we'll simulate a successful card check.
-        const cardElement = elements.getElement(CardElement);
-
-        if (cardElement) {
-            const { error, paymentMethod } = await stripe.createPaymentMethod({
-                type: 'card',
-                card: cardElement,
-            });
-
-            if (error) {
-                setError(error.message || 'Payment failed');
-            } else {
-                // Simulation success
-                onSuccess(parseFloat(amount));
-                setAmount('1000');
-                if (cardElement) cardElement.clear();
-            }
-        }
-
-        setIsProcessing(false);
-    };
+    const [open, setOpen] = useState(false);
+    const usd = Math.max(0, parseFloat(amount) || 0);
 
     return (
-        <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-                <label className="block text-xs text-gray-400 mb-1 uppercase tracking-wider">Deposit Amount (USD)</label>
-                <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-400 font-bold">$</span>
-                    <input
-                        type="number"
-                        min="10"
-                        value={amount}
-                        onChange={(e) => setAmount(e.target.value)}
-                        className="w-full bg-[#1A1D25] border border-gray-700 rounded-lg py-3 pl-8 pr-4 text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all font-mono"
-                        placeholder="1000.00"
-                    />
+        <>
+            <div className="space-y-4">
+                <div>
+                    <label className="block text-xs text-gray-400 mb-1 uppercase tracking-wider">Deposit Amount (USD)</label>
+                    <div className="relative">
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-400 font-bold">$</span>
+                        <input
+                            type="number"
+                            min="10"
+                            value={amount}
+                            onChange={(e) => setAmount(e.target.value)}
+                            className="w-full bg-[#1A1D25] border border-gray-700 rounded-lg py-3 pl-8 pr-4 text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all font-mono"
+                            placeholder="1000.00"
+                        />
+                    </div>
                 </div>
-            </div>
 
-            <div>
-                <label className="block text-xs text-gray-400 mb-1 uppercase tracking-wider">Card Details</label>
-                <div className="p-3 bg-[#1A1D25] border border-gray-700 rounded-lg hover:border-gray-600 transition-colors">
-                    <CardElement options={{
-                        style: {
-                            base: {
-                                fontSize: '16px',
-                                color: '#ffffff',
-                                fontFamily: '"JetBrains Mono", monospace',
-                                '::placeholder': {
-                                    color: '#6b7280',
-                                },
-                            },
-                            invalid: {
-                                color: '#ef4444',
-                            },
-                        },
-                    }} />
-                </div>
+                <button
+                    type="button"
+                    disabled={usd < 10}
+                    onClick={() => setOpen(true)}
+                    className="w-full py-3 px-4 bg-emerald-500 hover:bg-emerald-600 text-black font-bold rounded-lg transition-all transform active:scale-95 flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    <CreditCard size={18} />
+                    <span>Deposit ${usd.toFixed(2)} via CoinWise Bank</span>
+                </button>
+                <p className="text-[11px] text-gray-500 text-center leading-relaxed">
+                    Funds are debited in VND from your CoinWise Bank account at the live FX rate, then added to paper-trading cash.
+                </p>
             </div>
-
-            {error && <div className="text-red-400 text-sm mt-2">{error}</div>}
-
-            <button
-                type="submit"
-                disabled={!stripe || isProcessing}
-                className="w-full py-3 px-4 bg-emerald-500 hover:bg-emerald-600 text-black font-bold rounded-lg transition-all transform active:scale-95 flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-                {isProcessing ? (
-                    <span className="animate-pulse">Processing...</span>
-                ) : (
-                    <>
-                        <CreditCard size={18} />
-                        <span>Deposit Funds</span>
-                    </>
-                )}
-            </button>
-            <div className="text-center">
-                <span className="text-xs text-emerald-500/60 bg-emerald-500/10 px-2 py-1 rounded inline-block">
-                    Stripe Secure Payment
-                </span>
-            </div>
-        </form>
+            {open && (
+                <BankCheckoutModal
+                    accountId={accountId}
+                    holder={holder}
+                    amountUsd={usd}
+                    purpose="ACCOUNT_TOPUP"
+                    title="Paper Trading Top-Up"
+                    subtitle="Funds added to your $USD trading cash"
+                    label={`+$${usd.toFixed(0)}`}
+                    ctaText={`Top up $${usd.toFixed(2)}`}
+                    onClose={() => setOpen(false)}
+                    onSuccess={() => { setOpen(false); onSuccess(usd); }}
+                />
+            )}
+        </>
     );
 };
 
@@ -273,17 +230,15 @@ const UserAccount: React.FC<UserAccountProps> = ({ user, marketPrices, onDeposit
                                     <CreditCard className="text-emerald-500 mr-2" />
                                     Deposit Funds
                                 </h3>
-                                <p className="text-gray-400 text-sm mt-1">Add funds to your paper trading account securely via Stripe.</p>
+                                <p className="text-gray-400 text-sm mt-1">Add funds to paper-trading cash. Debited in VND from your CoinWise Bank — same rail as Arena.</p>
                             </div>
                             <div className="hidden sm:block">
-                                <span className="bg-emerald-500/10 text-emerald-500 text-xs px-2 py-1 rounded border border-emerald-500/20">Stripe Enabled</span>
+                                <span className="bg-emerald-500/10 text-emerald-500 text-xs px-2 py-1 rounded border border-emerald-500/20">CoinWise Bank</span>
                             </div>
                         </div>
 
                         <div className="max-w-md">
-                            <Elements stripe={stripePromise}>
-                                <CheckoutForm onSuccess={onDeposit} />
-                            </Elements>
+                            <BankDepositForm accountId={user.accountId} holder={user.name} onSuccess={onDeposit} />
                         </div>
                     </div>
                 </div>
