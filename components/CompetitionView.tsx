@@ -2,46 +2,19 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { UserState, MarketData, LeaderboardEntry, UsersMap } from '../types';
 import { ENTRY_FEE, BASELINE_NET_WORTH } from '../constants';
+import { computeArenaTick, getCycleAnchor } from '../services/arena';
 
 interface CompetitionViewProps {
   user: UserState;
   marketPrices: MarketData[];
   onRegister: () => void;
   onReset: () => void;
+  onArenaExit?: () => void;
 }
 
 type CompTab = 'leaderboard' | 'stats' | 'history' | 'rules';
 
-// Continuous-arena cycle: 3-minute round → 30-second break → repeat.
-// A shared anchor in localStorage keeps every viewer's clock aligned so the
-// whole platform ticks in unison. Math is anchor-relative (no drift across
-// reloads, no state-machine ping-pong).
-const ROUND_MS = 3 * 60 * 1000;
-const BREAK_MS = 30 * 1000;
-const CYCLE_MS = ROUND_MS + BREAK_MS;
-const ANCHOR_KEY = 'coinwise_arena_anchor';
-
-function getCycleAnchor(): number {
-  if (typeof window === 'undefined') return Date.now();
-  const stored = Number(localStorage.getItem(ANCHOR_KEY));
-  if (Number.isFinite(stored) && stored > 0) return stored;
-  const now = Date.now();
-  localStorage.setItem(ANCHOR_KEY, String(now));
-  return now;
-}
-
-function computeArenaTick(anchor: number) {
-  const elapsed = (Date.now() - anchor) % CYCLE_MS;
-  const phase: 'active' | 'break' = elapsed < ROUND_MS ? 'active' : 'break';
-  const remainingMs = phase === 'active' ? ROUND_MS - elapsed : CYCLE_MS - elapsed;
-  const roundIndex = Math.floor((Date.now() - anchor) / CYCLE_MS) + 1;
-  const m = Math.floor(remainingMs / 60000);
-  const s = Math.floor((remainingMs % 60000) / 1000);
-  const display = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  return { phase, remainingMs, roundIndex, display };
-}
-
-const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, onRegister, onReset }) => {
+const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, onRegister, onReset, onArenaExit }) => {
   const [activeSubTab, setActiveSubTab] = useState<CompTab>('leaderboard');
   const [arenaAnchor] = useState<number>(() => getCycleAnchor());
   const [arenaTick, setArenaTick] = useState(() => computeArenaTick(getCycleAnchor()));
@@ -134,6 +107,24 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
 
   const isBreak = arenaTick.phase === 'break';
 
+  // Auto-exit: when the user's joined round closes, ask the parent to restore
+  // their pre-arena snapshot. Fires exactly once thanks to the roundEndsAt
+  // dependency — once it's cleared by the parent, the effect re-runs but the
+  // guard prevents a second exit.
+  useEffect(() => {
+    if (!user.competition?.isCompeting) return;
+    const endsAt = user.competition?.roundEndsAt;
+    if (!endsAt || !Number.isFinite(endsAt)) return;
+    const tick = () => {
+      if (Date.now() >= endsAt) {
+        onArenaExit?.();
+      }
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [user.competition?.isCompeting, user.competition?.roundEndsAt, onArenaExit]);
+
   const { pnl: userPnl } = getLiveStats(user);
   const currentUserEntry = participants.find(p => p.isUser);
   const userRank = currentUserEntry?.rank || 0;
@@ -175,24 +166,32 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
   };
 
   if (!user.competition?.isCompeting) {
+    const phaseLabel = isBreak ? `Break · next round in ${arenaTick.display}` : `Round ${arenaTick.roundIndex} live · ${arenaTick.display} left`;
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center space-y-8 animate-in zoom-in duration-500">
-        <div className="w-24 h-24 bg-emerald-500/10 text-emerald-500 rounded-3xl flex items-center justify-center mb-4">
+        <div className={`px-5 py-2 rounded-full border text-[10px] font-black uppercase tracking-widest ${isBreak ? 'border-amber-500/30 bg-amber-500/10 text-amber-300' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'}`}>
+          {phaseLabel}
+        </div>
+        <div className="w-24 h-24 bg-emerald-500/10 text-emerald-500 rounded-3xl flex items-center justify-center">
           <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"></path></svg>
         </div>
         <div className="max-w-xl">
           <h2 className="text-4xl font-black mb-4">The Best Investor Arena</h2>
-          <p className="text-slate-400 text-lg mb-8">
-            Enter the global "Best Investor" program. <br/>
-            <span className="text-emerald-400 font-bold">Your net worth resets to $1,000,000.00.</span> <br/>
-            Continuous arena: 3-minute rounds, 30-second breaks, looping forever.
+          <p className="text-slate-400 text-lg mb-4">
+            Continuous arena: <span className="text-emerald-400 font-bold">3-minute rounds</span> with <span className="text-amber-400 font-bold">30-second breaks</span>, looping forever.
           </p>
-          <button 
+          <p className="text-slate-500 text-sm mb-8 leading-relaxed">
+            Pay <span className="text-emerald-400 font-bold">${ENTRY_FEE.toFixed(2)}</span> to join the live round. Your real portfolio is snapshot and you get a fresh <span className="text-emerald-400 font-bold">$1,000,000</span> baseline. When the round ends, your original cash, holdings, and transaction history are fully restored — only the entry fee is kept.
+          </p>
+          <button
             onClick={onRegister}
             className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-12 py-5 rounded-2xl font-black text-xl shadow-2xl shadow-emerald-500/30 active:scale-95 transition-all"
           >
-            Enter Arena — $5.00
+            {isBreak ? `Bắt đầu vào round tiếp theo — $${ENTRY_FEE.toFixed(2)}` : `Bắt đầu — $${ENTRY_FEE.toFixed(2)}`}
           </button>
+          <p className="text-[11px] text-slate-600 mt-4">
+            Entry fee is non-refundable. Anyone can join at any time during a cycle.
+          </p>
         </div>
       </div>
     );

@@ -20,6 +20,17 @@ export interface CompetitionStats {
   entryTime: number;
   pnlPercent: number;
   currentRank: number;
+  // When the user's joined arena round ends (ms epoch). Once Date.now() crosses
+  // this, the frontend auto-restores the pre-arena snapshot.
+  roundEndsAt?: number;
+  // Snapshot of the user's real portfolio captured at arena entry. On exit
+  // the entire snapshot is written back so the arena run leaves no trace on
+  // their main account beyond the entry fee.
+  preArenaSnapshot?: {
+    balance: number;
+    assets: Asset[];
+    transactions: Transaction[];
+  };
 }
 
 export type SubscriptionTier = 'STARTER' | 'PRO' | 'ELITE';

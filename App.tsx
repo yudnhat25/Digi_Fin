@@ -24,6 +24,7 @@ import LiveCandlestickChart from './components/LiveCandlestickChart';
 import { UserState, MarketData, LeaderboardEntry, SubscriptionTier, StakePosition } from './types';
 import { fetchMarketPrices } from './services/api';
 import { CRYPTO_SYMBOLS, ENTRY_FEE, BASELINE_NET_WORTH, EARN_PRODUCTS } from './constants';
+import { computeRoundEndsAt } from './services/arena';
 
 import { auth, db } from './firebaseConfig';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -141,40 +142,76 @@ const App: React.FC = () => {
 
   const handleCompleteCompetitionPayment = () => {
     if (!currentUser) return;
-    const competitionEndTime = Date.now() + 60000;
+    // Charge the entry fee from real cash, snapshot the rest, then reset to
+    // arena baseline. Cap fee at available cash so the snapshot's balance
+    // can never go negative.
+    const realAssets = Array.isArray(currentUser.assets) ? currentUser.assets : [];
+    const realTxs = Array.isArray(currentUser.transactions) ? currentUser.transactions : [];
+    const realBalance = Number.isFinite(currentUser.balance) ? currentUser.balance : 0;
+    const fee = Math.min(ENTRY_FEE, Math.max(0, realBalance));
+    const snapshotBalance = realBalance - fee;
+    const roundEndsAt = computeRoundEndsAt();
     const updatedUser: UserState = {
       ...currentUser,
       balance: BASELINE_NET_WORTH,
       assets: [],
+      transactions: [],
       competition: {
         isCompeting: true,
         entryNetWorth: BASELINE_NET_WORTH,
         entryTime: Date.now(),
         pnlPercent: 0,
         currentRank: 0,
-        ...({ endTime: competitionEndTime } as any)
+        roundEndsAt,
+        preArenaSnapshot: {
+          balance: snapshotBalance,
+          assets: realAssets,
+          transactions: realTxs,
+        },
       },
-      transactions: [
-        ...currentUser.transactions,
-        { id: Math.random().toString(36).substr(2, 9), type: 'DEPOSIT', asset: 'ENTRY-FEE', amount: 1, price: ENTRY_FEE, total: ENTRY_FEE, timestamp: Date.now() },
-        { id: Math.random().toString(36).substr(2, 9), type: 'DEPOSIT', asset: 'ARENA-INIT', amount: 1, price: BASELINE_NET_WORTH, total: BASELINE_NET_WORTH, timestamp: Date.now() + 1 }
-      ]
     };
     saveUserData(updatedUser);
     setIsCompPaymentOpen(false);
     showToast('Arena entry confirmed! Race begins now.');
   };
 
-  const handleResetCompetition = () => {
+  const handleArenaExit = () => {
     if (!currentUser) return;
+    const snap = currentUser.competition?.preArenaSnapshot;
+    // Restore the pre-arena portfolio if we have one; otherwise just flip the
+    // flag off (defensive — old sessions without a snapshot still exit cleanly).
+    const finalNet = (() => {
+      const assets = Array.isArray(currentUser.assets) ? currentUser.assets : [];
+      const arenaAssetsValue = assets.reduce((s, a) => {
+        const price = marketPrices.find(m => m.symbol === a.symbol)?.price || 0;
+        return s + (a.amount || 0) * price;
+      }, 0);
+      return (currentUser.balance || 0) + arenaAssetsValue;
+    })();
+    const arenaPnlPct = ((finalNet - BASELINE_NET_WORTH) / BASELINE_NET_WORTH) * 100;
+    const restored: UserState = snap
+      ? {
+          ...currentUser,
+          balance: snap.balance,
+          assets: snap.assets,
+          transactions: snap.transactions,
+          competition: { isCompeting: false, entryNetWorth: 0, entryTime: 0, pnlPercent: 0, currentRank: 0 },
+        }
+      : {
+          ...currentUser,
+          competition: { isCompeting: false, entryNetWorth: 0, entryTime: 0, pnlPercent: 0, currentRank: 0 },
+        };
     if (auth.currentUser) {
       set(ref(db, `competition/players/${currentUser.accountId.replace('.', '_')}`), null);
     }
-    const updatedUser: UserState = {
-      ...currentUser,
-      competition: { isCompeting: false, entryNetWorth: 0, entryTime: 0, pnlPercent: 0, currentRank: 0 }
-    };
-    saveUserData(updatedUser);
+    saveUserData(restored);
+    showToast(`Arena round ended. Your portfolio is restored. Round PNL: ${arenaPnlPct >= 0 ? '+' : ''}${arenaPnlPct.toFixed(2)}%`, arenaPnlPct >= 0 ? 'success' : 'info');
+  };
+
+  const handleResetCompetition = () => {
+    // Legacy "claim reward then reset" path. Now just defers to handleArenaExit
+    // so the snapshot restore logic runs uniformly.
+    handleArenaExit();
     setActiveTab('dashboard');
   };
 
@@ -339,7 +376,7 @@ const App: React.FC = () => {
 
   const renderContent = () => {
     if (activeTab === 'competition') {
-      return <CompetitionView user={currentUser} marketPrices={marketPrices} onRegister={handleRegisterClick} onReset={handleResetCompetition} />;
+      return <CompetitionView user={currentUser} marketPrices={marketPrices} onRegister={handleRegisterClick} onReset={handleResetCompetition} onArenaExit={handleArenaExit} />;
     }
     if (activeTab === 'markets') {
       return <MarketsPage marketData={marketPrices} user={currentUser} onSelectAsset={setSelectedAsset} onGoToTerminal={() => setActiveTab('dashboard')} onToggleWatchlist={handleToggleWatchlist} />;
