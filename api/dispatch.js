@@ -2838,8 +2838,11 @@ function deriveAccountNo(accountId) {
   for (let i = 0; i < accountId.length; i++) h = h * 31 + accountId.charCodeAt(i) >>> 0;
   return (1e10 + h % 9e9).toString();
 }
+function bankPathKey(accountId) {
+  return accountId.replace(/[.#$/\[\]]/g, "_");
+}
 function bankFirebaseUrl(accountId) {
-  return `${FIREBASE_DB_URL}/banks/${encodeURIComponent(accountId)}.json`;
+  return `${FIREBASE_DB_URL}/banks/${encodeURIComponent(bankPathKey(accountId))}.json`;
 }
 async function loadBankFromFirebase(accountId) {
   const ctrl = new AbortController();

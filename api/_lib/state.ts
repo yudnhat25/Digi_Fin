@@ -109,8 +109,17 @@ const SEED_BALANCE_VND = 50_000_000;
 // ───────────────────────────────────────────────────────────────────────────
 const FIREBASE_DB_URL = 'https://gen-lang-client-0742583847-default-rtdb.asia-southeast1.firebasedatabase.app';
 
+// Firebase RTDB rejects '.', '#', '$', '[', ']', '/' in path keys. Real
+// accountIds in this app are often email addresses (e.g. "c@gmail.com")
+// because they come from Firebase Auth. Map illegal characters to '_' so the
+// path is well-formed; the original accountId is still stored inside the
+// account body and is what every API surfaces.
+function bankPathKey(accountId: string): string {
+  return accountId.replace(/[.#$/\[\]]/g, '_');
+}
+
 function bankFirebaseUrl(accountId: string): string {
-  return `${FIREBASE_DB_URL}/banks/${encodeURIComponent(accountId)}.json`;
+  return `${FIREBASE_DB_URL}/banks/${encodeURIComponent(bankPathKey(accountId))}.json`;
 }
 
 /**

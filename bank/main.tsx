@@ -59,14 +59,41 @@ const TXN_META: Record<BankTxn['type'], { label: string; color: string }> = {
   ARENA_PRIZE: { label: 'Thưởng Arena', color: 'text-emerald-400' },
 };
 
-const DEFAULT_ACCOUNT_ID = 'CW-AI-8892-X';
+const FALLBACK_ACCOUNT_ID = 'CW-AI-8892-X';
 const ACCOUNT_KEY = 'coinwisebank.accountId';
+const MAIN_SESSION_KEY = 'coinwise_session';
 const QUICK_AMOUNTS = [100_000, 500_000, 1_000_000, 5_000_000];
 
+/**
+ * Resolve the accountId the bank app should default to. Priority:
+ *   1. Last accountId the user explicitly typed into the bank login form
+ *      (per-tab override, useful for testing other users).
+ *   2. The accountId of whoever is signed in to the main CoinWise app
+ *      (shared via localStorage 'coinwise_session'). This is the common case:
+ *      same browser, same user, no re-login needed.
+ *   3. Hard-coded demo id 'CW-AI-8892-X' as a final fallback.
+ */
+function resolveDefaultAccountId(): { id: string; holderHint?: string } {
+  if (typeof window === 'undefined') return { id: FALLBACK_ACCOUNT_ID };
+  try {
+    const override = localStorage.getItem(ACCOUNT_KEY);
+    if (override) return { id: override };
+  } catch { /* SecurityError in some browsers */ }
+  try {
+    const raw = localStorage.getItem(MAIN_SESSION_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as { accountId?: string; name?: string };
+      if (parsed?.accountId) {
+        return { id: parsed.accountId, holderHint: parsed.name };
+      }
+    }
+  } catch { /* malformed session */ }
+  return { id: FALLBACK_ACCOUNT_ID };
+}
+
 const App: React.FC = () => {
-  const [accountId, setAccountId] = useState<string>(
-    () => (typeof window !== 'undefined' && localStorage.getItem(ACCOUNT_KEY)) || DEFAULT_ACCOUNT_ID,
-  );
+  const [{ id: initialId, holderHint }] = useState(resolveDefaultAccountId);
+  const [accountId, setAccountId] = useState<string>(initialId);
   const [loginInput, setLoginInput] = useState(accountId);
   const [account, setAccount] = useState<BankAccountInfo | null>(null);
   const [statement, setStatement] = useState<BankTxn[]>([]);
@@ -74,6 +101,7 @@ const App: React.FC = () => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async (id: string) => {
     setError(null);
@@ -82,8 +110,12 @@ const App: React.FC = () => {
       setAccount(acc);
       setStatement(stmt);
     } catch (e) {
+      // Don't blank out account on transient errors — the previous payload is
+      // still the best display we have. Surface the error in the banner so the
+      // user knows the data is stale.
       setError((e as Error).message);
-      setAccount(null);
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -143,12 +175,24 @@ const App: React.FC = () => {
         </div>
       )}
 
+      {/* Account-id banner — makes it unmissable WHICH account is loaded so
+          users don't end up debiting one and checking the balance on another. */}
+      <div className="mb-3 flex items-center justify-between gap-3 px-4 py-2 rounded-xl bg-slate-900/50 border border-slate-800">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 shrink-0">Đang xem</span>
+          <code className="text-xs font-mono text-emerald-300 truncate">{accountId}</code>
+        </div>
+        {holderHint && accountId === initialId && (
+          <span className="text-[10px] font-bold text-slate-500 shrink-0">đồng bộ từ CoinWise App</span>
+        )}
+      </div>
+
       {/* Balance card */}
       <section className="rounded-3xl bg-gradient-to-br from-bank-card to-slate-900 border border-slate-800 p-7 shadow-2xl mb-6 relative overflow-hidden">
         <div className="absolute -right-10 -top-10 w-40 h-40 bg-emerald-500/10 rounded-full blur-2xl" />
         <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-1">Số dư khả dụng</p>
         <p className="text-4xl md:text-5xl font-black tabular-nums text-white">
-          {account ? fmtVnd(account.balanceVnd) : '—'}
+          {loading ? '—' : account ? fmtVnd(account.balanceVnd) : '—'}
         </p>
         {account && (
           <p className="text-sm text-emerald-400 font-bold mt-1 tabular-nums">≈ {fmtUsd(account.balanceUsd)} <span className="text-slate-500 font-medium">· 1 USD = {account.rate.toLocaleString('vi-VN')} ₫</span></p>
@@ -156,7 +200,7 @@ const App: React.FC = () => {
         <div className="mt-6 flex items-end justify-between">
           <div>
             <p className="text-[10px] uppercase tracking-widest text-slate-600 font-bold">Chủ tài khoản</p>
-            <p className="font-bold text-slate-200">{account?.holder || '—'}</p>
+            <p className="font-bold text-slate-200">{account?.holder || holderHint || '—'}</p>
           </div>
           <div className="text-right">
             <p className="text-[10px] uppercase tracking-widest text-slate-600 font-bold">Số tài khoản</p>
@@ -166,18 +210,24 @@ const App: React.FC = () => {
       </section>
 
       {/* Login / switch account */}
-      <form onSubmit={handleLogin} className="flex gap-2 mb-6">
+      <form onSubmit={handleLogin} className="flex gap-2 mb-3">
         <input
           value={loginInput}
           onChange={(e) => setLoginInput(e.target.value)}
-          placeholder="Mã tài khoản CoinWise (accountId)"
+          placeholder="Chuyển sang accountId khác…"
           className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
         />
-        <button className="bg-slate-800 hover:bg-slate-700 px-5 rounded-xl text-sm font-bold transition">Đăng nhập</button>
+        <button className="bg-slate-800 hover:bg-slate-700 px-5 rounded-xl text-sm font-bold transition">Chuyển</button>
       </form>
+      <p className="text-[10px] text-slate-600 mb-6 leading-relaxed">
+        💡 Mặc định dùng accountId của tài khoản bạn đang đăng nhập bên CoinWise App. Chỉ đổi nếu muốn xem ngân hàng của user khác.
+      </p>
 
       {error && (
-        <div className="mb-6 bg-rose-500/10 border border-rose-500/30 text-rose-300 text-sm font-medium rounded-xl px-4 py-3">{error}</div>
+        <div className="mb-6 bg-rose-500/10 border border-rose-500/30 text-rose-300 text-sm font-medium rounded-xl px-4 py-3">
+          <p className="font-black mb-0.5">Không tải được dữ liệu ngân hàng</p>
+          <p className="text-xs opacity-90 break-all">{error}</p>
+        </div>
       )}
 
       {/* Deposit / withdraw */}
