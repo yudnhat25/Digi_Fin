@@ -57,20 +57,30 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
       const list: LeaderboardEntry[] = raw && typeof raw === 'object'
         ? Object.values(raw).filter((p: any) => p && typeof p.name === 'string') as LeaderboardEntry[]
         : [];
+      const selfStats = user.competition?.isCompeting ? getLiveStats(user) : null;
       const liveParticipants = list
         .filter((p) => !p.name.includes('AlgoTrader'))
-        .map((p) => ({ ...p, isUser: p.accountId === user.accountId }));
+        .map((p) => {
+          const isSelf = p.accountId === user.accountId;
+          // Self row: recompute pnl/netWorth from live marketPrices on every
+          // tick so the leaderboard never lags behind the top stat card. Other
+          // rows trust the Firebase snapshot — we don't have their assets to
+          // revalue locally anyway.
+          if (isSelf && selfStats) {
+            return { ...p, isUser: true, pnl: selfStats.pnl, value: selfStats.currentWorth };
+          }
+          return { ...p, isUser: isSelf };
+        });
       // If the current user is competing but not yet in the snapshot (race
       // condition right after entry), inject their own stats so they see
       // themselves immediately.
-      if (user.competition?.isCompeting && !liveParticipants.find((p) => p.accountId === user.accountId)) {
-        const stats = getLiveStats(user);
+      if (selfStats && !liveParticipants.find((p) => p.accountId === user.accountId)) {
         liveParticipants.push({
           rank: 0,
           name: user.name,
           accountId: user.accountId,
-          pnl: stats.pnl,
-          value: stats.currentWorth,
+          pnl: selfStats.pnl,
+          value: selfStats.currentWorth,
           isUser: true,
         });
       }
