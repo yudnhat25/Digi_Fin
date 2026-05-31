@@ -217,10 +217,12 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
   };
 
   if (!user.competition?.isCompeting) {
-    const phaseLabel = isBreak ? `Break · next round in ${arenaTick.display}` : `Round ${arenaTick.roundIndex} live · ${arenaTick.display} left`;
+    const phaseLabel = isBreak
+      ? `Đăng ký mở · ${arenaTick.display} để bắt đầu Round ${arenaTick.roundIndex + 1}`
+      : `Round ${arenaTick.roundIndex} đang diễn ra · đợi ${arenaTick.display} đến đợt đăng ký`;
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center space-y-8 animate-in zoom-in duration-500">
-        <div className={`px-5 py-2 rounded-full border text-[10px] font-black uppercase tracking-widest ${isBreak ? 'border-amber-500/30 bg-amber-500/10 text-amber-300' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'}`}>
+        <div className={`px-5 py-2 rounded-full border text-[10px] font-black uppercase tracking-widest ${isBreak ? 'border-amber-500/30 bg-amber-500/10 text-amber-300' : 'border-slate-500/30 bg-slate-500/10 text-slate-400'}`}>
           {phaseLabel}
         </div>
         <div className="w-24 h-24 bg-emerald-500/10 text-emerald-500 rounded-3xl flex items-center justify-center">
@@ -229,19 +231,54 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
         <div className="max-w-xl">
           <h2 className="text-4xl font-black mb-4">The Best Investor Arena</h2>
           <p className="text-slate-400 text-lg mb-4">
-            Continuous arena: <span className="text-emerald-400 font-bold">3-minute rounds</span> with <span className="text-amber-400 font-bold">30-second breaks</span>, looping forever.
+            Continuous arena: <span className="text-emerald-400 font-bold">3-minute rounds</span> with <span className="text-amber-400 font-bold">30-second breaks</span>. Đăng ký mở trong window break — mọi người bắt đầu cùng lúc khi round mới khởi động.
           </p>
           <p className="text-slate-500 text-sm mb-8 leading-relaxed">
-            Pay <span className="text-emerald-400 font-bold">${ENTRY_FEE.toFixed(2)}</span> to join the live round. Your real portfolio is snapshot and you get a fresh <span className="text-emerald-400 font-bold">$1,000,000</span> baseline. When the round ends, your original cash, holdings, and transaction history are fully restored — only the entry fee is kept.
+            Pay <span className="text-emerald-400 font-bold">${ENTRY_FEE.toFixed(2)}</span> để vào hàng chờ cho round tiếp theo. Portfolio thật của bạn được snapshot và bạn nhận baseline <span className="text-emerald-400 font-bold">$1,000,000</span>. Khi round kết thúc, cash + holdings + transactions cũ được khôi phục nguyên — chỉ mất entry fee.
           </p>
           <button
             onClick={onRegister}
-            className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-12 py-5 rounded-2xl font-black text-xl shadow-2xl shadow-emerald-500/30 active:scale-95 transition-all"
+            disabled={!isBreak}
+            className="bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-slate-950 px-12 py-5 rounded-2xl font-black text-xl shadow-2xl shadow-emerald-500/30 active:scale-95 transition-all"
           >
-            {isBreak ? `Bắt đầu vào round tiếp theo — $${ENTRY_FEE.toFixed(2)}` : `Bắt đầu — $${ENTRY_FEE.toFixed(2)}`}
+            {isBreak
+              ? `Đăng ký Round ${arenaTick.roundIndex + 1} — $${ENTRY_FEE.toFixed(2)}`
+              : `Đăng ký mở sau ${arenaTick.display}`}
           </button>
           <p className="text-[11px] text-slate-600 mt-4">
-            Entry fee is non-refundable. Anyone can join at any time during a cycle.
+            {isBreak
+              ? 'Sau khi thanh toán bạn sẽ đợi đến khi round mới bắt đầu, rồi trade trong đúng 3 phút.'
+              : 'Đăng ký chỉ mở trong window break 30 giây giữa 2 round.'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Queued state: paid but the round hasn't started yet (still in the break
+  // window between registration and round-start). Block the leaderboard view
+  // and show a countdown until trading opens.
+  const roundStartsAt = user.competition?.roundStartsAt;
+  if (roundStartsAt && Date.now() < roundStartsAt) {
+    const waitMs = Math.max(0, roundStartsAt - Date.now());
+    const wm = Math.floor(waitMs / 60000);
+    const ws = Math.floor((waitMs % 60000) / 1000);
+    const waitDisplay = `${wm.toString().padStart(2, '0')}:${ws.toString().padStart(2, '0')}`;
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center space-y-8 animate-in fade-in duration-500">
+        <div className="px-5 py-2 rounded-full border border-amber-500/40 bg-amber-500/10 text-amber-300 text-[10px] font-black uppercase tracking-widest">
+          Đã đăng ký · đợi round bắt đầu
+        </div>
+        <div className="w-32 h-32 rounded-3xl flex items-center justify-center border-2 border-amber-500/40 bg-amber-500/5">
+          <p className="text-5xl font-black font-mono text-amber-400 tabular-nums">{waitDisplay}</p>
+        </div>
+        <div className="max-w-md">
+          <h2 className="text-3xl font-black mb-3">Bạn đã vào hàng chờ</h2>
+          <p className="text-slate-400 text-base mb-2">
+            Round <span className="text-emerald-400 font-bold">{arenaTick.roundIndex + (isBreak ? 1 : 0)}</span> sẽ bắt đầu sau <span className="text-amber-400 font-bold">{waitDisplay}</span>.
+          </p>
+          <p className="text-slate-500 text-sm">
+            Baseline $1,000,000 đã được set. Khi đồng hồ về 00:00, leaderboard mở và bạn có 3 phút để trade.
           </p>
         </div>
       </div>

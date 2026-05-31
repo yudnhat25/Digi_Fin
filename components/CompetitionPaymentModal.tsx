@@ -1,6 +1,8 @@
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ENTRY_FEE } from '../constants';
+import { apiFxConvert } from '../services/coinwiseApi';
+import { useCurrency } from '../services/currency';
 
 interface CompetitionPaymentModalProps {
   onClose: () => void;
@@ -8,12 +10,28 @@ interface CompetitionPaymentModalProps {
 }
 
 const CompetitionPaymentModal: React.FC<CompetitionPaymentModalProps> = ({ onClose, onSuccess }) => {
+  const { usdVnd, formatVND } = useCurrency();
   const [isProcessing, setIsProcessing] = useState(false);
+  const [fxQuote, setFxQuote] = useState<{ amountVnd: number; rate: number } | null>(null);
+
+  // Stripe simulation collects USD, but the user pays in a Vietnam-first
+  // product, so call the CoinWise OpenAPI /fx/convert bridge to surface the
+  // equivalent VND charge before they confirm. Falls back to the cached
+  // useCurrency rate if the request fails.
+  useEffect(() => {
+    let alive = true;
+    apiFxConvert(ENTRY_FEE, 'USD', 'VND')
+      .then((r) => { if (alive) setFxQuote({ amountVnd: r.result, rate: r.rate }); })
+      .catch(() => {
+        if (!alive) return;
+        setFxQuote({ amountVnd: Math.round(ENTRY_FEE * usdVnd), rate: usdVnd });
+      });
+    return () => { alive = false; };
+  }, [usdVnd]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setIsProcessing(true);
-    // Simulate Stripe payment processing
     setTimeout(() => {
       setIsProcessing(false);
       onSuccess();
@@ -23,7 +41,6 @@ const CompetitionPaymentModal: React.FC<CompetitionPaymentModalProps> = ({ onClo
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
       <div className="bg-white text-slate-900 rounded-3xl w-full max-w-md p-8 shadow-2xl relative overflow-hidden animate-in zoom-in duration-300">
-        {/* Stripe Branded Header */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-2">
             <svg className="w-8 h-8 text-[#635BFF]" viewBox="0 0 40 40" fill="currentColor">
@@ -38,7 +55,15 @@ const CompetitionPaymentModal: React.FC<CompetitionPaymentModalProps> = ({ onClo
 
         <div className="mb-6 text-center">
           <p className="text-slate-500 text-sm font-medium uppercase tracking-widest mb-1">Total Due</p>
-          <p className="text-4xl font-black text-slate-900">${ENTRY_FEE.toFixed(2)}</p>
+          <p className="text-4xl font-black text-slate-900 tabular-nums">${ENTRY_FEE.toFixed(2)} <span className="text-slate-400 text-lg font-bold">USD</span></p>
+          <p className="text-emerald-600 text-base font-bold tabular-nums mt-1">
+            ≈ {fxQuote ? formatVND(fxQuote.amountVnd) : '…'}
+          </p>
+          {fxQuote && (
+            <p className="text-[10px] text-slate-400 mt-1">
+              FX bridge · 1 USD = {fxQuote.rate.toLocaleString('vi-VN')} ₫ · sourced from <code>/api/v1/fx/convert</code>
+            </p>
+          )}
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -61,13 +86,13 @@ const CompetitionPaymentModal: React.FC<CompetitionPaymentModalProps> = ({ onClo
           </div>
 
           <div className="flex items-start gap-3 p-3 bg-emerald-50 rounded-xl border border-emerald-100">
-            <svg className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A3.333 3.333 0 0121 12c0 1.237-.47 2.364-1.243 3.208a3.333 3.333 0 01-1.238 3.208c-.844.773-1.971 1.243-3.208 1.243a3.333 3.333 0 01-3.208 1.243c-1.237 0-2.364-.47-3.208-1.243a3.333 3.333 0 01-3.208-1.243C1.47 16.364 1 15.237 1 14c0-1.237.47-2.364 1.243-3.208A3.333 3.333 0 013.481 7.584c.844-.773 1.971-1.243 3.208-1.243a3.333 3.333 0 013.208-1.243c1.237 0 2.364.47 3.208 1.243a3.333 3.333 0 013.208 1.243z"></path></svg>
+            <svg className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4"></path></svg>
             <p className="text-[10px] text-emerald-700 font-medium leading-relaxed">
-              Secured simulation payment. Your actual CoinWise balance will not be deducted for this specific contest entry.
+              Stripe collects USD on its rails. CoinWise's OpenAPI bridge surfaces the equivalent VND so VN users see the real cost. Simulated payment — the $5 fee is deducted from your CoinWise demo balance only.
             </p>
           </div>
 
-          <button 
+          <button
             disabled={isProcessing}
             className="w-full bg-[#635BFF] hover:bg-[#5851e0] text-white font-black py-4 rounded-2xl flex items-center justify-center gap-3 transition-all active:scale-[0.98] shadow-xl shadow-[#635BFF]/20 disabled:opacity-70"
           >
@@ -77,10 +102,10 @@ const CompetitionPaymentModal: React.FC<CompetitionPaymentModalProps> = ({ onClo
                 Processing Payment...
               </>
             ) : (
-              `Pay $${ENTRY_FEE.toFixed(2)} & Enter Arena`
+              <>Pay ${ENTRY_FEE.toFixed(2)} {fxQuote && <span className="opacity-80 text-sm">· {formatVND(fxQuote.amountVnd)}</span>} &amp; Enter Arena</>
             )}
           </button>
-          
+
           <p className="text-center text-[10px] text-slate-400 font-medium">
             By paying, you agree to the Competition Terms and PNL Calculation Rules.
           </p>

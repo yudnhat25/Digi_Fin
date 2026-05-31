@@ -24,7 +24,7 @@ import LiveCandlestickChart from './components/LiveCandlestickChart';
 import { UserState, MarketData, LeaderboardEntry, SubscriptionTier, StakePosition } from './types';
 import { fetchMarketPrices } from './services/api';
 import { CRYPTO_SYMBOLS, ENTRY_FEE, BASELINE_NET_WORTH, EARN_PRODUCTS } from './constants';
-import { computeRoundEndsAt } from './services/arena';
+import { computeRoundEndsAt, computeNextRoundStartsAt } from './services/arena';
 
 import { auth, db } from './firebaseConfig';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -150,6 +150,7 @@ const App: React.FC = () => {
     const realBalance = Number.isFinite(currentUser.balance) ? currentUser.balance : 0;
     const fee = Math.min(ENTRY_FEE, Math.max(0, realBalance));
     const snapshotBalance = realBalance - fee;
+    const roundStartsAt = computeNextRoundStartsAt();
     const roundEndsAt = computeRoundEndsAt();
     const updatedUser: UserState = {
       ...currentUser,
@@ -162,6 +163,7 @@ const App: React.FC = () => {
         entryTime: Date.now(),
         pnlPercent: 0,
         currentRank: 0,
+        roundStartsAt,
         roundEndsAt,
         preArenaSnapshot: {
           balance: snapshotBalance,

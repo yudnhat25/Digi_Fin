@@ -39,15 +39,27 @@ export function computeArenaTick(anchor: number = getCycleAnchor()): ArenaTick {
 }
 
 /**
- * When the round CURRENTLY in progress (or the next one if we're on break)
- * will end. Used to set competition.roundEndsAt at the moment of entry, so
- * the participant exits the arena cleanly at the next round close.
+ * When the NEXT active round starts. Registration is gated to the 30-second
+ * break window, so this is what we set as competition.roundStartsAt at the
+ * moment of entry.
+ *  - During break: the upcoming round starts at the break's end.
+ *  - During an active round: the next round would start at end of current
+ *    round + the following break (rarely used because we disable registration
+ *    during active rounds, but provided as a defensive default).
  */
-export function computeRoundEndsAt(anchor: number = getCycleAnchor()): number {
+export function computeNextRoundStartsAt(anchor: number = getCycleAnchor()): number {
   const tick = computeArenaTick(anchor);
-  if (tick.phase === 'active') {
+  if (tick.phase === 'break') {
     return Date.now() + tick.remainingMs;
   }
-  // On break — schedule exit at end of the upcoming round.
-  return Date.now() + tick.remainingMs + ROUND_MS;
+  return Date.now() + tick.remainingMs + BREAK_MS;
+}
+
+/**
+ * When the round that a user joining RIGHT NOW will end. Always equals
+ * computeNextRoundStartsAt() + ROUND_MS so that a participant gets the full
+ * 3 minutes of trading regardless of when in the break they registered.
+ */
+export function computeRoundEndsAt(anchor: number = getCycleAnchor()): number {
+  return computeNextRoundStartsAt(anchor) + ROUND_MS;
 }

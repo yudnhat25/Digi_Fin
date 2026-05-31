@@ -20,7 +20,12 @@ export interface CompetitionStats {
   entryTime: number;
   pnlPercent: number;
   currentRank: number;
-  // When the user's joined arena round ends (ms epoch). Once Date.now() crosses
+  // When the user's joined arena round STARTS (ms epoch). Registration is only
+  // open during the 30-second break window, so this is always >= now at entry
+  // time. While Date.now() < roundStartsAt the user is "queued" — trading and
+  // the live leaderboard view are hidden behind a countdown.
+  roundStartsAt?: number;
+  // When the user's joined arena round ENDS (ms epoch). Once Date.now() crosses
   // this, the frontend auto-restores the pre-arena snapshot.
   roundEndsAt?: number;
   // Snapshot of the user's real portfolio captured at arena entry. On exit
