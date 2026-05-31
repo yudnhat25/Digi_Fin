@@ -71,34 +71,24 @@ const AIInsightCard: React.FC<{ symbol: string }> = ({ symbol }) => {
               {insight.signal.replace('_', ' ')}
             </span>
           </div>
-          <div className="grid grid-cols-3 gap-2 mb-3">
-            <div className="bg-slate-950 border border-slate-800 rounded-xl p-2">
-              <div className="flex items-center justify-between gap-1">
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Sentiment</p>
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div className="bg-slate-950 border border-slate-800 rounded-xl p-3">
+              <div className="flex items-center justify-between gap-1 mb-1">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Sentiment</p>
                 <SourceBadge kind={insight.sources?.sentimentScore} />
               </div>
-              <p className={`text-sm font-black ${insight.sentiment.score >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+              <p className={`text-2xl font-black leading-none ${insight.sentiment.score >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                 {(insight.sentiment.score * 100).toFixed(0)}
               </p>
-              <p className="text-[9px] text-slate-500">{insight.sentiment.label}</p>
+              <p className="text-[10px] text-slate-500 mt-1">{insight.sentiment.label}</p>
             </div>
-            <div className="bg-slate-950 border border-slate-800 rounded-xl p-2">
-              <div className="flex items-center justify-between gap-1">
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Whale 24h</p>
-                <SourceBadge kind={insight.sources?.whale} />
-              </div>
-              <p className={`text-sm font-black ${insight.whale.netFlow24hUsd >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {insight.whale.netFlow24hUsd >= 0 ? '+' : '-'}${(Math.abs(insight.whale.netFlow24hUsd) / 1e6).toFixed(2)}M
-              </p>
-              <p className="text-[9px] text-slate-500">{insight.whale.largeBuys} buys / {insight.whale.largeSells} sells</p>
-            </div>
-            <div className="bg-slate-950 border border-slate-800 rounded-xl p-2">
-              <div className="flex items-center justify-between gap-1">
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Mood</p>
+            <div className="bg-slate-950 border border-slate-800 rounded-xl p-3">
+              <div className="flex items-center justify-between gap-1 mb-1">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Market Mood</p>
                 <SourceBadge kind={insight.sources?.fearGreed} />
               </div>
-              <p className="text-sm font-black text-amber-400">{insight.fearGreed.value}</p>
-              <p className="text-[9px] text-slate-500">{insight.fearGreed.classification}</p>
+              <p className="text-2xl font-black text-amber-400 leading-none">{insight.fearGreed.value}</p>
+              <p className="text-[10px] text-slate-500 mt-1">{insight.fearGreed.classification}</p>
             </div>
           </div>
           <p className="text-xs text-slate-300 leading-relaxed">{insight.narrative}</p>

@@ -129,8 +129,7 @@ aiRouter.post('/insight', async (c) => {
     `Sentiment is ${sentiment.label.toLowerCase()} (${(sentiment.score * 100).toFixed(0)}/100) across ` +
     `${sentiment.mentions24h.toLocaleString()} 24h mentions` +
     `${sources.sentimentMentions === 'real' ? ' (Reddit + HN)' : ''}. ` +
-    `On-chain whales net ${whale.netFlow24hUsd >= 0 ? '+' : '-'}$${Math.abs(whale.netFlow24hUsd).toLocaleString()} — ` +
-    `${whale.verdict.toLowerCase()} (demo). Market mood: ${fg.classification} (${fg.value}/100).`;
+    `Market mood: ${fg.classification} (${fg.value}/100).`;
 
   return c.json({
     symbol: sym,
