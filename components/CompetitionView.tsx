@@ -1,8 +1,10 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { UserState, MarketData, LeaderboardEntry, UsersMap } from '../types';
+import { UserState, MarketData, LeaderboardEntry } from '../types';
 import { ENTRY_FEE, BASELINE_NET_WORTH } from '../constants';
 import { computeArenaTick, getCycleAnchor } from '../services/arena';
+import { db } from '../firebaseConfig';
+import { ref, onValue } from 'firebase/database';
 
 interface CompetitionViewProps {
   user: UserState;
@@ -43,44 +45,41 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
     return { currentWorth, pnl };
   };
 
+  // Subscribe to the shared competition/players node in Firebase Realtime DB.
+  // App.saveUserData() writes a LeaderboardEntry there for every competing
+  // user, so onValue gives us a live, multi-tab, multi-device leaderboard
+  // without any localStorage polling. Falls back gracefully to just the
+  // current user if Firebase is offline.
   useEffect(() => {
-    const loadSharedLeaderboard = () => {
-      const savedPool = localStorage.getItem('coinwise_competition_pool');
-      const pool: LeaderboardEntry[] = savedPool ? JSON.parse(savedPool) : [];
-      
-      const savedUsers = localStorage.getItem('coinwise_users');
-      const allUsers: UsersMap = savedUsers ? JSON.parse(savedUsers) : {};
-
-      // EXCLUSION: Only include real users, remove all AlgoTraders
-      const liveParticipants = pool
-        .filter(p => !p.name.includes('AlgoTrader'))
-        .map(p => {
-          const userMatch = p.accountId 
-            ? allUsers[p.accountId] 
-            : Object.values(allUsers).find(u => u.name === p.name);
-          
-          if (userMatch && userMatch.competition?.isCompeting) {
-            const stats = getLiveStats(userMatch);
-            return {
-              ...p,
-              accountId: userMatch.accountId,
-              pnl: stats.pnl,
-              value: stats.currentWorth,
-              isUser: userMatch.accountId === user.accountId
-            };
-          }
-          return { ...p, isUser: p.accountId === user.accountId };
+    const playersRef = ref(db, 'competition/players');
+    const unsub = onValue(playersRef, (snapshot) => {
+      const raw = snapshot.val();
+      const list: LeaderboardEntry[] = raw && typeof raw === 'object'
+        ? Object.values(raw).filter((p: any) => p && typeof p.name === 'string') as LeaderboardEntry[]
+        : [];
+      const liveParticipants = list
+        .filter((p) => !p.name.includes('AlgoTrader'))
+        .map((p) => ({ ...p, isUser: p.accountId === user.accountId }));
+      // If the current user is competing but not yet in the snapshot (race
+      // condition right after entry), inject their own stats so they see
+      // themselves immediately.
+      if (user.competition?.isCompeting && !liveParticipants.find((p) => p.accountId === user.accountId)) {
+        const stats = getLiveStats(user);
+        liveParticipants.push({
+          rank: 0,
+          name: user.name,
+          accountId: user.accountId,
+          pnl: stats.pnl,
+          value: stats.currentWorth,
+          isUser: true,
         });
-
+      }
       const sorted = [...liveParticipants].sort((a, b) => b.pnl - a.pnl);
       const ranked = sorted.map((p, i) => ({ ...p, rank: i + 1 }));
       setParticipants(ranked);
-    };
-
-    loadSharedLeaderboard();
-    const interval = setInterval(loadSharedLeaderboard, 4000); 
-    return () => clearInterval(interval);
-  }, [marketPrices, user.accountId]);
+    });
+    return () => unsub();
+  }, [user.accountId, user.competition?.isCompeting, user.balance, user.assets, marketPrices]);
 
   // Perpetual arena clock: ticks every second, flashes a banner on phase change
   // (round-end → break, break-end → new round). Anchor lives in localStorage so
