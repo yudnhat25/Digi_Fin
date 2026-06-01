@@ -512,7 +512,7 @@ const App: React.FC = () => {
             />
             <div className="grid grid-cols-1 gap-6">
               <TopMoversWidget marketData={marketPrices} user={currentUser} onSelectAsset={setSelectedAsset} />
-              <CommunityPulse userState={currentUser} marketData={marketPrices} />
+              <CommunityPulse userState={currentUser} marketData={marketPrices} symbol={selectedAsset} />
             </div>
           </div>
         </div>
