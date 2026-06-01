@@ -1,216 +1,569 @@
-import React, { useEffect, useState } from 'react';
-import { apiSocialPulse, apiFearGreed, SocialPulseRow, FearGreed } from '../services/coinwiseApi';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  apiSocialPulse,
+  apiFearGreedFull,
+  SocialPulseRow,
+  FearGreedFull,
+  FgPoint,
+} from '../services/coinwiseApi';
 
-const momentumColor: Record<SocialPulseRow['momentum'], string> = {
-  Spike: 'text-rose-400 bg-rose-500/10 border-rose-500/30',
-  Rising: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
-  Stable: 'text-slate-400 bg-slate-500/10 border-slate-700',
-  Cooling: 'text-blue-400 bg-blue-500/10 border-blue-500/30',
+// ─── Vietnamese F&G labels ───
+const VI: Record<string, string> = {
+  'Extreme Fear': 'Sợ hãi tột độ',
+  'Fear': 'Sợ hãi',
+  'Neutral': 'Bình thường',
+  'Greed': 'Tham lam',
+  'Extreme Greed': 'Tham lam tột độ',
+};
+const classBand = (v: number) =>
+  v < 25 ? 'Extreme Fear' :
+  v < 45 ? 'Fear' :
+  v < 55 ? 'Neutral' :
+  v < 75 ? 'Greed' : 'Extreme Greed';
+const bandTone = (v: number) =>
+  v < 25 ? { hex: '#dc2626', text: 'text-rose-400' } :
+  v < 45 ? { hex: '#f97316', text: 'text-orange-400' } :
+  v < 55 ? { hex: '#eab308', text: 'text-yellow-400' } :
+  v < 75 ? { hex: '#22c55e', text: 'text-emerald-400' } :
+           { hex: '#10b981', text: 'text-emerald-300' };
+
+const fmtBig = (n: number) => {
+  if (n >= 1e12) return (n / 1e12).toFixed(2).replace(/\.?0+$/, '') + 'T';
+  if (n >= 1e9)  return (n / 1e9).toFixed(2).replace(/\.?0+$/, '') + 'B';
+  if (n >= 1e6)  return (n / 1e6).toFixed(2).replace(/\.?0+$/, '') + 'M';
+  if (n >= 1e3)  return (n / 1e3).toFixed(2).replace(/\.?0+$/, '') + 'K';
+  return n.toFixed(2);
+};
+const fmtUsd = (n: number) => '$' + n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+const fmtDate = (s: string) => {
+  const d = new Date(s);
+  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+};
+const fmtPct = (n: number) => (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
+
+// ─── Semi-circle gauge ───
+const Gauge: React.FC<{ value: number }> = ({ value }) => {
+  const cx = 180, cy = 175, r = 130, thickness = 22;
+  const segments = [
+    { from: 0,  to: 25, color: '#7f1d1d' },
+    { from: 25, to: 45, color: '#dc2626' },
+    { from: 45, to: 55, color: '#eab308' },
+    { from: 55, to: 75, color: '#22c55e' },
+    { from: 75, to: 100, color: '#15803d' },
+  ];
+  const polar = (pct: number) => {
+    const ang = Math.PI - (pct / 100) * Math.PI;
+    return { x: cx + r * Math.cos(ang), y: cy - r * Math.sin(ang) };
+  };
+  const arcPath = (from: number, to: number) => {
+    const p0 = polar(from);
+    const p1 = polar(to);
+    const large = to - from > 50 ? 1 : 0;
+    return `M ${p0.x} ${p0.y} A ${r} ${r} 0 ${large} 1 ${p1.x} ${p1.y}`;
+  };
+  const dot = polar(Math.min(Math.max(value, 0), 100));
+  const tone = bandTone(value);
+
+  return (
+    <svg viewBox="0 0 360 200" className="w-full max-w-[360px] mx-auto">
+      {segments.map((s) => (
+        <path
+          key={s.from}
+          d={arcPath(s.from + 1, s.to - 1)}
+          fill="none"
+          stroke={s.color}
+          strokeWidth={thickness}
+          strokeLinecap="round"
+          opacity={0.85}
+        />
+      ))}
+      <circle cx={dot.x} cy={dot.y} r={11} fill="#fff" stroke="#04060c" strokeWidth={3} />
+      <text x={cx} y={cy - 8} textAnchor="middle" fontSize="64" fontWeight="700" fill="#fff" fontFamily="ui-sans-serif">
+        {Math.round(value)}
+      </text>
+      <text x={cx} y={cy + 24} textAnchor="middle" fontSize="18" fontWeight="600" fill={tone.hex}>
+        {VI[classBand(value)]}
+      </text>
+    </svg>
+  );
 };
 
+// ─── F&G + BTC overlay chart ───
+const OverlayChart: React.FC<{
+  fg: FgPoint[];
+  btc: { date: string; priceUsd: number; volumeUsd: number }[];
+}> = ({ fg, btc }) => {
+  const w = 880, h = 360, padL = 56, padR = 56, padT = 24, padB = 56;
+  const innerW = w - padL - padR;
+  const innerH = h - padT - padB;
+
+  const fgByDate = new Map(fg.map((p) => [p.date, p]));
+  const aligned = btc.filter((b) => fgByDate.has(b.date));
+  const n = Math.max(fg.length, aligned.length, 1);
+
+  const priceMin = aligned.length ? Math.min(...aligned.map((p) => p.priceUsd)) * 0.92 : 0;
+  const priceMax = aligned.length ? Math.max(...aligned.map((p) => p.priceUsd)) * 1.05 : 1;
+  const volMax = aligned.length ? Math.max(...aligned.map((p) => p.volumeUsd)) : 1;
+
+  const xFor = (i: number) => padL + (i / Math.max(n - 1, 1)) * innerW;
+  const yFg = (v: number) => padT + (1 - v / 100) * (innerH * 0.78);
+  const yBtc = (v: number) => padT + (1 - (v - priceMin) / Math.max(priceMax - priceMin, 1)) * (innerH * 0.78);
+  const yVol = (v: number) => padT + innerH * 0.78 + (1 - v / Math.max(volMax, 1)) * (innerH * 0.22);
+
+  const fgSegs: { x1: number; y1: number; x2: number; y2: number; color: string }[] = [];
+  for (let i = 1; i < fg.length; i++) {
+    const a = fg[i - 1];
+    const b = fg[i];
+    fgSegs.push({
+      x1: xFor(i - 1), y1: yFg(a.value),
+      x2: xFor(i),     y2: yFg(b.value),
+      color: bandTone(b.value).hex,
+    });
+  }
+  const btcPath = aligned.map((p, i) => {
+    const idx = fg.findIndex((f) => f.date === p.date);
+    const x = xFor(idx >= 0 ? idx : i);
+    const y = yBtc(p.priceUsd);
+    return `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
+  }).join(' ');
+
+  const volSample = Math.max(1, Math.floor(aligned.length / 120));
+  const vols = aligned.filter((_, i) => i % volSample === 0);
+
+  const priceTicks = 5;
+  const fgTicks = 5;
+  const dateLabelStep = Math.max(1, Math.floor(fg.length / 6));
+
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-auto">
+      {Array.from({ length: priceTicks + 1 }).map((_, i) => {
+        const y = padT + (i / priceTicks) * innerH * 0.78;
+        return <line key={`g${i}`} x1={padL} x2={w - padR} y1={y} y2={y} stroke="#1f2937" strokeWidth={0.5} />;
+      })}
+      <path d={btcPath} fill="none" stroke="#cbd5e1" strokeWidth={1.4} opacity={0.7} />
+      {fgSegs.map((s, i) => (
+        <line key={`fg${i}`} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke={s.color} strokeWidth={1.8} />
+      ))}
+      {vols.map((p, i) => {
+        const idx = fg.findIndex((f) => f.date === p.date);
+        const x = xFor(idx >= 0 ? idx : i * volSample);
+        const yTop = yVol(p.volumeUsd);
+        const yBot = h - padB;
+        return <line key={`v${i}`} x1={x} y1={yTop} x2={x} y2={yBot} stroke="#64748b" strokeWidth={1.2} opacity={0.45} />;
+      })}
+      {Array.from({ length: priceTicks + 1 }).map((_, i) => {
+        const y = padT + (i / priceTicks) * innerH * 0.78;
+        const v = priceMax - (i / priceTicks) * (priceMax - priceMin);
+        return (
+          <text key={`pl${i}`} x={padL - 8} y={y + 4} textAnchor="end" fontSize="10" fill="#64748b">
+            {Math.round(v / 1000)}K
+          </text>
+        );
+      })}
+      {Array.from({ length: fgTicks + 1 }).map((_, i) => {
+        const y = padT + (i / fgTicks) * innerH * 0.78;
+        const v = 100 - (i / fgTicks) * 100;
+        return (
+          <text key={`fr${i}`} x={w - padR + 8} y={y + 4} textAnchor="start" fontSize="10" fill="#64748b">
+            {Math.round(v)}
+          </text>
+        );
+      })}
+      {fg.filter((_, i) => i % dateLabelStep === 0).map((p, i) => {
+        const idx = i * dateLabelStep;
+        const x = xFor(idx);
+        const d = new Date(p.date);
+        const label = `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+        return (
+          <text key={`xd${i}`} x={x} y={h - padB + 18} textAnchor="middle" fontSize="10" fill="#64748b">
+            {label}
+          </text>
+        );
+      })}
+      {fg.length > 0 && (
+        <g transform={`translate(${w - padR - 90}, ${padT})`}>
+          <rect width="80" height="22" rx="6" fill="#1e293b" stroke="#334155" />
+          <text x="40" y="15" textAnchor="middle" fontSize="11" fill="#cbd5e1">
+            {fmtDate(fg[fg.length - 1].date)}
+          </text>
+        </g>
+      )}
+    </svg>
+  );
+};
+
+const HistRow: React.FC<{ label: string; pt: FgPoint | null }> = ({ label, pt }) => {
+  if (!pt) return null;
+  const tone = bandTone(pt.value);
+  return (
+    <div className="flex items-center justify-between py-3 border-b border-white/[0.04] last:border-0">
+      <span className="text-slate-400 text-[15px]">{label}</span>
+      <span className={`inline-flex items-center gap-2 text-[15px] font-semibold ${tone.text}`}>
+        <span className="w-1 h-4 rounded" style={{ background: tone.hex }} />
+        {VI[classBand(pt.value)]} {Math.round(pt.value)}
+      </span>
+    </div>
+  );
+};
+
+// ─── Sentiment bar for movers table ───
 const SentimentBar: React.FC<{ score: number }> = ({ score }) => {
-  const pct = ((score + 1) / 2) * 100;
+  const pct = Math.abs(score) * 50;
   const color = score > 0.4 ? 'bg-emerald-500' : score > 0 ? 'bg-emerald-400/70' : score > -0.4 ? 'bg-amber-400/70' : 'bg-rose-500';
   return (
-    <div className="w-32 h-2 bg-slate-800 rounded-full overflow-hidden relative">
-      <div className={`absolute inset-y-0 left-1/2 ${color}`} style={{ width: `${Math.abs(pct - 50)}%`, transform: score < 0 ? 'translateX(-100%)' : 'none' }} />
-      <div className="absolute top-0 bottom-0 left-1/2 w-px bg-slate-600" />
+    <div className="w-28 h-1.5 bg-white/[0.04] rounded-full overflow-hidden relative">
+      <div className="absolute top-0 bottom-0 left-1/2 w-px bg-white/20" />
+      <div className={`absolute inset-y-0 ${color}`} style={{ width: `${pct}%`, left: score < 0 ? `${50 - pct}%` : '50%' }} />
     </div>
   );
 };
 
-const FearGreedDial: React.FC<{ fg: FearGreed }> = ({ fg }) => {
-  const angle = (fg.value / 100) * 180 - 90;
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 relative overflow-hidden">
-      <div className="absolute -top-12 -right-12 w-40 h-40 bg-amber-500/10 rounded-full blur-3xl" />
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Fear & Greed Index</p>
-        {fg.source === 'alternative.me' ? (
-          <span className="text-[9px] font-black uppercase tracking-widest text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full" title="Live data from alternative.me">
-            ● Live · alternative.me
-          </span>
-        ) : (
-          <span className="text-[9px] font-black uppercase tracking-widest text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-full" title="Synthetic demo data (real API unreachable)">
-            Demo
-          </span>
-        )}
-      </div>
-      <div className="flex items-center gap-6">
-        <div className="relative w-40 h-20 overflow-hidden">
-          <svg viewBox="0 0 100 50" className="w-full h-full">
-            <defs>
-              <linearGradient id="fgGrad" x1="0" x2="1">
-                <stop offset="0" stopColor="#f43f5e" />
-                <stop offset="0.5" stopColor="#fbbf24" />
-                <stop offset="1" stopColor="#10b981" />
-              </linearGradient>
-            </defs>
-            <path d="M5 50 A45 45 0 0 1 95 50" fill="none" stroke="url(#fgGrad)" strokeWidth="6" strokeLinecap="round" />
-            <line x1="50" y1="50" x2="50" y2="10" stroke="#f1f5f9" strokeWidth="2" strokeLinecap="round" transform={`rotate(${angle} 50 50)`} />
-            <circle cx="50" cy="50" r="3" fill="#f1f5f9" />
-          </svg>
-        </div>
-        <div>
-          <p className="text-5xl font-black">{fg.value}</p>
-          <p className="text-xs font-black uppercase tracking-widest text-amber-400">{fg.classification}</p>
-          <p className={`text-[10px] font-bold mt-1 ${fg.delta24h >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-            {fg.delta24h >= 0 ? '+' : ''}{fg.delta24h} pts (24h)
-          </p>
-        </div>
-      </div>
-      <div className="mt-5">
-        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">14-day history</p>
-        <div className="flex items-end gap-1 h-12">
-          {fg.history.map((r) => (
-            <div key={r.date} className="flex-1 group relative">
-              <div
-                className={`w-full rounded-t-sm ${
-                  r.value < 30 ? 'bg-rose-500/70' : r.value < 50 ? 'bg-amber-500/70' : r.value < 75 ? 'bg-emerald-400/70' : 'bg-emerald-500'
-                }`}
-                style={{ height: `${r.value}%` }}
-              />
-              <div className="absolute -top-9 left-1/2 -translate-x-1/2 bg-slate-950 border border-slate-800 px-2 py-1 rounded text-[9px] font-bold opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-10">
-                {r.date} · {r.value}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
+const momentumTone: Record<SocialPulseRow['momentum'], string> = {
+  Spike: 'text-rose-300 bg-rose-500/10 border-rose-500/30',
+  Rising: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30',
+  Stable: 'text-slate-400 bg-white/[0.04] border-white/[0.08]',
+  Cooling: 'text-blue-300 bg-blue-500/10 border-blue-500/30',
+};
+const momentumVi: Record<SocialPulseRow['momentum'], string> = {
+  Spike: 'Bùng nổ',
+  Rising: 'Tăng',
+  Stable: 'Ổn định',
+  Cooling: 'Hạ nhiệt',
 };
 
+// ─── Main page ───
 const SocialPulsePage: React.FC<{ onSelectAsset?: (symbol: string) => void }> = ({ onSelectAsset }) => {
+  const [fgData, setFgData] = useState<FearGreedFull | null>(null);
   const [rows, setRows] = useState<SocialPulseRow[]>([]);
-  const [fg, setFg] = useState<FearGreed | null>(null);
   const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  const [tab, setTab] = useState<'overview' | 'chart'>('overview');
 
   useEffect(() => {
     let alive = true;
     const load = async () => {
       try {
-        const [p, f] = await Promise.all([apiSocialPulse(), apiFearGreed()]);
+        const [fg, pulse] = await Promise.all([
+          apiFearGreedFull().catch(() => null),
+          apiSocialPulse().catch(() => []),
+        ]);
         if (!alive) return;
-        setRows(p);
-        setFg(f);
+        setFgData(fg);
+        setRows(pulse);
+        setErr(null);
+      } catch (e) {
+        if (alive) setErr((e as Error).message);
       } finally {
         if (alive) setLoading(false);
       }
     };
     load();
-    const i = setInterval(load, 30_000);
+    const i = setInterval(load, 60_000);
     return () => { alive = false; clearInterval(i); };
   }, []);
 
+  const summary = useMemo(() => {
+    if (!fgData) return '';
+    const cur = fgData.fearGreed.current.value;
+    const week = fgData.fearGreed.periods.lastWeek?.value ?? cur;
+    const month = fgData.fearGreed.periods.lastMonth?.value ?? cur;
+    const moved = Math.abs(cur - week) > 10 || Math.abs(cur - month) > 15;
+    const bandCur = VI[classBand(cur)];
+    const bandWeek = VI[classBand(week)];
+    if (bandCur === bandWeek && !moved) {
+      return `Thị trường ổn định trong vùng ${bandCur} (${Math.round(cur)}/100) — chưa có biến động cảm xúc mạnh.`;
+    }
+    return `Tâm lý dao động giữa ${bandWeek} và ${bandCur}. Thị trường cân bằng, tránh được cực đoan.`;
+  }, [fgData]);
+
   return (
-    <div className="animate-in fade-in duration-500 space-y-6">
+    <div className="max-w-6xl mx-auto px-4 py-6 md:py-8 space-y-8 animate-in fade-in duration-500">
+      {/* ──── Header ──── */}
       <div>
-        <div className="inline-flex items-center gap-2 px-3 py-1 bg-fuchsia-500/10 border border-fuchsia-500/20 rounded-full text-fuchsia-300 text-[10px] font-black uppercase tracking-widest mb-3">
-          <span className="w-2 h-2 bg-fuchsia-400 rounded-full animate-pulse" />
-          AI Alternative Data
+        <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full text-emerald-300 text-[10px] font-bold uppercase tracking-widest mb-3">
+          <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+          AI Alternative Data · Live
         </div>
-        <h1 className="text-3xl md:text-4xl font-black tracking-tighter mb-2">Social Pulse Dashboard</h1>
-        <p className="text-slate-400 text-sm">
-          AI-aggregated sentiment from Twitter, Reddit & news feeds — refreshed every 30s. Powered by the CoinWise OpenAPI alternative-data layer.
+        <h1 className="text-3xl md:text-4xl font-bold tracking-tight">Social Pulse</h1>
+        <p className="text-slate-400 text-sm mt-2 max-w-2xl">
+          Tâm lý thị trường tổng hợp — Fear & Greed Index, social mentions, sentiment cộng đồng. Cập nhật mỗi 60 giây.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {fg && <FearGreedDial fg={fg} />}
-        <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-3xl p-6">
-          <div className="flex items-center justify-between mb-4">
+      {err && (
+        <div className="rounded-xl border border-rose-500/30 bg-rose-500/[0.04] p-4 text-sm text-rose-200">
+          Lỗi tải dữ liệu: {err}
+        </div>
+      )}
+
+      {/* ──── Fear & Greed section ──── */}
+      {fgData ? (
+        <section className="space-y-5">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Top Social Movers (24h)</p>
-              <h3 className="text-lg font-black">Coins with the loudest crowd</h3>
+              <h2 className="text-xl md:text-2xl font-bold tracking-tight flex items-center gap-2">
+                Chỉ số Sợ hãi & Tham lam
+                <span className="text-slate-600 text-sm">ⓘ</span>
+              </h2>
+              <div className="mt-2 flex items-start gap-2 max-w-2xl">
+                <svg viewBox="0 0 24 24" className="w-4 h-4 mt-0.5 text-violet-400 shrink-0" fill="currentColor">
+                  <path d="M12 2l1.5 4.5L18 8l-4.5 1.5L12 14l-1.5-4.5L6 8l4.5-1.5L12 2zm6 11l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3z" />
+                </svg>
+                <p className="text-slate-300 text-sm leading-relaxed">
+                  <span className="text-violet-400 font-semibold">Sử dụng AI · </span>
+                  {summary}
+                </p>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              {(() => {
-                const live = rows.filter((r) => r.source === 'coingecko').length;
-                if (loading) return null;
-                if (live > 0) {
-                  return (
-                    <span className="text-[9px] font-black uppercase tracking-widest text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full" title="Live community + sentiment data from CoinGecko">
-                      ● {live} live · coingecko
-                    </span>
-                  );
-                }
+            <div className="inline-flex rounded-xl border border-white/[0.06] bg-white/[0.02] p-1 shrink-0">
+              <button
+                onClick={() => setTab('overview')}
+                className={`px-4 py-1.5 text-sm font-semibold rounded-lg transition ${
+                  tab === 'overview' ? 'bg-white/[0.08] text-white' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Tổng quan
+              </button>
+              <button
+                onClick={() => setTab('chart')}
+                className={`px-4 py-1.5 text-sm font-semibold rounded-lg transition ${
+                  tab === 'chart' ? 'bg-white/[0.08] text-white' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Biểu đồ
+              </button>
+            </div>
+          </div>
+
+          {tab === 'overview' ? (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+              {/* Gauge — span 5 */}
+              <div className="lg:col-span-5 rounded-2xl border border-white/[0.06] bg-gradient-to-br from-white/[0.03] to-transparent p-6 md:p-8 flex items-center justify-center">
+                <Gauge value={fgData.fearGreed.current.value} />
+              </div>
+
+              {/* History — span 7 */}
+              <div className="lg:col-span-7 space-y-5">
+                <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
+                  <h3 className="text-sm font-bold text-slate-200 mb-1 flex items-center gap-1">
+                    Dữ liệu Lịch sử <span className="text-slate-600">ⓘ</span>
+                  </h3>
+                  <div className="mt-2">
+                    <HistRow label="Ngày hôm qua" pt={fgData.fearGreed.periods.yesterday} />
+                    <HistRow label="Tuần trước" pt={fgData.fearGreed.periods.lastWeek} />
+                    <HistRow label="Tháng trước" pt={fgData.fearGreed.periods.lastMonth} />
+                    <HistRow label="Năm ngoái" pt={fgData.fearGreed.periods.lastYear} />
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
+                  <h3 className="text-sm font-bold text-slate-200 mb-1 flex items-center gap-1">
+                    Mức cao & thấp 1 năm <span className="text-slate-600">ⓘ</span>
+                  </h3>
+                  <div className="mt-2">
+                    <div className="flex items-center justify-between py-3 border-b border-white/[0.04]">
+                      <span className="text-slate-400 text-[15px]">
+                        Cao nhất <span className="text-slate-600">({fmtDate(fgData.fearGreed.yearHigh.date)})</span>
+                      </span>
+                      <span className="inline-flex items-center gap-2 text-[15px] font-semibold text-emerald-400">
+                        <span className="w-1 h-4 rounded bg-emerald-400" />
+                        {VI[classBand(fgData.fearGreed.yearHigh.value)]} {Math.round(fgData.fearGreed.yearHigh.value)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between py-3">
+                      <span className="text-slate-400 text-[15px]">
+                        Thấp nhất <span className="text-slate-600">({fmtDate(fgData.fearGreed.yearLow.date)})</span>
+                      </span>
+                      <span className="inline-flex items-center gap-2 text-[15px] font-semibold text-rose-400">
+                        <span className="w-1 h-4 rounded bg-rose-400" />
+                        {VI[classBand(fgData.fearGreed.yearLow.value)]} {Math.round(fgData.fearGreed.yearLow.value)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {fgData.btc && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
+                      <p className="text-xs text-slate-500 uppercase tracking-wide">Tổng vốn hóa</p>
+                      <p className={`mt-1.5 text-lg font-bold ${fgData.btc.marketCapChange24hPct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {fmtPct(fgData.btc.marketCapChange24hPct)}
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">{fmtBig(fgData.btc.totalMarketCapUsd)} USD</p>
+                    </div>
+                    <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
+                      <p className="text-xs text-slate-500 uppercase tracking-wide">KL giao dịch 24h</p>
+                      <p className={`mt-1.5 text-lg font-bold ${fgData.btc.priceChange24hPct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {fmtPct(fgData.btc.priceChange24hPct)}
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">{fmtBig(fgData.btc.totalVolume24hUsd)} USD</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
+              <div className="flex items-baseline flex-wrap gap-5 mb-4">
+                <div>
+                  <p className="text-[11px] text-slate-500 uppercase tracking-wide">F&G hiện tại</p>
+                  <p className={`text-base font-bold ${bandTone(fgData.fearGreed.current.value).text}`}>
+                    {VI[classBand(fgData.fearGreed.current.value)]} {Math.round(fgData.fearGreed.current.value)}
+                  </p>
+                </div>
+                {fgData.btc && (
+                  <>
+                    <div>
+                      <p className="text-[11px] text-slate-500 uppercase tracking-wide">Giá BTC</p>
+                      <p className="text-base font-bold text-slate-100">{fmtUsd(fgData.btc.priceUsd)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] text-slate-500 uppercase tracking-wide">KL 24h</p>
+                      <p className="text-base font-bold text-slate-100">${fmtBig(fgData.btc.volume24hUsd)}</p>
+                    </div>
+                  </>
+                )}
+              </div>
+              <OverlayChart
+                fg={fgData.fearGreed.history}
+                btc={fgData.btcHistory?.points || []}
+              />
+              <div className="flex flex-wrap items-center gap-4 mt-4 text-xs text-slate-400">
+                <span className="inline-flex items-center gap-2"><span className="w-3 h-0.5 bg-slate-300" /> Giá BTC</span>
+                <span className="inline-flex items-center gap-2"><span className="w-3 h-0.5 bg-emerald-400" /> F&G cao (tham lam)</span>
+                <span className="inline-flex items-center gap-2"><span className="w-3 h-0.5 bg-rose-400" /> F&G thấp (sợ hãi)</span>
+                <span className="inline-flex items-center gap-2"><span className="w-2 h-2.5 bg-slate-500/60" /> KL BTC</span>
+              </div>
+            </div>
+          )}
+        </section>
+      ) : loading ? (
+        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-10 text-center text-slate-500 text-sm">
+          Đang tải dữ liệu Fear & Greed…
+        </div>
+      ) : null}
+
+      {/* ──── Top Social Movers ──── */}
+      <section className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+          <div>
+            <h2 className="text-lg font-bold tracking-tight">Top Social Movers</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Coins với cộng đồng sôi động nhất trong 24h</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {(() => {
+              const live = rows.filter((r) => r.source === 'coingecko').length;
+              if (loading && !rows.length) return null;
+              if (live > 0) {
                 return (
-                  <span className="text-[9px] font-black uppercase tracking-widest text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-full" title="Synthetic demo data — CoinGecko unreachable">
-                    Demo
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 px-2 py-1 rounded-md">
+                    ● {live} live · coingecko
                   </span>
                 );
-              })()}
-              <span className="text-[10px] font-black text-fuchsia-300 bg-fuchsia-500/10 px-2 py-1 rounded">
-                {loading ? 'Loading…' : `${rows.length} tracked`}
-              </span>
-            </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-[10px] font-black uppercase tracking-widest text-slate-500 text-left">
-                  <th className="py-2 pr-3">Asset</th>
-                  <th className="py-2 pr-3">Mentions 24h</th>
-                  <th className="py-2 pr-3">Sentiment</th>
-                  <th className="py-2 pr-3">Δ</th>
-                  <th className="py-2 pr-3">Momentum</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.slice(0, 12).map((r) => (
-                  <tr
-                    key={r.symbol}
-                    onClick={() => onSelectAsset?.(r.symbol)}
-                    className="border-t border-slate-800/60 hover:bg-slate-800/30 cursor-pointer transition"
-                  >
-                    <td className="py-3 pr-3 font-black">{r.symbol.replace('USDT', '')}</td>
-                    <td className="py-3 pr-3 font-mono text-xs">{r.mentions24h.toLocaleString()}</td>
-                    <td className="py-3 pr-3">
-                      <div className="flex items-center gap-2">
-                        <SentimentBar score={r.sentiment} />
-                        <span className={`text-xs font-bold ${r.sentiment > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                          {(r.sentiment * 100).toFixed(0)}
-                        </span>
-                      </div>
-                    </td>
-                    <td className={`py-3 pr-3 text-xs font-bold ${r.delta >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      {r.delta >= 0 ? '+' : ''}{(r.delta * 100).toFixed(0)}%
-                    </td>
-                    <td className="py-3 pr-3">
-                      <span className={`text-[9px] font-black uppercase tracking-widest border px-2 py-0.5 rounded ${momentumColor[r.momentum]}`}>
-                        {r.momentum}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+              }
+              return (
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2 py-1 rounded-md">
+                  Demo
+                </span>
+              );
+            })()}
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 bg-white/[0.04] border border-white/[0.06] px-2 py-1 rounded-md">
+              {loading ? 'Loading…' : `${rows.length} coins`}
+            </span>
           </div>
         </div>
-      </div>
 
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6">
-        <h3 className="text-lg font-black mb-1">How we extract value from non-traditional data</h3>
-        <p className="text-slate-400 text-xs mb-4">
-          The CoinWise OpenAPI <code className="text-fuchsia-300">/api/v1/market/*</code> endpoints blend three alt-data streams. Live badges above mean we hit the real third-party source; "Demo" means the key is unset and we use a synthetic fallback so the UI never breaks.
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-[10px] font-bold uppercase tracking-wider text-slate-500 text-left border-b border-white/[0.04]">
+                <th className="py-2 pr-3">Asset</th>
+                <th className="py-2 pr-3">Mentions 24h</th>
+                <th className="py-2 pr-3">Sentiment</th>
+                <th className="py-2 pr-3">Δ</th>
+                <th className="py-2 pr-3">Momentum</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.slice(0, 12).map((r) => (
+                <tr
+                  key={r.symbol}
+                  onClick={() => onSelectAsset?.(r.symbol)}
+                  className="border-b border-white/[0.03] hover:bg-white/[0.02] cursor-pointer transition"
+                >
+                  <td className="py-3 pr-3 font-semibold">{r.symbol.replace('USDT', '')}</td>
+                  <td className="py-3 pr-3 font-mono text-xs text-slate-300">{r.mentions24h.toLocaleString()}</td>
+                  <td className="py-3 pr-3">
+                    <div className="flex items-center gap-2">
+                      <SentimentBar score={r.sentiment} />
+                      <span className={`text-xs font-bold ${r.sentiment > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {(r.sentiment * 100).toFixed(0)}
+                      </span>
+                    </div>
+                  </td>
+                  <td className={`py-3 pr-3 text-xs font-bold ${r.delta >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {r.delta >= 0 ? '+' : ''}{(r.delta * 100).toFixed(0)}%
+                  </td>
+                  <td className="py-3 pr-3">
+                    <span className={`text-[10px] font-bold uppercase tracking-wider border px-2 py-0.5 rounded ${momentumTone[r.momentum]}`}>
+                      {momentumVi[r.momentum]}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* ──── How alt-data works ──── */}
+      <section className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
+        <h2 className="text-lg font-bold tracking-tight mb-1">Dữ liệu alt-data được lấy từ đâu</h2>
+        <p className="text-xs text-slate-500 mb-4">
+          3 nguồn miễn phí blend với nhau qua endpoint <code className="text-emerald-300">/api/v1/ai/*</code>. Badge "Live" nghĩa là hit nguồn thật; "Demo" là synthetic fallback.
         </p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {[
-            { title: '👥 Community sentiment', desc: 'CoinGecko user vote ratio (sentiment_votes_up/down) plus Reddit posts + Twitter followers per coin.', src: 'coingecko.com/api/v3' },
-            { title: '🐋 On-chain whale flow', desc: 'Net large-wallet movement detects smart-money positioning ahead of price.', src: 'synthetic (etherscan-ready)' },
-            { title: '😱 Market mood', desc: 'Fear & Greed composite — volatility, momentum, search trends, dominance, social mentions.', src: 'alternative.me/fng' },
-          ].map((c) => (
-            <div key={c.title} className="bg-slate-950 border border-slate-800 rounded-2xl p-4">
-              <p className="font-black text-sm mb-1">{c.title}</p>
-              <p className="text-xs text-slate-400 leading-relaxed mb-2">{c.desc}</p>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                Source: <code className="text-fuchsia-300 normal-case">{c.src}</code>
-              </p>
-            </div>
-          ))}
+          <div className="rounded-xl border border-white/[0.06] bg-black/20 p-4">
+            <p className="font-bold text-sm mb-1 flex items-center gap-2">
+              <span className="text-amber-400">😱</span> Fear & Greed
+            </p>
+            <p className="text-xs text-slate-400 leading-relaxed mb-2">
+              Composite 5 yếu tố: volatility 25% · momentum/KL 25% · social 15% · BTC dominance 10% · Google Trends 10%.
+            </p>
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+              Nguồn: <code className="text-emerald-300 normal-case">alternative.me/fng</code>
+            </p>
+          </div>
+          <div className="rounded-xl border border-white/[0.06] bg-black/20 p-4">
+            <p className="font-bold text-sm mb-1 flex items-center gap-2">
+              <span className="text-blue-400">👥</span> Community sentiment
+            </p>
+            <p className="text-xs text-slate-400 leading-relaxed mb-2">
+              Vote ratio người dùng (sentiment_votes_up/down) + số Reddit subscribers + Twitter followers theo từng coin.
+            </p>
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+              Nguồn: <code className="text-emerald-300 normal-case">coingecko.com/api/v3</code>
+            </p>
+          </div>
+          <div className="rounded-xl border border-white/[0.06] bg-black/20 p-4">
+            <p className="font-bold text-sm mb-1 flex items-center gap-2">
+              <span className="text-emerald-400">📊</span> Market snapshot
+            </p>
+            <p className="text-xs text-slate-400 leading-relaxed mb-2">
+              Giá BTC realtime, KL giao dịch 24h, tổng vốn hóa toàn thị trường + % thay đổi 24h.
+            </p>
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+              Nguồn: <code className="text-emerald-300 normal-case">coingecko.com/api/v3/global</code>
+            </p>
+          </div>
         </div>
-      </div>
+      </section>
+
+      {fgData && (
+        <p className="text-xs text-slate-600 text-center pt-2">
+          Cập nhật {new Date(fgData.fetchedAt).toLocaleTimeString('vi-VN')} · alternative.me · CoinGecko
+        </p>
+      )}
     </div>
   );
 };
