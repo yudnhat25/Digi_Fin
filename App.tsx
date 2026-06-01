@@ -21,6 +21,7 @@ import FraudShieldPage from './components/FraudShieldPage';
 import ApiDocsPage from './components/ApiDocsPage';
 import AIInsightCard from './components/AIInsightCard';
 import LiveCandlestickChart from './components/LiveCandlestickChart';
+import OrderBookPanel from './components/OrderBookPanel';
 import { UserState, MarketData, LeaderboardEntry, SubscriptionTier, StakePosition } from './types';
 import { fetchMarketPrices } from './services/api';
 import { CRYPTO_SYMBOLS, BASELINE_NET_WORTH, EARN_PRODUCTS } from './constants';
@@ -485,6 +486,9 @@ const App: React.FC = () => {
                 <LiveCandlestickChart symbol={selectedAsset} timeframe={timeframe} showEMA={showIndicators.ema} />
               </div>
             </div>
+
+            {/* Live order book + trade tape */}
+            <OrderBookPanel symbol={selectedAsset} />
 
             {/* Allocation + News under chart */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
