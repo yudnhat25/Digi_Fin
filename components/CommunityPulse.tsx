@@ -30,9 +30,9 @@ const timeAgo = (ts: number) => {
 
 // News-style left tag, coloured by sentiment.
 const tagFor = (l: SentimentLabel) =>
-  l === 'positive' ? { t: 'BULL', c: 'emerald' } :
-  l === 'negative' ? { t: 'BEAR', c: 'rose' } :
-  { t: 'FLAT', c: 'slate' };
+  l === 'positive' ? { t: 'POSITIVE', c: 'emerald' } :
+  l === 'negative' ? { t: 'NEGATIVE', c: 'rose' } :
+  { t: 'NEUTRAL', c: 'slate' };
 
 // ─── Deterministic verdict: community comments + news/alt-data + Fear&Greed ───
 type VerdictTone = 'good' | 'soft-good' | 'neutral' | 'soft-bad' | 'bad';
@@ -196,7 +196,7 @@ const CommunityPulse: React.FC<Props> = ({ userState, marketData, symbol }) => {
             const tag = tagFor(p.label);
             return (
               <div key={p.id} className="flex gap-3">
-                <span className={`text-[9px] font-black uppercase tracking-widest bg-${tag.c}-500/15 text-${tag.c}-400 px-2 py-1 rounded h-fit shrink-0`}>
+                <span className={`text-[9px] font-black uppercase tracking-wide bg-${tag.c}-500/15 text-${tag.c}-400 px-2 py-1 rounded h-fit shrink-0`}>
                   {tag.t}
                 </span>
                 <div className="flex-1 min-w-0">
