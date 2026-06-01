@@ -34,64 +34,57 @@ const fmtDate = (s: string) => {
 };
 const fmtPct = (n: number) => (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
 
-// ─── Big semi-circle gauge ───
-const Gauge: React.FC<{ value: number; delta24h: number }> = ({ value, delta24h }) => {
-  const cx = 180, cy = 175, r = 130, thickness = 26;
-  const segments = [
-    { from: 0,  to: 25, color: '#7f1d1d' },
-    { from: 25, to: 45, color: '#dc2626' },
-    { from: 45, to: 55, color: '#eab308' },
-    { from: 55, to: 75, color: '#22c55e' },
-    { from: 75, to: 100, color: '#15803d' },
-  ];
-  const polar = (pct: number) => {
-    const ang = Math.PI - (pct / 100) * Math.PI;
-    return { x: cx + r * Math.cos(ang), y: cy - r * Math.sin(ang) };
-  };
-  const arcPath = (from: number, to: number) => {
-    const p0 = polar(from);
-    const p1 = polar(to);
-    const large = to - from > 50 ? 1 : 0;
-    return `M ${p0.x} ${p0.y} A ${r} ${r} 0 ${large} 1 ${p1.x} ${p1.y}`;
-  };
-  const dot = polar(Math.min(Math.max(value, 0), 100));
-  const tone = bandTone(value);
+// ─── Clean semi-circle gauge with smooth gradient + needle ───
+const Gauge: React.FC<{ value: number }> = ({ value }) => {
+  const cx = 180, cy = 175, r = 130, thickness = 22;
+  const v = Math.min(Math.max(value, 0), 100);
+  const ang = Math.PI - (v / 100) * Math.PI;
+  // Needle is shorter than the arc so the tip sits inside the band, not on it.
+  const needleLen = r - 18;
+  const tipX = cx + needleLen * Math.cos(ang);
+  const tipY = cy - needleLen * Math.sin(ang);
+
+  // Full-arc gradient path.
+  const startX = cx - r, startY = cy;
+  const endX = cx + r, endY = cy;
+  const arcPath = `M ${startX} ${startY} A ${r} ${r} 0 0 1 ${endX} ${endY}`;
 
   return (
-    <div className="relative w-full flex flex-col items-center">
-      <svg viewBox="0 0 360 210" className="w-full max-w-[380px]">
-        <defs>
-          <filter id="dotGlow" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="3" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
-        {segments.map((s) => (
-          <path
-            key={s.from}
-            d={arcPath(s.from + 1, s.to - 1)}
-            fill="none"
-            stroke={s.color}
-            strokeWidth={thickness}
-            strokeLinecap="round"
-            opacity={0.9}
-          />
-        ))}
-        <circle cx={dot.x} cy={dot.y} r={13} fill="#fff" stroke="#0f172a" strokeWidth={4} filter="url(#dotGlow)" />
-        <text x={cx} y={cy - 8} textAnchor="middle" fontSize="72" fontWeight="900" fill="#fff" fontFamily="ui-sans-serif" letterSpacing="-0.04em">
-          {Math.round(value)}
-        </text>
-        <text x={cx} y={cy + 28} textAnchor="middle" fontSize="13" fontWeight="900" fill={tone.hex} letterSpacing="0.2em">
-          {classBand(value).toUpperCase()}
-        </text>
-      </svg>
-      <p className={`text-[11px] font-black uppercase tracking-widest mt-1 ${delta24h >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-        {delta24h >= 0 ? '▲' : '▼'} {Math.abs(delta24h)} pts (24h)
-      </p>
-    </div>
+    <svg viewBox="0 0 360 210" className="w-full max-w-[360px]">
+      <defs>
+        <linearGradient id="fgArcGradient" x1="0" x2="1" y1="0" y2="0">
+          <stop offset="0%"   stopColor="#dc2626" />
+          <stop offset="22%"  stopColor="#ef4444" />
+          <stop offset="42%"  stopColor="#f59e0b" />
+          <stop offset="55%"  stopColor="#fbbf24" />
+          <stop offset="72%"  stopColor="#84cc16" />
+          <stop offset="100%" stopColor="#16a34a" />
+        </linearGradient>
+        <filter id="needleGlow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="2" />
+        </filter>
+      </defs>
+      {/* track */}
+      <path d={arcPath} fill="none" stroke="#1e293b" strokeWidth={thickness + 2} strokeLinecap="round" opacity={0.6} />
+      {/* gradient arc */}
+      <path d={arcPath} fill="none" stroke="url(#fgArcGradient)" strokeWidth={thickness} strokeLinecap="round" />
+      {/* needle drop shadow */}
+      <line
+        x1={cx} y1={cy} x2={tipX} y2={tipY}
+        stroke="#000" strokeWidth={6} strokeLinecap="round" opacity={0.4}
+        filter="url(#needleGlow)"
+      />
+      {/* needle */}
+      <line
+        x1={cx} y1={cy} x2={tipX} y2={tipY}
+        stroke="#f8fafc" strokeWidth={4} strokeLinecap="round"
+      />
+      {/* needle tip cap */}
+      <circle cx={tipX} cy={tipY} r={5} fill="#f8fafc" />
+      {/* pivot — outer dark ring + white cap */}
+      <circle cx={cx} cy={cy} r={11} fill="#0f172a" stroke="#1e293b" strokeWidth={2} />
+      <circle cx={cx} cy={cy} r={6} fill="#f8fafc" />
+    </svg>
   );
 };
 
@@ -340,11 +333,26 @@ const SocialPulsePage: React.FC<{ onSelectAsset?: (symbol: string) => void }> = 
 
           {tab === 'overview' ? (
             <div className="relative grid grid-cols-1 lg:grid-cols-12 gap-6">
-              {/* Gauge — span 5 */}
-              <div className="lg:col-span-5 bg-slate-950/60 border border-slate-800 rounded-3xl p-6 flex flex-col items-center justify-center relative overflow-hidden">
+              {/* Gauge + headline value — span 5 */}
+              <div className="lg:col-span-5 bg-slate-950/60 border border-slate-800 rounded-3xl p-6 relative overflow-hidden">
                 <div className={`absolute -top-16 -right-16 w-48 h-48 rounded-full blur-3xl ${curTone.glow}`} />
-                <p className="relative text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2 self-start">Now</p>
-                <Gauge value={cur} delta24h={fgData.fearGreed.delta24h} />
+                <p className="relative text-[10px] font-black uppercase tracking-widest text-slate-500 mb-4">Fear &amp; Greed Index</p>
+                <div className="relative flex items-center justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <Gauge value={cur} />
+                  </div>
+                  <div className="shrink-0 pr-2">
+                    <p className="text-6xl font-black tracking-tighter text-white leading-none">
+                      {Math.round(cur)}
+                    </p>
+                    <p className={`mt-2 text-base font-black uppercase tracking-widest ${curTone.text}`}>
+                      {classBand(cur)}
+                    </p>
+                    <p className={`mt-1 text-xs font-black ${fgData.fearGreed.delta24h >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {fgData.fearGreed.delta24h >= 0 ? '+' : ''}{fgData.fearGreed.delta24h} pts (24h)
+                    </p>
+                  </div>
+                </div>
               </div>
 
               {/* Right column — history + hi/lo + cards */}
