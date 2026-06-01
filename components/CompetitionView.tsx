@@ -2,9 +2,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { UserState, MarketData, LeaderboardEntry } from '../types';
 import { ENTRY_FEE, BASELINE_NET_WORTH } from '../constants';
-import { computeArenaTick, getCycleAnchor } from '../services/arena';
+import { computeArenaTick, getCycleAnchor, BREAK_MS, CYCLE_MS } from '../services/arena';
 import { db } from '../firebaseConfig';
-import { ref, onValue } from 'firebase/database';
+import { ref, onValue, remove } from 'firebase/database';
 import { useCurrency } from '../services/currency';
 import { apiFxConvert, apiBankPayout } from '../services/coinwiseApi';
 
@@ -66,13 +66,34 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
   useEffect(() => {
     const playersRef = ref(db, 'competition/players');
     const unsub = onValue(playersRef, (snapshot) => {
-      const raw = snapshot.val();
-      const list: LeaderboardEntry[] = raw && typeof raw === 'object'
-        ? Object.values(raw).filter((p: any) => p && typeof p.name === 'string') as LeaderboardEntry[]
-        : [];
+      const now = Date.now();
+      const LIVE_GRACE = BREAK_MS;   // keep final standings visible through the break
+      const STALE_EVICT = CYCLE_MS;  // hard-delete entries this long past their round end
+
+      // Only show competitors whose joined round is still live (plus a short
+      // grace through the break). Entries whose round has ended — e.g. a user
+      // who joined then never logged back in — are dropped, and physically
+      // removed once they are clearly abandoned so they can't linger forever.
+      const list: LeaderboardEntry[] = [];
+      snapshot.forEach((child) => {
+        const key = child.key as string;
+        const p = child.val() as any;
+        if (!p || typeof p.name !== 'string') return;
+        if (p.name.includes('AlgoTrader')) return;
+        const endsAt = Number(p.roundEndsAt);
+        const hasEnds = Number.isFinite(endsAt) && endsAt > 0;
+        const isLive = hasEnds && now <= endsAt + LIVE_GRACE;
+        if (isLive) {
+          list.push(p as LeaderboardEntry);
+        } else if (p.accountId !== user.accountId && (!hasEnds || now > endsAt + STALE_EVICT)) {
+          // Abandoned (round long over) or legacy entry with no round stamp —
+          // evict from the shared node. Best-effort; ignore permission errors.
+          remove(ref(db, `competition/players/${key}`)).catch(() => {});
+        }
+      });
+
       const selfStats = user.competition?.isCompeting ? getLiveStats(user) : null;
       const liveParticipants = list
-        .filter((p) => !p.name.includes('AlgoTrader'))
         .map((p) => {
           const isSelf = p.accountId === user.accountId;
           // Self row: recompute pnl/netWorth from live marketPrices on every

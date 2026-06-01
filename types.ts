@@ -87,6 +87,10 @@ export interface LeaderboardEntry {
   pnl: number;
   value: number;
   isUser?: boolean;
+  // When this competitor's joined round ends (ms epoch). Used to evict stale
+  // entries from the leaderboard once their round is over, even if that player
+  // never logs back in to remove themselves.
+  roundEndsAt?: number;
 }
 
 export interface UsersMap {

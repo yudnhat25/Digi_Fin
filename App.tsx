@@ -72,7 +72,10 @@ const App: React.FC = () => {
           accountId: updatedUser.accountId,
           pnl: parseFloat(pnl.toFixed(2)),
           value: totalNetWorth,
-          isUser: true
+          isUser: true,
+          // Stamp the round end so the leaderboard can evict this entry after the
+          // round closes — even if the user never returns to exit cleanly.
+          roundEndsAt: Number(updatedUser.competition.roundEndsAt) || 0,
         };
         update(ref(db, `competition/players/${updatedUser.accountId.replace('.', '_')}`), playerEntry);
       }
