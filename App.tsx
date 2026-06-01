@@ -15,6 +15,7 @@ import ReferralPage from './components/ReferralPage';
 import { TopMoversWidget, WatchlistWidget, NewsWidget, PortfolioBreakdownWidget } from './components/DashboardWidgets';
 import SocialPulsePage from './components/SocialPulsePage';
 import AltDataPipelinePage from './components/AltDataPipelinePage';
+import FearGreedPage from './components/FearGreedPage';
 import CreditScorePage from './components/CreditScorePage';
 import AIAdvisorPage from './components/AIAdvisorPage';
 import FraudShieldPage from './components/FraudShieldPage';
@@ -402,6 +403,9 @@ const App: React.FC = () => {
     }
     if (activeTab === 'pipeline') {
       return <AltDataPipelinePage />;
+    }
+    if (activeTab === 'feargreed') {
+      return <FearGreedPage />;
     }
     if (activeTab === 'credit') {
       return <CreditScorePage user={currentUser} onUpgradeClick={() => setActiveTab('pro')} />;

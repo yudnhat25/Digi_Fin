@@ -7,8 +7,9 @@ import { runAltDataPipeline } from '../ai/pipeline';
 import { classify as classifyNb, getModelInfo } from '../ai/nlp/classifier';
 import { pingReddit } from '../ai/sources/reddit';
 import { pingHackerNews } from '../ai/sources/hackerNews';
-import { pingFearGreed } from '../ai/sources/fearGreed';
+import { pingFearGreed, fetchFearGreedReal } from '../ai/sources/fearGreed';
 import { pingCoinGecko } from '../ai/sources/coingecko';
+import { fetchBtcSnapshot, fetchBtcHistory } from '../ai/sources/btcMarket';
 
 export const aiRouter = new Hono();
 
@@ -178,6 +179,61 @@ aiRouter.get('/alt-data/sources/health', async (c) => {
     reddit, news, fearGreed: fg, coinGecko: cg,
     overall: news.ok || fg.ok || cg.ok ? 'live' : 'down',
     timestamp: new Date().toISOString(),
+  });
+});
+
+// ─── Fear & Greed dedicated page (Binance-style) ───
+// Bundles 365-day F&G history (alternative.me) + BTC snapshot/history (CoinGecko)
+// + period summaries so the frontend only makes one round-trip.
+
+aiRouter.get('/fear-greed/full', async (c) => {
+  const [fg, snap, hist] = await Promise.all([
+    fetchFearGreedReal(365),
+    fetchBtcSnapshot(),
+    fetchBtcHistory(365),
+  ]);
+
+  if (!fg.ok) return c.json({ ok: false, error: fg.error, fetchedAt: fg.fetchedAt }, 502);
+
+  const points = fg.history;
+  const last = points[points.length - 1];
+  const yesterday = points[points.length - 2];
+  const lastWeek  = points[points.length - 8];
+  const lastMonth = points[points.length - 31];
+  const lastYear  = points[0];
+
+  let yearHigh = last;
+  let yearLow = last;
+  for (const p of points) {
+    if (p.value > yearHigh.value) yearHigh = p;
+    if (p.value < yearLow.value) yearLow = p;
+  }
+
+  return c.json({
+    ok: true,
+    fetchedAt: new Date().toISOString(),
+    fearGreed: {
+      source: fg.source,
+      current: fg.current,
+      delta24h: fg.delta24h,
+      delta7d: fg.delta7d,
+      history: fg.history,
+      periods: {
+        yesterday: yesterday || null,
+        lastWeek: lastWeek || null,
+        lastMonth: lastMonth || null,
+        lastYear: lastYear || null,
+      },
+      yearHigh,
+      yearLow,
+    },
+    btc: snap.ok ? snap : null,
+    btcHistory: hist.ok ? hist : null,
+    sources: {
+      fearGreed: 'real',
+      btcSnapshot: snap.ok ? 'real' : 'unavailable',
+      btcHistory: hist.ok ? 'real' : 'unavailable',
+    },
   });
 });
 

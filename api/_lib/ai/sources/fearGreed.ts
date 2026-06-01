@@ -32,17 +32,31 @@ interface FearGreedFail {
   fetchedAt: string;
 }
 
-interface CacheEntry { ts: number; data: FearGreedReal }
+interface CacheEntry { ts: number; limit: number; data: FearGreedReal }
 let CACHE: CacheEntry | null = null;
 const TTL_MS = 30 * 60 * 1000; // 30 minutes (the upstream index only updates daily anyway)
 
 const USER_AGENT = 'CoinWiseAI/1.0 (Vietnam fintech assignment)';
 
-export async function fetchFearGreedReal(): Promise<FearGreedReal | FearGreedFail> {
-  if (CACHE && Date.now() - CACHE.ts < TTL_MS) return CACHE.data;
+export async function fetchFearGreedReal(limit = 30): Promise<FearGreedReal | FearGreedFail> {
+  const cappedLimit = Math.min(Math.max(limit, 1), 365);
+  if (CACHE && Date.now() - CACHE.ts < TTL_MS && CACHE.limit >= cappedLimit) {
+    if (CACHE.limit === cappedLimit) return CACHE.data;
+    const trimmed = CACHE.data.history.slice(-cappedLimit);
+    const cur = trimmed[trimmed.length - 1];
+    const yesterday = trimmed[trimmed.length - 2];
+    const lastWeek = trimmed[trimmed.length - 8] || trimmed[0];
+    return {
+      ...CACHE.data,
+      current: cur,
+      delta24h: yesterday ? cur.value - yesterday.value : 0,
+      delta7d: lastWeek ? cur.value - lastWeek.value : 0,
+      history: trimmed,
+    };
+  }
 
   try {
-    const url = 'https://api.alternative.me/fng/?limit=30&format=json';
+    const url = `https://api.alternative.me/fng/?limit=${cappedLimit}&format=json`;
     const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
     if (!res.ok) throw new Error(`alternative.me responded ${res.status}`);
     const json = (await res.json()) as {
@@ -73,7 +87,7 @@ export async function fetchFearGreedReal(): Promise<FearGreedReal | FearGreedFai
       delta7d: lastWeek ? current.value - lastWeek.value : 0,
       history: points,
     };
-    CACHE = { ts: Date.now(), data };
+    CACHE = { ts: Date.now(), limit: cappedLimit, data };
     return data;
   } catch (e) {
     return { ok: false, error: (e as Error).message, fetchedAt: new Date().toISOString() };
@@ -82,7 +96,7 @@ export async function fetchFearGreedReal(): Promise<FearGreedReal | FearGreedFai
 
 export async function pingFearGreed(): Promise<{ ok: boolean; latencyMs: number; value?: number; error?: string }> {
   const t0 = Date.now();
-  const r = await fetchFearGreedReal();
+  const r = await fetchFearGreedReal(30);
   if (r.ok === true) return { ok: true, latencyMs: Date.now() - t0, value: r.current.value };
   const err = 'error' in r ? r.error : 'unknown';
   return { ok: false, latencyMs: Date.now() - t0, error: err };

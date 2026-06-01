@@ -3114,10 +3114,24 @@ var init_hackerNews = __esm({
 });
 
 // api/_lib/ai/sources/fearGreed.ts
-async function fetchFearGreedReal() {
-  if (CACHE3 && Date.now() - CACHE3.ts < TTL_MS4) return CACHE3.data;
+async function fetchFearGreedReal(limit = 30) {
+  const cappedLimit = Math.min(Math.max(limit, 1), 365);
+  if (CACHE3 && Date.now() - CACHE3.ts < TTL_MS4 && CACHE3.limit >= cappedLimit) {
+    if (CACHE3.limit === cappedLimit) return CACHE3.data;
+    const trimmed = CACHE3.data.history.slice(-cappedLimit);
+    const cur = trimmed[trimmed.length - 1];
+    const yesterday = trimmed[trimmed.length - 2];
+    const lastWeek = trimmed[trimmed.length - 8] || trimmed[0];
+    return {
+      ...CACHE3.data,
+      current: cur,
+      delta24h: yesterday ? cur.value - yesterday.value : 0,
+      delta7d: lastWeek ? cur.value - lastWeek.value : 0,
+      history: trimmed
+    };
+  }
   try {
-    const url = "https://api.alternative.me/fng/?limit=30&format=json";
+    const url = `https://api.alternative.me/fng/?limit=${cappedLimit}&format=json`;
     const res = await fetch(url, { headers: { "User-Agent": USER_AGENT3 } });
     if (!res.ok) throw new Error(`alternative.me responded ${res.status}`);
     const json = await res.json();
@@ -3139,7 +3153,7 @@ async function fetchFearGreedReal() {
       delta7d: lastWeek ? current.value - lastWeek.value : 0,
       history: points
     };
-    CACHE3 = { ts: Date.now(), data };
+    CACHE3 = { ts: Date.now(), limit: cappedLimit, data };
     return data;
   } catch (e) {
     return { ok: false, error: e.message, fetchedAt: (/* @__PURE__ */ new Date()).toISOString() };
@@ -3147,7 +3161,7 @@ async function fetchFearGreedReal() {
 }
 async function pingFearGreed() {
   const t0 = Date.now();
-  const r = await fetchFearGreedReal();
+  const r = await fetchFearGreedReal(30);
   if (r.ok === true) return { ok: true, latencyMs: Date.now() - t0, value: r.current.value };
   const err = "error" in r ? r.error : "unknown";
   return { ok: false, latencyMs: Date.now() - t0, error: err };
@@ -4689,6 +4703,88 @@ var init_advisor = __esm({
   }
 });
 
+// api/_lib/ai/sources/btcMarket.ts
+async function fetchBtcSnapshot() {
+  if (SNAPSHOT_CACHE && Date.now() - SNAPSHOT_CACHE.ts < SNAPSHOT_TTL_MS) return SNAPSHOT_CACHE.data;
+  try {
+    const [marketsRes, globalRes] = await Promise.all([
+      fetch("https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=bitcoin&price_change_percentage=24h", {
+        headers: { "User-Agent": USER_AGENT5, "Accept": "application/json" }
+      }),
+      fetch("https://api.coingecko.com/api/v3/global", {
+        headers: { "User-Agent": USER_AGENT5, "Accept": "application/json" }
+      })
+    ]);
+    if (!marketsRes.ok) throw new Error(`markets_${marketsRes.status}`);
+    if (!globalRes.ok) throw new Error(`global_${globalRes.status}`);
+    const markets = await marketsRes.json();
+    const globalJson = await globalRes.json();
+    const btc = markets[0];
+    if (!btc) throw new Error("empty_markets_payload");
+    const snap = {
+      ok: true,
+      source: "coingecko",
+      fetchedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      priceUsd: Number(btc.current_price) || 0,
+      volume24hUsd: Number(btc.total_volume) || 0,
+      marketCapUsd: Number(btc.market_cap) || 0,
+      priceChange24hPct: Number(btc.price_change_percentage_24h_in_currency ?? btc.price_change_percentage_24h) || 0,
+      marketCapChange24hPct: Number(globalJson.data.market_cap_change_percentage_24h_usd) || 0,
+      totalMarketCapUsd: Number(globalJson.data.total_market_cap.usd) || 0,
+      totalVolume24hUsd: Number(globalJson.data.total_volume.usd) || 0
+    };
+    SNAPSHOT_CACHE = { ts: Date.now(), data: snap };
+    return snap;
+  } catch (e) {
+    return { ok: false, error: e.message, fetchedAt: (/* @__PURE__ */ new Date()).toISOString() };
+  }
+}
+async function fetchBtcHistory(days = 365) {
+  const cappedDays = Math.min(Math.max(days, 7), 365);
+  if (HISTORY_CACHE && Date.now() - HISTORY_CACHE.ts < HISTORY_TTL_MS && HISTORY_CACHE.days >= cappedDays) {
+    if (HISTORY_CACHE.days === cappedDays) return HISTORY_CACHE.data;
+    const trimmed = HISTORY_CACHE.data.points.slice(-cappedDays);
+    return { ...HISTORY_CACHE.data, days: cappedDays, points: trimmed };
+  }
+  try {
+    const url = `https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=${cappedDays}&interval=daily`;
+    const res = await fetch(url, { headers: { "User-Agent": USER_AGENT5, "Accept": "application/json" } });
+    if (!res.ok) throw new Error(`market_chart_${res.status}`);
+    const json = await res.json();
+    if (!json?.prices?.length) throw new Error("empty_history_payload");
+    const volByDate = /* @__PURE__ */ new Map();
+    for (const [ts, v] of json.total_volumes || []) {
+      const date = new Date(ts).toISOString().slice(0, 10);
+      volByDate.set(date, Number(v) || 0);
+    }
+    const points = json.prices.map(([ts, price]) => {
+      const date = new Date(ts).toISOString().slice(0, 10);
+      return { date, priceUsd: Number(price) || 0, volumeUsd: volByDate.get(date) || 0 };
+    });
+    const data = {
+      ok: true,
+      source: "coingecko",
+      fetchedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      days: cappedDays,
+      points
+    };
+    HISTORY_CACHE = { ts: Date.now(), days: cappedDays, data };
+    return data;
+  } catch (e) {
+    return { ok: false, error: e.message, fetchedAt: (/* @__PURE__ */ new Date()).toISOString() };
+  }
+}
+var USER_AGENT5, SNAPSHOT_CACHE, SNAPSHOT_TTL_MS, HISTORY_CACHE, HISTORY_TTL_MS;
+var init_btcMarket = __esm({
+  "api/_lib/ai/sources/btcMarket.ts"() {
+    USER_AGENT5 = "CoinWiseAI/1.0 (Vietnam fintech assignment)";
+    SNAPSHOT_CACHE = null;
+    SNAPSHOT_TTL_MS = 5 * 60 * 1e3;
+    HISTORY_CACHE = null;
+    HISTORY_TTL_MS = 6 * 60 * 60 * 1e3;
+  }
+});
+
 // api/_lib/routes/ai.ts
 function mapPipelineLabel(l) {
   if (l === "Euphoric") return "Euphoric";
@@ -4722,6 +4818,7 @@ var init_ai = __esm({
     init_hackerNews();
     init_fearGreed();
     init_coingecko();
+    init_btcMarket();
     aiRouter = new Hono2();
     aiRouter.post("/credit-score", async (c) => {
       const body = await c.req.json().catch(() => ({}));
@@ -4838,6 +4935,52 @@ var init_ai = __esm({
         coinGecko: cg,
         overall: news.ok || fg.ok || cg.ok ? "live" : "down",
         timestamp: (/* @__PURE__ */ new Date()).toISOString()
+      });
+    });
+    aiRouter.get("/fear-greed/full", async (c) => {
+      const [fg, snap, hist] = await Promise.all([
+        fetchFearGreedReal(365),
+        fetchBtcSnapshot(),
+        fetchBtcHistory(365)
+      ]);
+      if (!fg.ok) return c.json({ ok: false, error: fg.error, fetchedAt: fg.fetchedAt }, 502);
+      const points = fg.history;
+      const last = points[points.length - 1];
+      const yesterday = points[points.length - 2];
+      const lastWeek = points[points.length - 8];
+      const lastMonth = points[points.length - 31];
+      const lastYear = points[0];
+      let yearHigh = last;
+      let yearLow = last;
+      for (const p of points) {
+        if (p.value > yearHigh.value) yearHigh = p;
+        if (p.value < yearLow.value) yearLow = p;
+      }
+      return c.json({
+        ok: true,
+        fetchedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        fearGreed: {
+          source: fg.source,
+          current: fg.current,
+          delta24h: fg.delta24h,
+          delta7d: fg.delta7d,
+          history: fg.history,
+          periods: {
+            yesterday: yesterday || null,
+            lastWeek: lastWeek || null,
+            lastMonth: lastMonth || null,
+            lastYear: lastYear || null
+          },
+          yearHigh,
+          yearLow
+        },
+        btc: snap.ok ? snap : null,
+        btcHistory: hist.ok ? hist : null,
+        sources: {
+          fearGreed: "real",
+          btcSnapshot: snap.ok ? "real" : "unavailable",
+          btcHistory: hist.ok ? "real" : "unavailable"
+        }
       });
     });
     aiRouter.post("/credit-score-real", async (c) => {

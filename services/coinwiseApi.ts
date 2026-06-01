@@ -207,6 +207,45 @@ export const apiAltDataPipeline = (symbol: string) =>
 export const apiAltDataSourcesHealth = () =>
   call<AltDataSourcesHealth>(`/api/v1/ai/alt-data/sources/health`);
 
+// ───── Fear & Greed full page (Binance-style) ─────
+export interface FgPoint { date: string; value: number; classification: string }
+export interface FearGreedFull {
+  ok: true;
+  fetchedAt: string;
+  fearGreed: {
+    source: string;
+    current: FgPoint;
+    delta24h: number;
+    delta7d: number;
+    history: FgPoint[];
+    periods: {
+      yesterday: FgPoint | null;
+      lastWeek: FgPoint | null;
+      lastMonth: FgPoint | null;
+      lastYear: FgPoint | null;
+    };
+    yearHigh: FgPoint;
+    yearLow: FgPoint;
+  };
+  btc: {
+    priceUsd: number;
+    volume24hUsd: number;
+    marketCapUsd: number;
+    priceChange24hPct: number;
+    marketCapChange24hPct: number;
+    totalMarketCapUsd: number;
+    totalVolume24hUsd: number;
+    fetchedAt: string;
+  } | null;
+  btcHistory: {
+    fetchedAt: string;
+    days: number;
+    points: { date: string; priceUsd: number; volumeUsd: number }[];
+  } | null;
+  sources: { fearGreed: string; btcSnapshot: string; btcHistory: string };
+}
+export const apiFearGreedFull = () => call<FearGreedFull>('/api/v1/ai/fear-greed/full');
+
 export interface NbModelInfo {
   algorithm: string; version: string; smoothingAlpha: number;
   classes: ('positive' | 'negative' | 'neutral')[];
