@@ -399,7 +399,7 @@ const App: React.FC = () => {
       return <ReferralPage user={currentUser} />;
     }
     if (activeTab === 'pulse') {
-      return <SocialPulsePage onSelectAsset={setSelectedAsset} />;
+      return <SocialPulsePage onSelectAsset={setSelectedAsset} userState={currentUser} marketData={marketPrices} />;
     }
     if (activeTab === 'pipeline') {
       return <AltDataPipelinePage />;

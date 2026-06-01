@@ -11,6 +11,7 @@ import { GoogleGenAI, Type } from '@google/genai';
 import type { FunctionDeclaration } from '@google/genai';
 import { UserState, MarketData } from '../types';
 import { apiAgentExecute } from './coinwiseApi';
+import { getCommunityPulse } from './community';
 
 const TOOLS: FunctionDeclaration[] = [
   {
@@ -45,6 +46,15 @@ const TOOLS: FunctionDeclaration[] = [
     name: 'getFearGreed',
     description: 'Get the current Crypto Fear & Greed market mood index (0-100).',
     parameters: { type: Type.OBJECT, properties: {}, required: [] },
+  },
+  {
+    name: 'getCommunityPulse',
+    description: 'Get the CoinWise community sentiment for a coin — aggregated from real user comments scored by the trained NLP model over the last 24h. Returns a 0-100 mood score, bullish/bearish/neutral share, trend, and number of posts. Call this when the user asks what the community thinks, "cộng đồng đang nghĩ gì", crowd sentiment, or to blend social mood with alt-data before advising.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: { symbol: { type: Type.STRING, description: 'Trading pair like BTCUSDT, ETHUSDT. Omit for the whole community (all coins).' } },
+      required: [],
+    },
   },
   {
     name: 'getAdvisor',
@@ -152,6 +162,11 @@ Bạn có các function-calling tools gọi vào CoinWise OpenAPI server (backen
 8. Nếu fraudCheck.verdict === BLOCK → từ chối và giải thích lý do.
 9. Nếu user vừa trade xong và hỏi tiếp về số dư — gọi getBalance để lấy số mới nhất.
 
+**TÂM LÝ CỘNG ĐỒNG (Community Pulse):**
+- Khi user hỏi "cộng đồng nghĩ gì", crowd sentiment, hoặc xin lời khuyên về một coin → gọi getCommunityPulse để lấy tâm lý cộng đồng (điểm 0-100 + tỉ lệ bullish/bearish).
+- Để đánh giá "trạng thái thị trường" cho lời khuyên tốt: KẾT HỢP getCommunityPulse với getInsight (sentiment + whale flow + Fear & Greed). Nếu cộng đồng lạc quan NHƯNG whale flow âm hoặc F&G ở vùng Extreme Greed → CẢNH BÁO rủi ro FOMO, đừng chỉ chạy theo đám đông.
+- Nếu pulse.total = 0 (chưa ai bình luận) thì nói rõ chưa đủ dữ liệu cộng đồng, dựa vào alt-data thay thế.
+
 **QUY TẮC CHUNG:**
 - Luôn nhắc đây là nền tảng paper-trading mô phỏng, không phải tư vấn tài chính.
 - Trả lời ngắn gọn (tối đa 3-4 câu hoặc bullet list ngắn). Không lan man.
@@ -210,7 +225,14 @@ ${marketData.slice(0, 8).map(m => `- ${m.symbol}: $${m.price.toLocaleString()} (
         }
         let toolResult: any;
         try {
-          toolResult = await apiAgentExecute(userState.accountId, name, args, accountSnapshot);
+          if (name === 'getCommunityPulse') {
+            // Community data lives in Realtime DB (client-side), not the backend,
+            // so resolve this tool here instead of hitting /agent/execute.
+            const sym = args.symbol ? String(args.symbol).toUpperCase() : undefined;
+            toolResult = await getCommunityPulse(sym);
+          } else {
+            toolResult = await apiAgentExecute(userState.accountId, name, args, accountSnapshot);
+          }
         } catch (err) {
           toolResult = { error: (err as Error).message };
         }

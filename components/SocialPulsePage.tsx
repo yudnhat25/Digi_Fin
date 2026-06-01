@@ -6,6 +6,8 @@ import {
   FearGreedFull,
   FgPoint,
 } from '../services/coinwiseApi';
+import CommunityPulse from './CommunityPulse';
+import { UserState, MarketData } from '../types';
 
 // ─── F&G band classification ───
 const classBand = (v: number) =>
@@ -226,7 +228,11 @@ const momentumColor: Record<SocialPulseRow['momentum'], string> = {
 };
 
 // ─── Main page ───
-const SocialPulsePage: React.FC<{ onSelectAsset?: (symbol: string) => void }> = ({ onSelectAsset }) => {
+const SocialPulsePage: React.FC<{
+  onSelectAsset?: (symbol: string) => void;
+  userState?: UserState | null;
+  marketData?: MarketData[];
+}> = ({ onSelectAsset, userState, marketData = [] }) => {
   const [fgData, setFgData] = useState<FearGreedFull | null>(null);
   const [rows, setRows] = useState<SocialPulseRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -571,6 +577,8 @@ const SocialPulsePage: React.FC<{ onSelectAsset?: (symbol: string) => void }> = 
           Updated {new Date(fgData.fetchedAt).toLocaleTimeString('en-US')} · alternative.me · CoinGecko
         </p>
       )}
+
+      {userState && <CommunityPulse userState={userState} marketData={marketData} />}
     </div>
   );
 };
