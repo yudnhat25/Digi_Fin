@@ -214,9 +214,9 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
       // account via the OpenAPI server — the same rail the entry fee was paid
       // from. The Stripe-styled UI is just the wrapper around this transfer.
       const res = await apiBankPayout(user.accountId, prizePool || ENTRY_FEE, user.name);
-      alert(`Đã chuyển ${formatVND(res.amountVnd)} tiền thưởng vào tài khoản CoinWise Bank của bạn!`);
+      alert(`Transferred ${formatVND(res.amountVnd)} in prize money to your CoinWise Bank account!`);
     } catch (err) {
-      alert(`Trả thưởng thất bại: ${(err as Error).message}`);
+      alert(`Payout failed: ${(err as Error).message}`);
     } finally {
       setIsPayoutProcessing(false);
       setShowPayoutModal(false);
@@ -229,14 +229,14 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
 
   if (!user.competition?.isCompeting) {
     const phaseLabel = isBreak
-      ? `Break · Round ${arenaTick.roundIndex + 1} bắt đầu sau ${arenaTick.display}`
-      : `Round ${arenaTick.roundIndex} đang diễn ra · còn ${arenaTick.display}`;
+      ? `Break · Round ${arenaTick.roundIndex + 1} starts in ${arenaTick.display}`
+      : `Round ${arenaTick.roundIndex} in progress · ${arenaTick.display} left`;
     const buttonLabel = isBreak
-      ? `Đăng ký Round ${arenaTick.roundIndex + 1} (bắt đầu sau ${arenaTick.display}) — $${ENTRY_FEE.toFixed(2)}`
-      : `Tham gia Round ${arenaTick.roundIndex} ngay (còn ${arenaTick.display}) — $${ENTRY_FEE.toFixed(2)}`;
+      ? `Register for Round ${arenaTick.roundIndex + 1} (starts in ${arenaTick.display}) — $${ENTRY_FEE.toFixed(2)}`
+      : `Join Round ${arenaTick.roundIndex} now (${arenaTick.display} left) — $${ENTRY_FEE.toFixed(2)}`;
     const hint = isBreak
-      ? 'Đang trong break: sau khi thanh toán bạn vào hàng chờ, round mới bắt đầu thì leaderboard mở.'
-      : 'Round đang chạy: thanh toán xong là vào ngay, trade phần thời gian còn lại của round.';
+      ? 'Currently in break: after payment you enter the queue, and the leaderboard opens when the new round starts.'
+      : 'Round in progress: once payment completes you join immediately and trade the remaining time of the round.';
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center space-y-8 animate-in zoom-in duration-500">
         <div className={`px-5 py-2 rounded-full border text-[10px] font-black uppercase tracking-widest ${isBreak ? 'border-amber-500/30 bg-amber-500/10 text-amber-300' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'}`}>
@@ -248,10 +248,10 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
         <div className="max-w-xl">
           <h2 className="text-4xl font-black mb-4">The Best Investor Arena</h2>
           <p className="text-slate-400 text-lg mb-4">
-            Continuous arena: <span className="text-emerald-400 font-bold">3-minute rounds</span> with <span className="text-amber-400 font-bold">30-second breaks</span>. Đăng ký được phép vào bất kỳ lúc nào — chỉ khác là vào break thì phải chờ round mới.
+            Continuous arena: <span className="text-emerald-400 font-bold">3-minute rounds</span> with <span className="text-amber-400 font-bold">30-second breaks</span>. You can register at any time — the only difference is that during a break you have to wait for the next round.
           </p>
           <p className="text-slate-500 text-sm mb-8 leading-relaxed">
-            Pay <span className="text-emerald-400 font-bold">${ENTRY_FEE.toFixed(2)}</span> để tham gia. Portfolio thật của bạn được snapshot và bạn nhận baseline <span className="text-emerald-400 font-bold">$1,000,000</span>. Khi round bạn tham gia kết thúc, cash + holdings + transactions cũ được khôi phục nguyên — chỉ mất entry fee.
+            Pay <span className="text-emerald-400 font-bold">${ENTRY_FEE.toFixed(2)}</span> to join. Your real portfolio is snapshotted and you receive a baseline of <span className="text-emerald-400 font-bold">$1,000,000</span>. When the round you joined ends, your cash + holdings + previous transactions are fully restored — you only lose the entry fee.
           </p>
           <button
             onClick={onRegister}
@@ -277,18 +277,18 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center space-y-8 animate-in fade-in duration-500">
         <div className="px-5 py-2 rounded-full border border-amber-500/40 bg-amber-500/10 text-amber-300 text-[10px] font-black uppercase tracking-widest">
-          Đã đăng ký · đợi round bắt đầu
+          Registered · waiting for round to start
         </div>
         <div className="w-32 h-32 rounded-3xl flex items-center justify-center border-2 border-amber-500/40 bg-amber-500/5">
           <p className="text-5xl font-black font-mono text-amber-400 tabular-nums">{waitDisplay}</p>
         </div>
         <div className="max-w-md">
-          <h2 className="text-3xl font-black mb-3">Bạn đã vào hàng chờ</h2>
+          <h2 className="text-3xl font-black mb-3">You're in the queue</h2>
           <p className="text-slate-400 text-base mb-2">
-            Round <span className="text-emerald-400 font-bold">{arenaTick.roundIndex + (isBreak ? 1 : 0)}</span> sẽ bắt đầu sau <span className="text-amber-400 font-bold">{waitDisplay}</span>.
+            Round <span className="text-emerald-400 font-bold">{arenaTick.roundIndex + (isBreak ? 1 : 0)}</span> starts in <span className="text-amber-400 font-bold">{waitDisplay}</span>.
           </p>
           <p className="text-slate-500 text-sm">
-            Baseline $1,000,000 đã được set. Khi đồng hồ về 00:00, leaderboard mở và bạn có 3 phút để trade.
+            Your $1,000,000 baseline is set. When the clock hits 00:00, the leaderboard opens and you'll have 3 minutes to trade.
           </p>
         </div>
       </div>
@@ -412,18 +412,18 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
                    <>
                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                        <div>
-                         <label className="block text-sm font-bold text-slate-700 mb-2">Ngân hàng (Bank)</label>
+                         <label className="block text-sm font-bold text-slate-700 mb-2">Bank</label>
                          <select required defaultValue="Vietcombank" className="w-full border-slate-200 border-2 rounded-xl px-4 py-3.5 text-lg bg-white focus:border-[#635BFF] focus:outline-none">
                            {VN_BANKS.map((b) => <option key={b} value={b}>{b}</option>)}
                          </select>
                        </div>
                        <div>
-                         <label className="block text-sm font-bold text-slate-700 mb-2">Số tài khoản (Account No.)</label>
+                         <label className="block text-sm font-bold text-slate-700 mb-2">Account No.</label>
                          <input required type="text" placeholder="1020 1234 5678" className="w-full border-slate-200 border-2 rounded-xl px-4 py-3.5 text-lg focus:border-[#635BFF] focus:outline-none" />
                        </div>
                      </div>
                      <div>
-                       <label className="block text-sm font-bold text-slate-700 mb-2">Chủ tài khoản (Account Holder)</label>
+                       <label className="block text-sm font-bold text-slate-700 mb-2">Account Holder</label>
                        <input required type="text" placeholder="NGUYEN VAN A" defaultValue={user.name.toUpperCase()} className="w-full border-slate-200 border-2 rounded-xl px-4 py-3.5 text-lg uppercase focus:border-[#635BFF] focus:outline-none" />
                      </div>
                    </>
@@ -444,7 +444,7 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
                    <svg className="w-6 h-6 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                    <p className="text-sm text-blue-800 leading-relaxed">
                      {payoutRegion === 'VN'
-                       ? <>Stripe sẽ chuyển <b>${prizePool.toFixed(2)} USD</b> qua CoinWise FX bridge, ngân hàng VN nhận <b>{fxQuote ? formatVND(fxQuote.amountVnd) : '—'}</b>. Tiền về tài khoản trong 1-2 ngày làm việc.</>
+                       ? <>Stripe will send <b>${prizePool.toFixed(2)} USD</b> through the CoinWise FX bridge, and your VN bank receives <b>{fxQuote ? formatVND(fxQuote.amountVnd) : '—'}</b>. Funds arrive in your account within 1-2 business days.</>
                        : <>By clicking confirm, you authorize Stripe to send a direct deposit of <b>${prizePool.toFixed(2)} USD</b> to the bank account listed above. Funds usually arrive in 1-2 business days.</>
                      }
                    </p>
@@ -460,7 +460,7 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
                        Processing Transfer...
                      </>
                    ) : payoutRegion === 'VN'
-                     ? `Xác nhận & nhận ${fxQuote ? formatVND(fxQuote.amountVnd) : '...'}`
+                     ? `Confirm & receive ${fxQuote ? formatVND(fxQuote.amountVnd) : '...'}`
                      : `Confirm and Payout $${prizePool.toFixed(2)}`}
                  </button>
               </form>
@@ -478,12 +478,12 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
           <div className="flex-1">
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">Round complete</p>
             <h3 className="text-2xl md:text-3xl font-black text-white mb-1">
-              Hết round — Rank #{userRank || '—'}
+              Round over — Rank #{userRank || '—'}
             </h3>
             <p className="text-slate-400 text-sm">
-              PNL cuối: <b className={userPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+              Final PNL: <b className={userPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
                 {userPnl >= 0 ? '+' : ''}{userPnl.toFixed(2)}%
-              </b> · Portfolio gốc của bạn sẽ được khôi phục khi thoát.
+              </b> · Your original portfolio will be restored when you exit.
             </p>
           </div>
           <button

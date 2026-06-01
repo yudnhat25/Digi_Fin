@@ -51,7 +51,7 @@ bankRouter.post('/:id/deposit', async (c) => {
   if (amt > 1_000_000_000) return c.json({ error: 'amountVnd exceeds 1,000,000,000 demo limit' }, 400);
   const acc = await getBankAccount(id, body.holder);
   acc.balanceVnd += amt;
-  const txn = recordBankTxn(acc, 'DEPOSIT', amt, 'Nạp tiền vào tài khoản');
+  const txn = recordBankTxn(acc, 'DEPOSIT', amt, 'Deposit to account');
   await saveBankToFirebase(acc);
   return c.json({ ok: true, ...(await summary(id)), ref: txn.ref, transaction: txn });
 });
@@ -64,10 +64,10 @@ bankRouter.post('/:id/withdraw', async (c) => {
   if (!Number.isFinite(amt) || amt <= 0) return c.json({ error: 'amountVnd must be a positive number' }, 400);
   const acc = await getBankAccount(id);
   if (acc.balanceVnd < amt) {
-    return c.json({ ok: false, error: 'Số dư không đủ', balanceVnd: acc.balanceVnd, required: amt }, 402);
+    return c.json({ ok: false, error: 'Insufficient balance', balanceVnd: acc.balanceVnd, required: amt }, 402);
   }
   acc.balanceVnd -= amt;
-  const txn = recordBankTxn(acc, 'WITHDRAW', -amt, 'Rút tiền khỏi tài khoản');
+  const txn = recordBankTxn(acc, 'WITHDRAW', -amt, 'Withdrawal from account');
   await saveBankToFirebase(acc);
   return c.json({ ok: true, ...(await summary(id)), ref: txn.ref, transaction: txn });
 });
@@ -83,12 +83,12 @@ bankRouter.post('/arena/pay-entry', async (c) => {
   const { vnd, rate } = usdToVnd(usd);
   if (acc.balanceVnd < vnd) {
     return c.json(
-      { ok: false, paid: false, error: 'Số dư ngân hàng không đủ để thanh toán phí tham gia', requiredVnd: vnd, amountUsd: usd, balanceVnd: acc.balanceVnd },
+      { ok: false, paid: false, error: 'Insufficient bank balance to pay the entry fee', requiredVnd: vnd, amountUsd: usd, balanceVnd: acc.balanceVnd },
       402,
     );
   }
   acc.balanceVnd -= vnd;
-  const txn = recordBankTxn(acc, 'ARENA_ENTRY', -vnd, `Phí tham gia Arena${body.room ? ` · ${body.room}` : ''} ($${usd})`);
+  const txn = recordBankTxn(acc, 'ARENA_ENTRY', -vnd, `Arena entry fee${body.room ? ` · ${body.room}` : ''} ($${usd})`);
   await saveBankToFirebase(acc);
   return c.json({ ok: true, paid: true, amountUsd: usd, amountVnd: vnd, rate, ref: txn.ref, ...(await summary(body.accountId)) });
 });
@@ -105,10 +105,10 @@ const PURPOSE_TO_TYPE: Record<string, BankPurchaseType> = {
   ACCOUNT_TOPUP:   'ACCOUNT_TOPUP',
 };
 const PURPOSE_TO_VI: Record<string, string> = {
-  PREMIUM_UPGRADE: 'Nâng cấp gói thành viên',
-  COURSE_PURCHASE: 'Mua khóa học Academy',
-  STAKE_LOCK:      'Khoá vốn sản phẩm Earn',
-  ACCOUNT_TOPUP:   'Nạp vốn vào tài khoản giao dịch',
+  PREMIUM_UPGRADE: 'Membership plan upgrade',
+  COURSE_PURCHASE: 'Academy course purchase',
+  STAKE_LOCK:      'Earn product lock-up',
+  ACCOUNT_TOPUP:   'Top up trading account',
 };
 
 bankRouter.post('/pay-purchase', async (c) => {
@@ -131,7 +131,7 @@ bankRouter.post('/pay-purchase', async (c) => {
   const { vnd, rate } = usdToVnd(usd);
   if (acc.balanceVnd < vnd) {
     return c.json(
-      { ok: false, paid: false, error: 'Số dư ngân hàng không đủ', requiredVnd: vnd, amountUsd: usd, balanceVnd: acc.balanceVnd },
+      { ok: false, paid: false, error: 'Insufficient bank balance', requiredVnd: vnd, amountUsd: usd, balanceVnd: acc.balanceVnd },
       402,
     );
   }
@@ -158,7 +158,7 @@ bankRouter.post('/arena/payout', async (c) => {
   const acc = await getBankAccount(body.accountId, body.holder);
   const { vnd, rate } = usdToVnd(usd);
   acc.balanceVnd += vnd;
-  const txn = recordBankTxn(acc, 'ARENA_PRIZE', vnd, `Tiền thưởng Arena ($${usd})`);
+  const txn = recordBankTxn(acc, 'ARENA_PRIZE', vnd, `Arena prize ($${usd})`);
   await saveBankToFirebase(acc);
   return c.json({ ok: true, credited: true, amountUsd: usd, amountVnd: vnd, rate, ref: txn.ref, ...(await summary(body.accountId)) });
 });

@@ -140,27 +140,27 @@ agentRouter.post('/execute', async (c) => {
           const acc = getAccount(accountId);
           const pos = acc.positions.find((p) => p.symbol === symbol);
           if (!pos || pos.amount <= 0) {
-            throw new Error(`Bạn không sở hữu ${symbol.replace('USDT', '')} để bán.`);
+            throw new Error(`You don't own any ${symbol.replace('USDT', '')} to sell.`);
           }
           amountUsd = pos.amount * price;
         } else if (Number.isFinite(sellPct) && sellPct > 0 && side === 'SELL') {
           const acc = getAccount(accountId);
           const pos = acc.positions.find((p) => p.symbol === symbol);
           if (!pos || pos.amount <= 0) {
-            throw new Error(`Bạn không sở hữu ${symbol.replace('USDT', '')} để bán.`);
+            throw new Error(`You don't own any ${symbol.replace('USDT', '')} to sell.`);
           }
           const pct = Math.min(100, Math.max(0, sellPct));
           amountUsd = pos.amount * (pct / 100) * price;
         } else if (args.buyAllCash === true && side === 'BUY') {
           const acc = getAccount(accountId);
           if (acc.cashUsd <= 0) {
-            throw new Error('Số dư cash không đủ để mua.');
+            throw new Error('Insufficient cash balance to buy.');
           }
           amountUsd = acc.cashUsd / (1 + FEE_RATE);
         } else if (Number.isFinite(buyPct) && buyPct > 0 && side === 'BUY') {
           const acc = getAccount(accountId);
           if (acc.cashUsd <= 0) {
-            throw new Error('Số dư cash không đủ để mua.');
+            throw new Error('Insufficient cash balance to buy.');
           }
           const pct = Math.min(100, Math.max(0, buyPct));
           // Spend pct% of cash, accounting for fee so notional + fee fits.
@@ -169,7 +169,7 @@ agentRouter.post('/execute', async (c) => {
         } else {
           amountUsd = Number(args.amountUsd ?? (args.amountVnd ? vndToUsd(Number(args.amountVnd)) : 0));
           if (!amountUsd || !Number.isFinite(amountUsd) || amountUsd <= 0) {
-            throw new Error('amountUsd, amountVnd, sellAll, buyAllCash, sellPercent, hoặc buyPercent bắt buộc');
+            throw new Error('amountUsd, amountVnd, sellAll, buyAllCash, sellPercent, or buyPercent required');
           }
         }
         // Safety clamp: if Gemini quoted amountUsd ≈ cash without using

@@ -54,14 +54,14 @@ const fmtUsd = (v: number) => `$${v.toLocaleString('en-US', { minimumFractionDig
 const fmtTime = (t: number) => new Date(t).toLocaleString('vi-VN');
 
 const TXN_META: Record<BankTxn['type'], { label: string; color: string; icon: string }> = {
-  DEPOSIT:         { label: 'Nạp tiền',          color: 'text-emerald-400', icon: '↓' },
-  WITHDRAW:        { label: 'Rút tiền',          color: 'text-amber-400',   icon: '↑' },
-  ARENA_ENTRY:     { label: 'Phí Arena',         color: 'text-rose-400',    icon: '⚔' },
-  ARENA_PRIZE:     { label: 'Thưởng Arena',      color: 'text-emerald-400', icon: '🏆' },
-  PREMIUM_UPGRADE: { label: 'Gói thành viên',    color: 'text-violet-400',  icon: '★' },
-  COURSE_PURCHASE: { label: 'Khóa học Academy',  color: 'text-blue-400',    icon: '📘' },
-  STAKE_LOCK:      { label: 'Khoá vốn Earn',     color: 'text-cyan-400',    icon: '🔒' },
-  ACCOUNT_TOPUP:   { label: 'Nạp vốn giao dịch', color: 'text-teal-400',    icon: '↻' },
+  DEPOSIT:         { label: 'Deposit',           color: 'text-emerald-400', icon: '↓' },
+  WITHDRAW:        { label: 'Withdrawal',        color: 'text-amber-400',   icon: '↑' },
+  ARENA_ENTRY:     { label: 'Arena Fee',         color: 'text-rose-400',    icon: '⚔' },
+  ARENA_PRIZE:     { label: 'Arena Prize',       color: 'text-emerald-400', icon: '🏆' },
+  PREMIUM_UPGRADE: { label: 'Membership Plan',   color: 'text-violet-400',  icon: '★' },
+  COURSE_PURCHASE: { label: 'Academy Course',    color: 'text-blue-400',    icon: '📘' },
+  STAKE_LOCK:      { label: 'Earn Lock-up',      color: 'text-cyan-400',    icon: '🔒' },
+  ACCOUNT_TOPUP:   { label: 'Trading Top-up',    color: 'text-teal-400',    icon: '↻' },
 };
 
 const FALLBACK_ACCOUNT_ID = 'CW-AI-8892-X';
@@ -165,14 +165,14 @@ const App: React.FC = () => {
 
   const mutate = async (kind: 'deposit' | 'withdraw') => {
     const amt = Math.round(Number(amount.replace(/[.,\s]/g, '')));
-    if (!Number.isFinite(amt) || amt <= 0) { setError('Nhập số tiền hợp lệ (VND)'); return; }
+    if (!Number.isFinite(amt) || amt <= 0) { setError('Enter a valid amount (VND)'); return; }
     setBusy(true); setError(null);
     try {
       const acc = kind === 'deposit' ? await deposit(accountId, amt) : await withdraw(accountId, amt);
       setAccount(acc);
       setAmount('');
       await refresh(accountId);
-      showFlash(kind === 'deposit' ? `Đã nạp ${fmtVnd(amt)}` : `Đã rút ${fmtVnd(amt)}`);
+      showFlash(kind === 'deposit' ? `Deposited ${fmtVnd(amt)}` : `Withdrew ${fmtVnd(amt)}`);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -188,7 +188,7 @@ const App: React.FC = () => {
           <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-emerald-400 to-cyan-500 flex items-center justify-center font-black text-slate-950 text-xl shadow-lg shadow-emerald-500/20">₫</div>
           <div>
             <h1 className="text-xl font-black tracking-tight">CoinWise Bank</h1>
-            <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Ngân hàng số · VND</p>
+            <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Digital Bank · VND</p>
           </div>
         </div>
         <a href="/" className="text-xs font-bold text-slate-400 hover:text-emerald-400 transition">← CoinWise App</a>
@@ -204,18 +204,18 @@ const App: React.FC = () => {
           users don't end up debiting one and checking the balance on another. */}
       <div className="mb-3 flex items-center justify-between gap-3 px-4 py-2 rounded-xl bg-slate-900/50 border border-slate-800">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 shrink-0">Đang xem</span>
+          <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 shrink-0">Viewing</span>
           <code className="text-xs font-mono text-emerald-300 truncate">{accountId}</code>
         </div>
         {holderHint && accountId === initialId && (
-          <span className="text-[10px] font-bold text-slate-500 shrink-0">đồng bộ từ CoinWise App</span>
+          <span className="text-[10px] font-bold text-slate-500 shrink-0">synced from CoinWise App</span>
         )}
       </div>
 
       {/* Balance card */}
       <section className="rounded-3xl bg-gradient-to-br from-bank-card to-slate-900 border border-slate-800 p-7 shadow-2xl mb-6 relative overflow-hidden">
         <div className="absolute -right-10 -top-10 w-40 h-40 bg-emerald-500/10 rounded-full blur-2xl" />
-        <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-1">Số dư khả dụng</p>
+        <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-1">Available Balance</p>
         <p className="text-4xl md:text-5xl font-black tabular-nums text-white">
           {loading ? '—' : account ? fmtVnd(account.balanceVnd) : '—'}
         </p>
@@ -224,11 +224,11 @@ const App: React.FC = () => {
         )}
         <div className="mt-6 flex items-end justify-between">
           <div>
-            <p className="text-[10px] uppercase tracking-widest text-slate-600 font-bold">Chủ tài khoản</p>
+            <p className="text-[10px] uppercase tracking-widest text-slate-600 font-bold">Account Holder</p>
             <p className="font-bold text-slate-200">{account?.holder || holderHint || '—'}</p>
           </div>
           <div className="text-right">
-            <p className="text-[10px] uppercase tracking-widest text-slate-600 font-bold">Số tài khoản</p>
+            <p className="text-[10px] uppercase tracking-widest text-slate-600 font-bold">Account Number</p>
             <p className="font-mono font-bold text-slate-300 tracking-wider">{account?.bankAccountNo || '—'}</p>
           </div>
         </div>
@@ -239,25 +239,25 @@ const App: React.FC = () => {
         <input
           value={loginInput}
           onChange={(e) => setLoginInput(e.target.value)}
-          placeholder="Chuyển sang accountId khác…"
+          placeholder="Switch to another accountId…"
           className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
         />
-        <button className="bg-slate-800 hover:bg-slate-700 px-5 rounded-xl text-sm font-bold transition">Chuyển</button>
+        <button className="bg-slate-800 hover:bg-slate-700 px-5 rounded-xl text-sm font-bold transition">Switch</button>
       </form>
       <p className="text-[10px] text-slate-600 mb-6 leading-relaxed">
-        💡 Mặc định dùng accountId của tài khoản bạn đang đăng nhập bên CoinWise App. Chỉ đổi nếu muốn xem ngân hàng của user khác.
+        💡 Defaults to the accountId you're signed in with on the CoinWise App. Only change it if you want to view another user's bank.
       </p>
 
       {error && (
         <div className="mb-6 bg-rose-500/10 border border-rose-500/30 text-rose-300 text-sm font-medium rounded-xl px-4 py-3">
-          <p className="font-black mb-0.5">Không tải được dữ liệu ngân hàng</p>
+          <p className="font-black mb-0.5">Couldn't load bank data</p>
           <p className="text-xs opacity-90 break-all">{error}</p>
         </div>
       )}
 
       {/* Deposit / withdraw */}
       <section className="bg-bank-card border border-slate-800 rounded-3xl p-6 mb-6">
-        <h2 className="text-sm font-black uppercase tracking-widest text-slate-400 mb-4">Nạp / Rút tiền (VND)</h2>
+        <h2 className="text-sm font-black uppercase tracking-widest text-slate-400 mb-4">Deposit / Withdraw (VND)</h2>
         <div className="flex flex-wrap gap-2 mb-3">
           {QUICK_AMOUNTS.map((a) => (
             <button key={a} type="button" onClick={() => setAmount(String(a))}
@@ -270,29 +270,29 @@ const App: React.FC = () => {
           inputMode="numeric"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
-          placeholder="Số tiền (₫)"
+          placeholder="Amount (₫)"
           className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3.5 text-lg font-bold tabular-nums mb-4 focus:outline-none focus:ring-2 focus:ring-emerald-500"
         />
         <div className="grid grid-cols-2 gap-3">
           <button disabled={busy} onClick={() => mutate('deposit')}
             className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-black py-3.5 rounded-xl transition active:scale-95">
-            Nạp tiền
+            Deposit
           </button>
           <button disabled={busy} onClick={() => mutate('withdraw')}
             className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 font-black py-3.5 rounded-xl transition active:scale-95">
-            Rút tiền
+            Withdraw
           </button>
         </div>
         <p className="text-[11px] text-slate-600 mt-4 leading-relaxed">
-          Tài khoản này dùng để thanh toán phí tham gia <b>Arena</b> bên CoinWise và nhận <b>tiền thưởng</b> khi thắng. Mọi giao dịch đều đi qua OpenAPI server <code className="bg-slate-900 px-1 rounded">/api/v1/bank</code>.
+          This account pays the entry fee for the CoinWise <b>Arena</b> and receives <b>prize money</b> when you win. Every transaction goes through the OpenAPI server <code className="bg-slate-900 px-1 rounded">/api/v1/bank</code>.
         </p>
       </section>
 
       {/* Statement */}
       <section className="bg-bank-card border border-slate-800 rounded-3xl p-6">
-        <h2 className="text-sm font-black uppercase tracking-widest text-slate-400 mb-4">Lịch sử giao dịch</h2>
+        <h2 className="text-sm font-black uppercase tracking-widest text-slate-400 mb-4">Transaction History</h2>
         {statement.length === 0 ? (
-          <p className="text-slate-600 text-sm italic py-6 text-center">Chưa có giao dịch nào.</p>
+          <p className="text-slate-600 text-sm italic py-6 text-center">No transactions yet.</p>
         ) : (
           <ul className="divide-y divide-slate-800/60">
             {statement.map((t) => {
@@ -311,7 +311,7 @@ const App: React.FC = () => {
                     <p className={`font-black tabular-nums ${positive ? 'text-emerald-400' : 'text-rose-400'}`}>
                       {positive ? '+' : ''}{fmtVnd(t.amountVnd)}
                     </p>
-                    <p className="text-[10px] text-slate-600 tabular-nums">Số dư: {fmtVnd(t.balanceAfterVnd)}</p>
+                    <p className="text-[10px] text-slate-600 tabular-nums">Balance: {fmtVnd(t.balanceAfterVnd)}</p>
                   </div>
                 </li>
               );

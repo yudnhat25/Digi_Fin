@@ -60,7 +60,7 @@ const BankCheckoutModal: React.FC<BankCheckoutModalProps> = ({
       onSuccess(res);
     } catch (err) {
       setIsProcessing(false);
-      setError((err as Error).message || 'Thanh toán thất bại. Vui lòng thử lại.');
+      setError((err as Error).message || 'Payment failed. Please try again.');
     }
   };
 
@@ -98,7 +98,7 @@ const BankCheckoutModal: React.FC<BankCheckoutModalProps> = ({
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100">
             <div className="flex items-center justify-between mb-1">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Thanh toán từ tài khoản</label>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pay from account</label>
               <span className="text-[10px] font-mono text-slate-400">{accountId}</span>
             </div>
             <div className="flex items-center gap-3">
@@ -106,7 +106,7 @@ const BankCheckoutModal: React.FC<BankCheckoutModalProps> = ({
               <div className="flex-1">
                 <p className="font-bold text-slate-800">CoinWise Bank · VND</p>
                 <p className="text-xs text-slate-500">
-                  Số dư: <span className={`font-bold tabular-nums ${insufficient ? 'text-rose-600' : 'text-emerald-600'}`}>
+                  Balance: <span className={`font-bold tabular-nums ${insufficient ? 'text-rose-600' : 'text-emerald-600'}`}>
                     {balanceVnd != null ? formatVND(balanceVnd) : '…'}
                   </span>
                 </p>
@@ -118,15 +118,15 @@ const BankCheckoutModal: React.FC<BankCheckoutModalProps> = ({
             <div className="flex items-start gap-3 p-3 bg-rose-50 rounded-xl border border-rose-100">
               <svg className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
               <p className="text-[11px] text-rose-700 font-medium leading-relaxed">
-                Số dư không đủ. <a href="/bank.html" target="_blank" rel="noreferrer" className="underline font-bold">Mở CoinWise Bank để nạp tiền →</a>
+                Insufficient balance. <a href="/bank.html" target="_blank" rel="noreferrer" className="underline font-bold">Open CoinWise Bank to add funds →</a>
               </p>
             </div>
           ) : (
             <div className="flex items-start gap-3 p-3 bg-emerald-50 rounded-xl border border-emerald-100">
               <svg className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4"/></svg>
               <p className="text-[10px] text-emerald-700 font-medium leading-relaxed">
-                Phí <b>${amountUsd.toFixed(2)}</b> được quy đổi qua OpenAPI <code>/fx/convert</code> và trừ trực tiếp bằng VND từ tài khoản CoinWise Bank.
-                <a href="/bank.html" target="_blank" rel="noreferrer" className="underline font-bold"> Mở CoinWise Bank →</a>
+                The <b>${amountUsd.toFixed(2)}</b> fee is converted via the OpenAPI <code>/fx/convert</code> endpoint and debited directly in VND from your CoinWise Bank account.
+                <a href="/bank.html" target="_blank" rel="noreferrer" className="underline font-bold"> Open CoinWise Bank →</a>
               </p>
             </div>
           )}
@@ -140,15 +140,15 @@ const BankCheckoutModal: React.FC<BankCheckoutModalProps> = ({
             {isProcessing ? (
               <>
                 <svg className="animate-spin h-5 w-5 text-slate-950" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg>
-                Đang xử lý...
+                Processing...
               </>
             ) : (
-              <>{ctaText || `Trả ${fxQuote ? formatVND(fxQuote.amountVnd) : `$${amountUsd.toFixed(2)}`}`}</>
+              <>{ctaText || `Pay ${fxQuote ? formatVND(fxQuote.amountVnd) : `$${amountUsd.toFixed(2)}`}`}</>
             )}
           </button>
 
           <p className="text-center text-[10px] text-slate-400 font-medium">
-            Thanh toán qua CoinWise Bank · cùng đường tiền với Arena.
+            Paid via CoinWise Bank · same money rail as Arena.
           </p>
         </form>
       </div>

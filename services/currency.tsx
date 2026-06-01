@@ -54,9 +54,9 @@ export const CurrencyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (currency === 'VND') {
         const vnd = usd * usdVnd;
         if (opts?.compact && Math.abs(vnd) >= 1_000_000_000)
-          return `${(vnd / 1_000_000_000).toFixed(2)} tỷ ₫`;
+          return `${(vnd / 1_000_000_000).toFixed(2)}B ₫`;
         if (opts?.compact && Math.abs(vnd) >= 1_000_000)
-          return `${(vnd / 1_000_000).toFixed(2)} tr ₫`;
+          return `${(vnd / 1_000_000).toFixed(2)}M ₫`;
         return formatVND(vnd);
       }
       if (opts?.compact && Math.abs(usd) >= 1_000_000)

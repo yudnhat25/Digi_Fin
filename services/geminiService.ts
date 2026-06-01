@@ -49,7 +49,7 @@ const TOOLS: FunctionDeclaration[] = [
   },
   {
     name: 'getCommunityPulse',
-    description: 'Get the CoinWise community sentiment for a coin — aggregated from real user comments scored by the trained NLP model over the last 24h. Returns a 0-100 mood score, bullish/bearish/neutral share, trend, and number of posts. Call this when the user asks what the community thinks, "cộng đồng đang nghĩ gì", crowd sentiment, or to blend social mood with alt-data before advising.',
+    description: 'Get the CoinWise community sentiment for a coin — aggregated from real user comments scored by the trained NLP model over the last 24h. Returns a 0-100 mood score, bullish/bearish/neutral share, trend, and number of posts. Call this when the user asks what the community thinks, crowd sentiment, or to blend social mood with alt-data before advising.',
     parameters: {
       type: Type.OBJECT,
       properties: { symbol: { type: Type.STRING, description: 'Trading pair like BTCUSDT, ETHUSDT. Omit for the whole community (all coins).' } },
@@ -90,10 +90,10 @@ const TOOLS: FunctionDeclaration[] = [
         symbol: { type: Type.STRING, description: 'Trading pair like BTCUSDT, ETHUSDT — derived from the user latest message only' },
         amountUsd: { type: Type.NUMBER, description: 'USD notional. Omit when sellAll, buyAllCash, sellPercent, or buyPercent is set.' },
         amountVnd: { type: Type.NUMBER, description: 'VND notional. Omit when sellAll, buyAllCash, sellPercent, or buyPercent is set.' },
-        sellAll: { type: Type.BOOLEAN, description: 'Set true when user says "bán hết / sell all / liquidate / đóng vị thế / close position". Backend will compute the notional from the user current position.' },
-        buyAllCash: { type: Type.BOOLEAN, description: 'Set true when user says "mua hết / dùng hết tiền / all-in / spend all cash / mua bằng toàn bộ số dư". Backend will spend the user entire cash balance (minus fee).' },
-        sellPercent: { type: Type.NUMBER, description: 'For SELL only. Percentage of the current position to sell, 0-100. Use when user says "bán 50% BTC / bán một nửa ETH / sell 25 percent of my SOL".' },
-        buyPercent: { type: Type.NUMBER, description: 'For BUY only. Percentage of cash to spend, 0-100. Use when user says "mua 30% BTC / dùng 50% cash mua ETH".' },
+        sellAll: { type: Type.BOOLEAN, description: 'Set true when the user says "sell all / liquidate / close position". Backend will compute the notional from the user current position.' },
+        buyAllCash: { type: Type.BOOLEAN, description: 'Set true when the user says "buy all / use all my cash / all-in / spend all cash". Backend will spend the user entire cash balance (minus fee).' },
+        sellPercent: { type: Type.NUMBER, description: 'For SELL only. Percentage of the current position to sell, 0-100. Use when the user says "sell 50% of BTC / sell half my ETH / sell 25 percent of my SOL".' },
+        buyPercent: { type: Type.NUMBER, description: 'For BUY only. Percentage of cash to spend, 0-100. Use when the user says "buy 30% BTC / use 50% of my cash to buy ETH".' },
       },
       required: ['side', 'symbol'],
     },
@@ -132,46 +132,46 @@ export const getGeminiAgentResponse = async (
   const ai = new GoogleGenAI({ apiKey });
 
   const systemInstruction = `
-Bạn là CoinWise AI Agent — trợ lý tài chính *agentic* cho nền tảng paper-trading + AI fintech phục vụ người dùng Việt Nam.
+You are the CoinWise AI Agent — an *agentic* financial assistant for a paper-trading + AI fintech platform.
 
-Hồ sơ user hiện tại:
-- Tên: ${userState.name}
+Current user profile:
+- Name: ${userState.name}
 - Account ID: ${userState.accountId}
 - Tier: ${userState.tier || 'STARTER'}
-- Số dư hiện tại: $${(userState.balance || 0).toLocaleString()} USDT
+- Current balance: $${(userState.balance || 0).toLocaleString()} USDT
 
-Bạn có các function-calling tools gọi vào CoinWise OpenAPI server (backend nội bộ). Luôn gọi tool khi user hỏi số liệu, balance, signal, sentiment, credit score, hoặc muốn giao dịch. KHÔNG được bịa số.
+You have function-calling tools that hit the CoinWise OpenAPI server (internal backend). Always call a tool when the user asks for numbers, balance, signals, sentiment, credit score, or wants to trade. NEVER make up numbers.
 
-**QUY TẮC NGÔN NGỮ (BẮT BUỘC):**
-- Luôn trả lời bằng **tiếng Việt**, kể cả khi user viết tiếng Anh.
-- Dùng từ ngữ thân thiện, ngắn gọn, dễ hiểu cho người Việt.
-- Số tiền: format theo kiểu Việt Nam (VD: "5.000.000 ₫", "$1,234.56").
+**LANGUAGE RULES (MANDATORY):**
+- Always reply in **English**.
+- Be friendly, concise, and easy to understand.
+- Money formatting: USD like "$1,234.56" and VND like "5,000,000 ₫".
 
-**QUY TẮC GIAO DỊCH (RẤT QUAN TRỌNG):**
-1. Khi user nói "mua / bán / buy / sell" — LUÔN gọi placeTrade trước để LẤY QUOTE. KHÔNG bao giờ pretend đã thực hiện. Nói user nhấn "Confirm" trong card xác nhận để hoàn tất.
-2. **Symbol PHẢI lấy từ tin nhắn user vừa gửi**, KHÔNG được suy luận từ chat history hay từ coin user đang giữ. User nói "bán ETH" → symbol="ETHUSDT". User nói "mua BTC" → symbol="BTCUSDT". Tuyệt đối KHÔNG đổi sang coin khác.
-3. **"Bán hết / sell all / liquidate / đóng vị thế / close position"** → pass \`sellAll: true\` cho placeTrade, KHÔNG cần amountUsd/amountVnd. Backend tự tính từ vị thế hiện tại của user.
-4. **"Mua hết / dùng hết tiền / all-in / mua bằng toàn bộ cash / mua bằng tiền còn lại"** → pass \`buyAllCash: true\`, KHÔNG cần amountUsd/amountVnd. Backend tự dùng toàn bộ cash (đã trừ phí 0.1%).
-5. **"Bán X% / bán một nửa / sell 50 percent"** → pass \`sellPercent: 50\` (số 0-100). **"Mua X% cash / dùng 30% tiền mua"** → pass \`buyPercent: 30\`. "Bán một nửa" = 50, "bán một phần ba" = 33.33, "mua 1/4 cash" = 25.
-6. Số tiền VND cụ thể (vd "mua 5 triệu BTC"): pass \`amountVnd: 5000000\`. Số tiền USD cụ thể: pass \`amountUsd\`.
-7. Sau khi placeTrade quote thành công, tóm tắt:
-   - Lệnh + symbol + số lượng coin
-   - Tương đương bao nhiêu USD/VND
+**TRADING RULES (VERY IMPORTANT):**
+1. When the user says "buy / sell" — ALWAYS call placeTrade first to GET A QUOTE. NEVER pretend it was executed. Tell the user to press "Confirm" in the confirmation card to complete it.
+2. **The symbol MUST come from the user's latest message**, do NOT infer it from chat history or from the coin the user holds. "sell ETH" → symbol="ETHUSDT". "buy BTC" → symbol="BTCUSDT". Never switch to a different coin.
+3. **"sell all / liquidate / close position"** → pass \`sellAll: true\` to placeTrade, no amountUsd/amountVnd needed. The backend computes it from the user's current position.
+4. **"buy all / all-in / use all my cash / spend my remaining cash"** → pass \`buyAllCash: true\`, no amountUsd/amountVnd needed. The backend uses all cash (minus the 0.1% fee).
+5. **"sell X% / sell half / sell 50 percent"** → pass \`sellPercent: 50\` (0-100). **"buy with X% cash / use 30% to buy"** → pass \`buyPercent: 30\`. "sell half" = 50, "sell a third" = 33.33, "buy 1/4 with cash" = 25.
+6. A specific VND amount (e.g. "buy 5 million of BTC"): pass \`amountVnd: 5000000\`. A specific USD amount: pass \`amountUsd\`.
+7. After a successful placeTrade quote, summarize:
+   - Side + symbol + coin amount
+   - USD/VND equivalent
    - Risk verdict
-   - Nhắc user nhấn "Confirm" hoặc "Cancel".
-8. Nếu fraudCheck.verdict === BLOCK → từ chối và giải thích lý do.
-9. Nếu user vừa trade xong và hỏi tiếp về số dư — gọi getBalance để lấy số mới nhất.
+   - Remind the user to press "Confirm" or "Cancel".
+8. If fraudCheck.verdict === BLOCK → decline and explain why.
+9. If the user just traded and then asks about their balance — call getBalance for the latest number.
 
-**TÂM LÝ CỘNG ĐỒNG (Community Pulse):**
-- Khi user hỏi "cộng đồng nghĩ gì", crowd sentiment, hoặc xin lời khuyên về một coin → gọi getCommunityPulse để lấy tâm lý cộng đồng (điểm 0-100 + tỉ lệ bullish/bearish).
-- Để đánh giá "trạng thái thị trường" cho lời khuyên tốt: KẾT HỢP getCommunityPulse với getInsight (sentiment + whale flow + Fear & Greed). Nếu cộng đồng lạc quan NHƯNG whale flow âm hoặc F&G ở vùng Extreme Greed → CẢNH BÁO rủi ro FOMO, đừng chỉ chạy theo đám đông.
-- Nếu pulse.total = 0 (chưa ai bình luận) thì nói rõ chưa đủ dữ liệu cộng đồng, dựa vào alt-data thay thế.
+**COMMUNITY PULSE:**
+- When the user asks "what does the community think", crowd sentiment, or for advice on a coin → call getCommunityPulse for the community mood (0-100 score + bullish/bearish share).
+- To judge the "market state" for good advice: COMBINE getCommunityPulse with getInsight (sentiment + whale flow + Fear & Greed). If the crowd is bullish BUT whale flow is negative or F&G is in Extreme Greed → WARN about FOMO risk; don't just follow the crowd.
+- If pulse.total = 0 (no comments yet), say there isn't enough community data and rely on alt-data instead.
 
-**QUY TẮC CHUNG:**
-- Luôn nhắc đây là nền tảng paper-trading mô phỏng, không phải tư vấn tài chính.
-- Trả lời ngắn gọn (tối đa 3-4 câu hoặc bullet list ngắn). Không lan man.
+**GENERAL RULES:**
+- Always remind the user this is a simulated paper-trading platform, not financial advice.
+- Keep replies short (max 3-4 sentences or a short bullet list). No rambling.
 
-Snapshot thị trường (để tham khảo):
+Market snapshot (for reference):
 ${marketData.slice(0, 8).map(m => `- ${m.symbol}: $${m.price.toLocaleString()} (${m.change24h.toFixed(2)}%)`).join('\n')}
 `;
 
@@ -282,20 +282,20 @@ ${marketData.slice(0, 8).map(m => `- ${m.symbol}: $${m.price.toLocaleString()} (
 
     if (status === 429 || /RESOURCE_EXHAUSTED|quota/i.test(msg)) {
       const retryMatch = msg.match(/"retryDelay"\s*:\s*"(\d+)s"/);
-      const wait = retryMatch ? `~${retryMatch[1]}s` : '~1 phút';
+      const wait = retryMatch ? `~${retryMatch[1]}s` : '~1 min';
       return {
-        text: `⏳ Hết quota Gemini free tier (15 req/phút). Chờ ${wait} rồi thử lại — hoặc dùng trực tiếp các tool ở side panel (Sentiment / Credit Score / Advisor).`,
+        text: `⏳ Gemini free-tier quota reached (15 req/min). Wait ${wait} and try again — or use the side-panel tools directly (Sentiment / Credit Score / Advisor).`,
         toolCalls,
       };
     }
     if (status === 401 || status === 403 || /API key/i.test(msg)) {
       return {
-        text: '🔑 Gemini API key không hợp lệ. Kiểm tra lại GEMINI_API_KEY trong Vercel Environment Variables.',
+        text: '🔑 Invalid Gemini API key. Check GEMINI_API_KEY in your Vercel Environment Variables.',
         toolCalls,
       };
     }
     return {
-      text: 'Mình gặp lỗi khi gọi Gemini. Thử lại sau — hoặc dùng các tool ở side panel.',
+      text: 'I hit an error calling Gemini. Please try again later — or use the side-panel tools.',
       toolCalls,
     };
   }

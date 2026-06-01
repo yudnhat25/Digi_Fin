@@ -20,11 +20,11 @@ interface ChatMessage {
 }
 
 const QUICK_PROMPTS = [
-  'Số dư của tôi là bao nhiêu?',
-  'Điểm tín dụng của tôi?',
-  'Sentiment BTC và ETH?',
-  'Đề xuất danh mục rủi ro thấp',
-  'Mua 5 triệu VND BTC',
+  "What's my balance?",
+  "What's my credit score?",
+  'Sentiment for BTC and ETH?',
+  'Suggest a low-risk portfolio',
+  'Buy 5,000,000 VND of BTC',
 ];
 
 const ToolBadge: React.FC<{ name: string }> = ({ name }) => (
@@ -59,10 +59,10 @@ const AIChatBot: React.FC<AIChatBotProps> = ({ userState, marketData, onTradeExe
       id: 'welcome',
       role: 'ai',
       content:
-        `Xin chào ${userState.name.split(' ')[0]}! Mình là CoinWise AI Agent. ` +
-        `Mình có thể tra cứu số dư, AI credit score, sentiment, fear & greed, ` +
-        `đề xuất danh mục, hoặc đặt lệnh giao dịch qua OpenAPI server. ` +
-        `Thử các gợi ý nhanh bên dưới 👇`,
+        `Hi ${userState.name.split(' ')[0]}! I'm the CoinWise AI Agent. ` +
+        `I can check your balance, AI credit score, sentiment, fear & greed, ` +
+        `suggest a portfolio, or place trades through the OpenAPI server. ` +
+        `Try the quick prompts below 👇`,
     },
   ]);
   const [isLoading, setIsLoading] = useState(false);
@@ -141,8 +141,8 @@ const AIChatBot: React.FC<AIChatBotProps> = ({ userState, marketData, onTradeExe
       const symStr = String(res?.symbol || pending.symbol);
       const base = symStr.replace('USDT', '');
 
-      // Build a Vietnamese post-trade summary with remaining balance + buying power
-      // for the top tradable assets so user sees what they can still afford.
+      // Build a post-trade summary with remaining balance + buying power for the
+      // top tradable assets so the user sees what they can still afford.
       const topAssets = (marketData || [])
         .filter((m) => m && Number.isFinite(m.price) && m.price > 0)
         .slice(0, 3);
@@ -151,9 +151,9 @@ const AIChatBot: React.FC<AIChatBotProps> = ({ userState, marketData, onTradeExe
         .join(' · ');
 
       const successMsg =
-        `✅ Đã ${sideStr === 'BUY' ? 'mua' : 'bán'} ${execAmount.toFixed(6)} ${base} @ $${execPrice.toFixed(2)} qua OpenAPI server.\n\n` +
-        `💰 Số dư còn lại: $${newBal.toLocaleString('en-US', { maximumFractionDigits: 2 })} ≈ ${fmtVnd(newBal)}\n` +
-        (buyingPower ? `📊 Có thể mua tiếp: ${buyingPower}` : '');
+        `✅ ${sideStr === 'BUY' ? 'Bought' : 'Sold'} ${execAmount.toFixed(6)} ${base} @ $${execPrice.toFixed(2)} via the OpenAPI server.\n\n` +
+        `💰 Remaining balance: $${newBal.toLocaleString('en-US', { maximumFractionDigits: 2 })} ≈ ${fmtVnd(newBal)}\n` +
+        (buyingPower ? `📊 Buying power: ${buyingPower}` : '');
 
       setMessages((prev) => [
         ...prev,
@@ -162,7 +162,7 @@ const AIChatBot: React.FC<AIChatBotProps> = ({ userState, marketData, onTradeExe
           role: 'system',
           content: res?.ok
             ? successMsg
-            : `🚫 Giao dịch bị Fraud Shield chặn: ${reasons.join(' · ') || 'không rõ lý do'}`,
+            : `🚫 Trade blocked by Fraud Shield: ${reasons.join(' · ') || 'no reason given'}`,
         },
       ]);
       if (res?.ok && execPrice > 0) {
@@ -324,7 +324,7 @@ const AIChatBot: React.FC<AIChatBotProps> = ({ userState, marketData, onTradeExe
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && send(input)}
-                placeholder="Ask anything — ‘mua 5 triệu VND BTC’, ‘credit score’…"
+                placeholder="Ask anything — ‘buy 5,000,000 VND of BTC’, ‘credit score’…"
                 className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
               />
               <button

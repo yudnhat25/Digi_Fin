@@ -174,7 +174,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
           <p className="mt-7 mx-auto max-w-[640px] text-center text-slate-400 text-[16.5px] leading-relaxed">
             Paper trade Bitcoin, Ethereum and 180+ pairs with $1M virtual capital. CoinWise AI analyses
             social sentiment, whale movements and on-chain data to coach you. Built for Vietnamese
-            traders, supports VNĐ natively.
+            traders, supports VND natively.
           </p>
 
           <div className="mt-9 flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -196,7 +196,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
           <ul className="mt-7 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-[12px] text-slate-500">
             <li className="flex items-center gap-1.5"><Check /> $1M virtual capital</li>
             <li className="flex items-center gap-1.5"><Check /> Gemini-powered AI</li>
-            <li className="flex items-center gap-1.5"><Check /> VNĐ support</li>
+            <li className="flex items-center gap-1.5"><Check /> VND support</li>
             <li className="flex items-center gap-1.5"><Check /> No credit card</li>
           </ul>
         </div>
