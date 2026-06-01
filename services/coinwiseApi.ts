@@ -49,6 +49,16 @@ export const apiMarketPrices = (symbols?: string[]) =>
     `/api/v1/market/prices${symbols?.length ? `?symbols=${encodeURIComponent(symbols.join(','))}` : ''}`,
   );
 
+export interface MarketNewsItem {
+  id: string; title: string; source: string; url: string;
+  publishedAt: number; tag: string; tagColor: string;
+}
+export interface MarketNewsResponse {
+  items: MarketNewsItem[]; source: string; degraded: boolean; fetchedAt?: string; error?: string;
+}
+export const apiMarketNews = (limit = 8) =>
+  call<MarketNewsResponse>(`/api/v1/market/news?limit=${limit}`);
+
 // ───── AI / Alternative Data ─────
 export interface SentimentSnapshot {
   symbol: string; score: number; label: 'Bearish' | 'Neutral' | 'Bullish' | 'Euphoric';

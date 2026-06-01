@@ -7,6 +7,7 @@ import {
   getSocialPulse,
   signalFromSentiment,
 } from '../ai/altdata';
+import { fetchLatestNews } from '../ai/sources/cryptoNewsRss';
 
 export const marketRouter = new Hono();
 
@@ -53,3 +54,16 @@ marketRouter.get('/:symbol/whale-flow', (c) => c.json(getWhaleFlow(c.req.param('
 marketRouter.get('/fear-greed', async (c) => c.json(await getFearGreed()));
 
 marketRouter.get('/social-pulse', async (c) => c.json(await getSocialPulse()));
+
+// Real aggregated crypto-news headlines (RSS, no API key). Powers the
+// dashboard "Market News" widget.
+marketRouter.get('/news', async (c) => {
+  const limit = Math.min(20, Math.max(1, Number(c.req.query('limit')) || 8));
+  try {
+    const items = await fetchLatestNews(limit);
+    if (!items.length) return c.json({ items: [], source: 'rss', degraded: true });
+    return c.json({ items, source: 'rss', degraded: false, fetchedAt: new Date().toISOString() });
+  } catch (e) {
+    return c.json({ items: [], source: 'rss', degraded: true, error: (e as Error).message }, 200);
+  }
+});
