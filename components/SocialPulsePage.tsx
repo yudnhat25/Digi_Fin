@@ -7,14 +7,6 @@ import {
   FgPoint,
 } from '../services/coinwiseApi';
 
-// ─── Vietnamese F&G labels ───
-const VI: Record<string, string> = {
-  'Extreme Fear': 'Sợ hãi tột độ',
-  'Fear': 'Sợ hãi',
-  'Neutral': 'Bình thường',
-  'Greed': 'Tham lam',
-  'Extreme Greed': 'Tham lam tột độ',
-};
 const classBand = (v: number) =>
   v < 25 ? 'Extreme Fear' :
   v < 45 ? 'Fear' :
@@ -82,7 +74,7 @@ const Gauge: React.FC<{ value: number }> = ({ value }) => {
         {Math.round(value)}
       </text>
       <text x={cx} y={cy + 24} textAnchor="middle" fontSize="18" fontWeight="600" fill={tone.hex}>
-        {VI[classBand(value)]}
+        {classBand(value)}
       </text>
     </svg>
   );
@@ -200,7 +192,7 @@ const HistRow: React.FC<{ label: string; pt: FgPoint | null }> = ({ label, pt })
       <span className="text-slate-400 text-[15px]">{label}</span>
       <span className={`inline-flex items-center gap-2 text-[15px] font-semibold ${tone.text}`}>
         <span className="w-1 h-4 rounded" style={{ background: tone.hex }} />
-        {VI[classBand(pt.value)]} {Math.round(pt.value)}
+        {classBand(pt.value)} {Math.round(pt.value)}
       </span>
     </div>
   );
@@ -223,12 +215,6 @@ const momentumTone: Record<SocialPulseRow['momentum'], string> = {
   Rising: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30',
   Stable: 'text-slate-400 bg-white/[0.04] border-white/[0.08]',
   Cooling: 'text-blue-300 bg-blue-500/10 border-blue-500/30',
-};
-const momentumVi: Record<SocialPulseRow['momentum'], string> = {
-  Spike: 'Bùng nổ',
-  Rising: 'Tăng',
-  Stable: 'Ổn định',
-  Cooling: 'Hạ nhiệt',
 };
 
 // ─── Main page ───
@@ -268,12 +254,12 @@ const SocialPulsePage: React.FC<{ onSelectAsset?: (symbol: string) => void }> = 
     const week = fgData.fearGreed.periods.lastWeek?.value ?? cur;
     const month = fgData.fearGreed.periods.lastMonth?.value ?? cur;
     const moved = Math.abs(cur - week) > 10 || Math.abs(cur - month) > 15;
-    const bandCur = VI[classBand(cur)];
-    const bandWeek = VI[classBand(week)];
+    const bandCur = classBand(cur);
+    const bandWeek = classBand(week);
     if (bandCur === bandWeek && !moved) {
-      return `Thị trường ổn định trong vùng ${bandCur} (${Math.round(cur)}/100) — chưa có biến động cảm xúc mạnh.`;
+      return `Market stable in the ${bandCur} zone (${Math.round(cur)}/100) — no major sentiment swings.`;
     }
-    return `Tâm lý dao động giữa ${bandWeek} và ${bandCur}. Thị trường cân bằng, tránh được cực đoan.`;
+    return `Sentiment oscillating between ${bandWeek} and ${bandCur}. Market balanced, avoiding extreme readings.`;
   }, [fgData]);
 
   return (
@@ -286,13 +272,13 @@ const SocialPulsePage: React.FC<{ onSelectAsset?: (symbol: string) => void }> = 
         </div>
         <h1 className="text-3xl md:text-4xl font-bold tracking-tight">Social Pulse</h1>
         <p className="text-slate-400 text-sm mt-2 max-w-2xl">
-          Tâm lý thị trường tổng hợp — Fear & Greed Index, social mentions, sentiment cộng đồng. Cập nhật mỗi 60 giây.
+          Aggregated market sentiment — Fear & Greed Index, social mentions, community signals. Refreshed every 60 seconds.
         </p>
       </div>
 
       {err && (
         <div className="rounded-xl border border-rose-500/30 bg-rose-500/[0.04] p-4 text-sm text-rose-200">
-          Lỗi tải dữ liệu: {err}
+          Failed to load data: {err}
         </div>
       )}
 
@@ -302,7 +288,7 @@ const SocialPulsePage: React.FC<{ onSelectAsset?: (symbol: string) => void }> = 
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
               <h2 className="text-xl md:text-2xl font-bold tracking-tight flex items-center gap-2">
-                Chỉ số Sợ hãi & Tham lam
+                Fear & Greed Index
                 <span className="text-slate-600 text-sm">ⓘ</span>
               </h2>
               <div className="mt-2 flex items-start gap-2 max-w-2xl">
@@ -310,7 +296,7 @@ const SocialPulsePage: React.FC<{ onSelectAsset?: (symbol: string) => void }> = 
                   <path d="M12 2l1.5 4.5L18 8l-4.5 1.5L12 14l-1.5-4.5L6 8l4.5-1.5L12 2zm6 11l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3z" />
                 </svg>
                 <p className="text-slate-300 text-sm leading-relaxed">
-                  <span className="text-violet-400 font-semibold">Sử dụng AI · </span>
+                  <span className="text-violet-400 font-semibold">AI Insight · </span>
                   {summary}
                 </p>
               </div>
@@ -322,7 +308,7 @@ const SocialPulsePage: React.FC<{ onSelectAsset?: (symbol: string) => void }> = 
                   tab === 'overview' ? 'bg-white/[0.08] text-white' : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                Tổng quan
+                Overview
               </button>
               <button
                 onClick={() => setTab('chart')}
@@ -330,7 +316,7 @@ const SocialPulsePage: React.FC<{ onSelectAsset?: (symbol: string) => void }> = 
                   tab === 'chart' ? 'bg-white/[0.08] text-white' : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                Biểu đồ
+                Chart
               </button>
             </div>
           </div>
@@ -346,37 +332,37 @@ const SocialPulsePage: React.FC<{ onSelectAsset?: (symbol: string) => void }> = 
               <div className="lg:col-span-7 space-y-5">
                 <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
                   <h3 className="text-sm font-bold text-slate-200 mb-1 flex items-center gap-1">
-                    Dữ liệu Lịch sử <span className="text-slate-600">ⓘ</span>
+                    Historical Data <span className="text-slate-600">ⓘ</span>
                   </h3>
                   <div className="mt-2">
-                    <HistRow label="Ngày hôm qua" pt={fgData.fearGreed.periods.yesterday} />
-                    <HistRow label="Tuần trước" pt={fgData.fearGreed.periods.lastWeek} />
-                    <HistRow label="Tháng trước" pt={fgData.fearGreed.periods.lastMonth} />
-                    <HistRow label="Năm ngoái" pt={fgData.fearGreed.periods.lastYear} />
+                    <HistRow label="Yesterday" pt={fgData.fearGreed.periods.yesterday} />
+                    <HistRow label="Last week" pt={fgData.fearGreed.periods.lastWeek} />
+                    <HistRow label="Last month" pt={fgData.fearGreed.periods.lastMonth} />
+                    <HistRow label="Last year" pt={fgData.fearGreed.periods.lastYear} />
                   </div>
                 </div>
 
                 <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
                   <h3 className="text-sm font-bold text-slate-200 mb-1 flex items-center gap-1">
-                    Mức cao & thấp 1 năm <span className="text-slate-600">ⓘ</span>
+                    Yearly High & Low <span className="text-slate-600">ⓘ</span>
                   </h3>
                   <div className="mt-2">
                     <div className="flex items-center justify-between py-3 border-b border-white/[0.04]">
                       <span className="text-slate-400 text-[15px]">
-                        Cao nhất <span className="text-slate-600">({fmtDate(fgData.fearGreed.yearHigh.date)})</span>
+                        Yearly high <span className="text-slate-600">({fmtDate(fgData.fearGreed.yearHigh.date)})</span>
                       </span>
                       <span className="inline-flex items-center gap-2 text-[15px] font-semibold text-emerald-400">
                         <span className="w-1 h-4 rounded bg-emerald-400" />
-                        {VI[classBand(fgData.fearGreed.yearHigh.value)]} {Math.round(fgData.fearGreed.yearHigh.value)}
+                        {classBand(fgData.fearGreed.yearHigh.value)} {Math.round(fgData.fearGreed.yearHigh.value)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between py-3">
                       <span className="text-slate-400 text-[15px]">
-                        Thấp nhất <span className="text-slate-600">({fmtDate(fgData.fearGreed.yearLow.date)})</span>
+                        Yearly low <span className="text-slate-600">({fmtDate(fgData.fearGreed.yearLow.date)})</span>
                       </span>
                       <span className="inline-flex items-center gap-2 text-[15px] font-semibold text-rose-400">
                         <span className="w-1 h-4 rounded bg-rose-400" />
-                        {VI[classBand(fgData.fearGreed.yearLow.value)]} {Math.round(fgData.fearGreed.yearLow.value)}
+                        {classBand(fgData.fearGreed.yearLow.value)} {Math.round(fgData.fearGreed.yearLow.value)}
                       </span>
                     </div>
                   </div>
@@ -385,14 +371,14 @@ const SocialPulsePage: React.FC<{ onSelectAsset?: (symbol: string) => void }> = 
                 {fgData.btc && (
                   <div className="grid grid-cols-2 gap-3">
                     <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
-                      <p className="text-xs text-slate-500 uppercase tracking-wide">Tổng vốn hóa</p>
+                      <p className="text-xs text-slate-500 uppercase tracking-wide">Total Market Cap</p>
                       <p className={`mt-1.5 text-lg font-bold ${fgData.btc.marketCapChange24hPct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                         {fmtPct(fgData.btc.marketCapChange24hPct)}
                       </p>
                       <p className="text-[11px] text-slate-500 mt-0.5">{fmtBig(fgData.btc.totalMarketCapUsd)} USD</p>
                     </div>
                     <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
-                      <p className="text-xs text-slate-500 uppercase tracking-wide">KL giao dịch 24h</p>
+                      <p className="text-xs text-slate-500 uppercase tracking-wide">24h Volume</p>
                       <p className={`mt-1.5 text-lg font-bold ${fgData.btc.priceChange24hPct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                         {fmtPct(fgData.btc.priceChange24hPct)}
                       </p>
@@ -406,19 +392,19 @@ const SocialPulsePage: React.FC<{ onSelectAsset?: (symbol: string) => void }> = 
             <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
               <div className="flex items-baseline flex-wrap gap-5 mb-4">
                 <div>
-                  <p className="text-[11px] text-slate-500 uppercase tracking-wide">F&G hiện tại</p>
+                  <p className="text-[11px] text-slate-500 uppercase tracking-wide">F&G Now</p>
                   <p className={`text-base font-bold ${bandTone(fgData.fearGreed.current.value).text}`}>
-                    {VI[classBand(fgData.fearGreed.current.value)]} {Math.round(fgData.fearGreed.current.value)}
+                    {classBand(fgData.fearGreed.current.value)} {Math.round(fgData.fearGreed.current.value)}
                   </p>
                 </div>
                 {fgData.btc && (
                   <>
                     <div>
-                      <p className="text-[11px] text-slate-500 uppercase tracking-wide">Giá BTC</p>
+                      <p className="text-[11px] text-slate-500 uppercase tracking-wide">BTC Price</p>
                       <p className="text-base font-bold text-slate-100">{fmtUsd(fgData.btc.priceUsd)}</p>
                     </div>
                     <div>
-                      <p className="text-[11px] text-slate-500 uppercase tracking-wide">KL 24h</p>
+                      <p className="text-[11px] text-slate-500 uppercase tracking-wide">24h Volume</p>
                       <p className="text-base font-bold text-slate-100">${fmtBig(fgData.btc.volume24hUsd)}</p>
                     </div>
                   </>
@@ -429,17 +415,17 @@ const SocialPulsePage: React.FC<{ onSelectAsset?: (symbol: string) => void }> = 
                 btc={fgData.btcHistory?.points || []}
               />
               <div className="flex flex-wrap items-center gap-4 mt-4 text-xs text-slate-400">
-                <span className="inline-flex items-center gap-2"><span className="w-3 h-0.5 bg-slate-300" /> Giá BTC</span>
-                <span className="inline-flex items-center gap-2"><span className="w-3 h-0.5 bg-emerald-400" /> F&G cao (tham lam)</span>
-                <span className="inline-flex items-center gap-2"><span className="w-3 h-0.5 bg-rose-400" /> F&G thấp (sợ hãi)</span>
-                <span className="inline-flex items-center gap-2"><span className="w-2 h-2.5 bg-slate-500/60" /> KL BTC</span>
+                <span className="inline-flex items-center gap-2"><span className="w-3 h-0.5 bg-slate-300" /> BTC price</span>
+                <span className="inline-flex items-center gap-2"><span className="w-3 h-0.5 bg-emerald-400" /> F&G high (greed)</span>
+                <span className="inline-flex items-center gap-2"><span className="w-3 h-0.5 bg-rose-400" /> F&G low (fear)</span>
+                <span className="inline-flex items-center gap-2"><span className="w-2 h-2.5 bg-slate-500/60" /> BTC volume</span>
               </div>
             </div>
           )}
         </section>
       ) : loading ? (
         <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-10 text-center text-slate-500 text-sm">
-          Đang tải dữ liệu Fear & Greed…
+          Loading Fear & Greed data…
         </div>
       ) : null}
 
@@ -448,7 +434,7 @@ const SocialPulsePage: React.FC<{ onSelectAsset?: (symbol: string) => void }> = 
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           <div>
             <h2 className="text-lg font-bold tracking-tight">Top Social Movers</h2>
-            <p className="text-xs text-slate-500 mt-0.5">Coins với cộng đồng sôi động nhất trong 24h</p>
+            <p className="text-xs text-slate-500 mt-0.5">Coins with the loudest community over the last 24h</p>
           </div>
           <div className="flex items-center gap-2">
             {(() => {
@@ -506,7 +492,7 @@ const SocialPulsePage: React.FC<{ onSelectAsset?: (symbol: string) => void }> = 
                   </td>
                   <td className="py-3 pr-3">
                     <span className={`text-[10px] font-bold uppercase tracking-wider border px-2 py-0.5 rounded ${momentumTone[r.momentum]}`}>
-                      {momentumVi[r.momentum]}
+                      {r.momentum}
                     </span>
                   </td>
                 </tr>
@@ -518,9 +504,9 @@ const SocialPulsePage: React.FC<{ onSelectAsset?: (symbol: string) => void }> = 
 
       {/* ──── How alt-data works ──── */}
       <section className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
-        <h2 className="text-lg font-bold tracking-tight mb-1">Dữ liệu alt-data được lấy từ đâu</h2>
+        <h2 className="text-lg font-bold tracking-tight mb-1">Where the alt-data comes from</h2>
         <p className="text-xs text-slate-500 mb-4">
-          3 nguồn miễn phí blend với nhau qua endpoint <code className="text-emerald-300">/api/v1/ai/*</code>. Badge "Live" nghĩa là hit nguồn thật; "Demo" là synthetic fallback.
+          Three free sources blended via <code className="text-emerald-300">/api/v1/ai/*</code>. "Live" means we hit the real upstream; "Demo" means a synthetic fallback.
         </p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="rounded-xl border border-white/[0.06] bg-black/20 p-4">
@@ -528,10 +514,10 @@ const SocialPulsePage: React.FC<{ onSelectAsset?: (symbol: string) => void }> = 
               <span className="text-amber-400">😱</span> Fear & Greed
             </p>
             <p className="text-xs text-slate-400 leading-relaxed mb-2">
-              Composite 5 yếu tố: volatility 25% · momentum/KL 25% · social 15% · BTC dominance 10% · Google Trends 10%.
+              Composite of 5 factors: volatility 25% · momentum/volume 25% · social 15% · BTC dominance 10% · Google Trends 10%.
             </p>
             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-              Nguồn: <code className="text-emerald-300 normal-case">alternative.me/fng</code>
+              Source: <code className="text-emerald-300 normal-case">alternative.me/fng</code>
             </p>
           </div>
           <div className="rounded-xl border border-white/[0.06] bg-black/20 p-4">
@@ -539,10 +525,10 @@ const SocialPulsePage: React.FC<{ onSelectAsset?: (symbol: string) => void }> = 
               <span className="text-blue-400">👥</span> Community sentiment
             </p>
             <p className="text-xs text-slate-400 leading-relaxed mb-2">
-              Vote ratio người dùng (sentiment_votes_up/down) + số Reddit subscribers + Twitter followers theo từng coin.
+              User vote ratio (sentiment_votes_up/down) plus Reddit subscribers and Twitter followers per coin.
             </p>
             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-              Nguồn: <code className="text-emerald-300 normal-case">coingecko.com/api/v3</code>
+              Source: <code className="text-emerald-300 normal-case">coingecko.com/api/v3</code>
             </p>
           </div>
           <div className="rounded-xl border border-white/[0.06] bg-black/20 p-4">
@@ -550,10 +536,10 @@ const SocialPulsePage: React.FC<{ onSelectAsset?: (symbol: string) => void }> = 
               <span className="text-emerald-400">📊</span> Market snapshot
             </p>
             <p className="text-xs text-slate-400 leading-relaxed mb-2">
-              Giá BTC realtime, KL giao dịch 24h, tổng vốn hóa toàn thị trường + % thay đổi 24h.
+              Real-time BTC price, 24h trading volume, total market cap and 24h change.
             </p>
             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-              Nguồn: <code className="text-emerald-300 normal-case">coingecko.com/api/v3/global</code>
+              Source: <code className="text-emerald-300 normal-case">coingecko.com/api/v3/global</code>
             </p>
           </div>
         </div>
@@ -561,7 +547,7 @@ const SocialPulsePage: React.FC<{ onSelectAsset?: (symbol: string) => void }> = 
 
       {fgData && (
         <p className="text-xs text-slate-600 text-center pt-2">
-          Cập nhật {new Date(fgData.fetchedAt).toLocaleTimeString('vi-VN')} · alternative.me · CoinGecko
+          Updated {new Date(fgData.fetchedAt).toLocaleTimeString('en-US')} · alternative.me · CoinGecko
         </p>
       )}
     </div>
