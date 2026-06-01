@@ -68,7 +68,7 @@ function toPost(id: string, v: any): CommunityPost | null {
     compound,
     confidence: Number.isFinite(v.confidence) ? v.confidence : 0.5,
     userId: v.userId || 'anon',
-    userName: v.userName || 'Ẩn danh',
+    userName: v.userName || 'Anonymous',
     createdAt: Number.isFinite(v.createdAt) ? v.createdAt : Date.now(),
   };
 }
@@ -78,6 +78,36 @@ function toPost(id: string, v: any): CommunityPost | null {
  * Returns the created post (with its NB label) so the UI can show the badge
  * instantly.
  */
+/**
+ * Score a comment with the trained NB model (server-side, no Gemini quota).
+ * Falls back to neutral if the model is unreachable so the UI never blocks.
+ */
+export async function scoreComment(text: string): Promise<{
+  label: SentimentLabel; compound: number; confidence: number;
+}> {
+  try {
+    const nb = await apiNbClassify(text);
+    const anyNb = nb as any;
+    const compound = Number.isFinite(anyNb.compound)
+      ? anyNb.compound
+      : Number(((nb.perClassProb?.positive ?? 0) - (nb.perClassProb?.negative ?? 0)).toFixed(4));
+    return {
+      label: nb.label,
+      compound,
+      confidence: Number.isFinite(nb.confidence) ? nb.confidence : 0.5,
+    };
+  } catch {
+    return { label: 'neutral', compound: 0, confidence: 0.5 };
+  }
+}
+
+/** Persist a scored post to Realtime DB. Throws on permission errors. */
+export async function persistCommunityPost(post: Omit<CommunityPost, 'id'>): Promise<string> {
+  const node = push(postsRef());
+  await set(node, post);
+  return node.key as string;
+}
+
 export async function postCommunityComment(args: {
   symbol: string;
   text: string;
@@ -85,42 +115,52 @@ export async function postCommunityComment(args: {
   userName: string;
 }): Promise<CommunityPost> {
   const text = args.text.trim();
-  if (!text) throw new Error('Comment trống.');
-  if (text.length > 280) throw new Error('Comment tối đa 280 ký tự.');
+  if (!text) throw new Error('Comment is empty.');
+  if (text.length > 280) throw new Error('Comment is too long (max 280 characters).');
 
-  // ── Trained NB model scores the comment (server-side) ──
-  let label: SentimentLabel = 'neutral';
-  let confidence = 0.5;
-  let compound = 0;
-  try {
-    const nb = await apiNbClassify(text);
-    label = nb.label;
-    confidence = Number.isFinite(nb.confidence) ? nb.confidence : 0.5;
-    // compound may be present on the wire; otherwise derive from class probs.
-    const anyNb = nb as any;
-    compound = Number.isFinite(anyNb.compound)
-      ? anyNb.compound
-      : Number(((nb.perClassProb?.positive ?? 0) - (nb.perClassProb?.negative ?? 0)).toFixed(4));
-  } catch {
-    // Model offline → store as neutral rather than blocking the user.
-    label = 'neutral';
-  }
-
+  const score = await scoreComment(text);
   const post: Omit<CommunityPost, 'id'> = {
     symbol: args.symbol.toUpperCase(),
     text,
-    label,
-    compound,
-    confidence,
+    ...score,
     userId: args.userId,
     userName: args.userName,
     createdAt: Date.now(),
   };
-
-  const node = push(postsRef());
-  await set(node, post);
-  return { id: node.key as string, ...post };
+  const id = await persistCommunityPost(post);
+  return { id, ...post };
 }
+
+// ─── Sample seed takes so the feed/verdict look alive before real posts ───
+const SEED_AUTHORS = ['cryptojoe', 'anna_trades', 'satoshi_fan', 'degen_lin', 'hodl_mike'];
+type Seed = { text: (b: string) => string; label: SentimentLabel; compound: number; confidence: number };
+const SEED_TEMPLATES: Seed[] = [
+  { text: (b) => `${b} looks ready to break out, strong inflows this week`, label: 'positive', compound: 0.62, confidence: 0.91 },
+  { text: (b) => `Accumulating ${b} here, fundamentals still look solid`, label: 'positive', compound: 0.44, confidence: 0.81 },
+  { text: (b) => `${b} just chopping sideways, waiting for a clearer signal`, label: 'neutral', compound: 0.02, confidence: 0.7 },
+  { text: (b) => `Not loving ${b} price action, momentum is fading fast`, label: 'negative', compound: -0.41, confidence: 0.83 },
+  { text: (b) => `${b} could dump if it loses this support, staying cautious`, label: 'negative', compound: -0.56, confidence: 0.88 },
+];
+
+/** Deterministic sample posts for a coin (local-only; not persisted). */
+export function seedPostsFor(symbol: string): CommunityPost[] {
+  const sym = symbol.toUpperCase();
+  const base = sym.replace(/USDT$|USD$/i, '');
+  const now = Date.now();
+  return SEED_TEMPLATES.map((s, i) => ({
+    id: `seed-${base}-${i}`,
+    symbol: sym,
+    text: s.text(base),
+    label: s.label,
+    compound: s.compound,
+    confidence: s.confidence,
+    userId: 'seed',
+    userName: SEED_AUTHORS[i % SEED_AUTHORS.length],
+    createdAt: now - (i + 1) * 6 * 60 * 1000, // staggered over the last ~30 min
+  }));
+}
+
+export const isSeedPost = (p: CommunityPost) => p.userId === 'seed' || p.id.startsWith('seed-');
 
 /**
  * Live subscription to the community feed. Returns an unsubscribe fn.
@@ -220,5 +260,5 @@ export async function getCommunityPulse(
   return aggregatePulse(filtered, sym ?? 'ALL', windowMs);
 }
 
-export const labelToVi = (l: SentimentLabel): string =>
-  l === 'positive' ? 'Tích cực' : l === 'negative' ? 'Tiêu cực' : 'Trung lập';
+export const labelToText = (l: SentimentLabel): string =>
+  l === 'positive' ? 'Positive' : l === 'negative' ? 'Negative' : 'Neutral';

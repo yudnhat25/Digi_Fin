@@ -12,7 +12,8 @@ import ProPlansPage from './components/ProPlansPage';
 import AcademyPage from './components/AcademyPage';
 import EarnPage from './components/EarnPage';
 import ReferralPage from './components/ReferralPage';
-import { TopMoversWidget, WatchlistWidget, NewsWidget, PortfolioBreakdownWidget } from './components/DashboardWidgets';
+import { TopMoversWidget, NewsWidget, PortfolioBreakdownWidget } from './components/DashboardWidgets';
+import CommunityPulse from './components/CommunityPulse';
 import SocialPulsePage from './components/SocialPulsePage';
 import AltDataPipelinePage from './components/AltDataPipelinePage';
 import CreditScorePage from './components/CreditScorePage';
@@ -511,7 +512,7 @@ const App: React.FC = () => {
             />
             <div className="grid grid-cols-1 gap-6">
               <TopMoversWidget marketData={marketPrices} user={currentUser} onSelectAsset={setSelectedAsset} />
-              <WatchlistWidget marketData={marketPrices} user={currentUser} onSelectAsset={setSelectedAsset} />
+              <CommunityPulse userState={currentUser} marketData={marketPrices} />
             </div>
           </div>
         </div>

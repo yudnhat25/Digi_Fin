@@ -6,7 +6,6 @@ import {
   FearGreedFull,
   FgPoint,
 } from '../services/coinwiseApi';
-import CommunityPulse from './CommunityPulse';
 import { UserState, MarketData } from '../types';
 
 // ─── F&G band classification ───
@@ -577,8 +576,6 @@ const SocialPulsePage: React.FC<{
           Updated {new Date(fgData.fetchedAt).toLocaleTimeString('en-US')} · alternative.me · CoinGecko
         </p>
       )}
-
-      {userState && <CommunityPulse userState={userState} marketData={marketData} />}
     </div>
   );
 };
