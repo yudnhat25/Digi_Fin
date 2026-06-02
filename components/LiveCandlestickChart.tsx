@@ -6,6 +6,7 @@ interface Props {
   symbol: string;
   timeframe: string;
   showEMA?: boolean;
+  showRSI?: boolean;
 }
 
 const TIMEFRAME_TO_BINANCE: Record<string, string> = {
@@ -29,11 +30,36 @@ function computeEMA(values: number[], period = 21): number[] {
   return out;
 }
 
-const LiveCandlestickChart: React.FC<Props> = ({ symbol, timeframe, showEMA }) => {
+// Wilder's RSI (0-100). Returns NaN until enough history accumulates.
+function computeRSI(values: number[], period = 14): number[] {
+  const out: number[] = new Array(values.length).fill(NaN);
+  if (values.length <= period) return out;
+  let gain = 0, loss = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = values[i] - values[i - 1];
+    if (d >= 0) gain += d; else loss -= d;
+  }
+  let avgGain = gain / period;
+  let avgLoss = loss / period;
+  out[period] = 100 - 100 / (1 + (avgLoss === 0 ? 100 : avgGain / avgLoss));
+  for (let i = period + 1; i < values.length; i++) {
+    const d = values[i] - values[i - 1];
+    const g = d > 0 ? d : 0;
+    const l = d < 0 ? -d : 0;
+    avgGain = (avgGain * (period - 1) + g) / period;
+    avgLoss = (avgLoss * (period - 1) + l) / period;
+    const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+    out[i] = 100 - 100 / (1 + rs);
+  }
+  return out;
+}
+
+const LiveCandlestickChart: React.FC<Props> = ({ symbol, timeframe, showEMA, showRSI }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const emaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const rsiSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const closesRef = useRef<number[]>([]); // kept in sync for live EMA recomputation
   const [status, setStatus] = useState<'loading' | 'streaming' | 'reconnecting' | 'error'>('loading');
@@ -75,6 +101,7 @@ const LiveCandlestickChart: React.FC<Props> = ({ symbol, timeframe, showEMA }) =
       chartRef.current = null;
       candleSeriesRef.current = null;
       emaSeriesRef.current = null;
+      rsiSeriesRef.current = null;
     };
   }, []);
 
@@ -115,6 +142,34 @@ const LiveCandlestickChart: React.FC<Props> = ({ symbol, timeframe, showEMA }) =
           chartRef.current.removeSeries(emaSeriesRef.current);
           emaSeriesRef.current = null;
         }
+
+        // RSI(14) in a bottom sub-pane with 30/70 reference lines.
+        if (showRSI && chartRef.current) {
+          const rsi = computeRSI(closesRef.current, 14);
+          const rsiData: LineData[] = candles
+            .map((c, i) => ({ time: c.time, value: rsi[i] }))
+            .filter((p) => !Number.isNaN(p.value));
+          if (!rsiSeriesRef.current) {
+            rsiSeriesRef.current = (chartRef.current as any).addLineSeries({
+              priceScaleId: 'rsi', color: '#a78bfa', lineWidth: 1.5,
+              priceLineVisible: false, lastValueVisible: true,
+            });
+            chartRef.current.priceScale('rsi').applyOptions({
+              scaleMargins: { top: 0.74, bottom: 0.02 },
+              borderColor: 'rgba(148, 163, 184, 0.1)',
+            });
+            rsiSeriesRef.current!.createPriceLine({ price: 70, color: 'rgba(251,113,133,0.35)', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '70' });
+            rsiSeriesRef.current!.createPriceLine({ price: 30, color: 'rgba(52,211,153,0.35)', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '30' });
+          }
+          // Shrink the candles to the top so the RSI pane has room.
+          candleSeriesRef.current!.priceScale().applyOptions({ scaleMargins: { top: 0.05, bottom: 0.32 } });
+          rsiSeriesRef.current!.setData(rsiData);
+        } else if (rsiSeriesRef.current && chartRef.current) {
+          chartRef.current.removeSeries(rsiSeriesRef.current);
+          rsiSeriesRef.current = null;
+          candleSeriesRef.current?.priceScale().applyOptions({ scaleMargins: { top: 0.1, bottom: 0.1 } });
+        }
+
         chartRef.current?.timeScale().fitContent();
         setStatus('streaming');
 
@@ -165,6 +220,14 @@ const LiveCandlestickChart: React.FC<Props> = ({ symbol, timeframe, showEMA }) =
               emaSeriesRef.current.update({ time, value: val });
             }
           }
+          // Live RSI update on the current candle.
+          if (showRSI && rsiSeriesRef.current && closes.length >= 15) {
+            const rsiArr = computeRSI(closes.slice(-200), 14);
+            const val = rsiArr[rsiArr.length - 1];
+            if (!Number.isNaN(val)) {
+              rsiSeriesRef.current.update({ time, value: val });
+            }
+          }
         } catch { /* ignore malformed frame */ }
       };
 
@@ -185,7 +248,7 @@ const LiveCandlestickChart: React.FC<Props> = ({ symbol, timeframe, showEMA }) =
         wsRef.current = null;
       }
     };
-  }, [symbol, timeframe, showEMA]);
+  }, [symbol, timeframe, showEMA, showRSI]);
 
   return (
     <div className="relative w-full h-full">

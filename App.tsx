@@ -487,7 +487,7 @@ const App: React.FC = () => {
               </div>
 
               <div className="flex-1 bg-slate-950/50 rounded-2xl relative border border-slate-800/50 overflow-hidden">
-                <LiveCandlestickChart symbol={selectedAsset} timeframe={timeframe} showEMA={showIndicators.ema} />
+                <LiveCandlestickChart symbol={selectedAsset} timeframe={timeframe} showEMA={showIndicators.ema} showRSI={showIndicators.rsi} />
               </div>
             </div>
 
