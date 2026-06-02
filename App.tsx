@@ -39,7 +39,7 @@ const App: React.FC = () => {
   const [isCompPaymentOpen, setIsCompPaymentOpen] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState('BTCUSDT');
   const [timeframe, setTimeframe] = useState('15m');
-  const [showIndicators, setShowIndicators] = useState({ ema: true, rsi: true });
+  const [showIndicators, setShowIndicators] = useState({ ma: false, ema: true, boll: false, vol: true, macd: false, rsi: false });
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   const showToast = (msg: string, type: 'success' | 'error' | 'info' = 'success') => {
@@ -471,23 +471,31 @@ const App: React.FC = () => {
                     </span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 bg-slate-950 p-1 rounded-xl">
-                  {['1m', '15m', '1h', '4h', '1D'].map(tf => (
-                    <button key={tf} onClick={() => setTimeframe(tf)}
-                      className={`px-3 py-1.5 text-[10px] font-black uppercase rounded-lg transition-all ${timeframe === tf ? 'bg-slate-800 text-emerald-400 shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>
-                      {tf}
-                    </button>
-                  ))}
-                  <div className="w-px h-4 bg-slate-800 mx-1" />
-                  <button onClick={() => setShowIndicators(s => ({ ...s, ema: !s.ema }))}
-                    className={`px-3 py-1.5 text-[10px] font-black uppercase rounded-lg transition-all ${showIndicators.ema ? 'bg-blue-500/20 text-blue-400' : 'text-slate-500'}`}>EMA</button>
-                  <button onClick={() => setShowIndicators(s => ({ ...s, rsi: !s.rsi }))}
-                    className={`px-3 py-1.5 text-[10px] font-black uppercase rounded-lg transition-all ${showIndicators.rsi ? 'bg-purple-500/20 text-purple-400' : 'text-slate-500'}`}>RSI</button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl">
+                    {['1m', '15m', '1h', '4h', '1D'].map(tf => (
+                      <button key={tf} onClick={() => setTimeframe(tf)}
+                        className={`px-3 py-1.5 text-[10px] font-black uppercase rounded-lg transition-all ${timeframe === tf ? 'bg-slate-800 text-emerald-400 shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>
+                        {tf}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl">
+                    {([
+                      ['ma', 'MA', 'amber'], ['ema', 'EMA', 'blue'], ['boll', 'BOLL', 'amber'],
+                      ['vol', 'VOL', 'emerald'], ['macd', 'MACD', 'fuchsia'], ['rsi', 'RSI', 'purple'],
+                    ] as const).map(([key, label, color]) => (
+                      <button key={key} onClick={() => setShowIndicators(s => ({ ...s, [key]: !s[key] }))}
+                        className={`px-2.5 py-1.5 text-[10px] font-black uppercase rounded-lg transition-all ${showIndicators[key] ? `bg-${color}-500/20 text-${color}-400` : 'text-slate-500 hover:text-slate-300'}`}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
               <div className="flex-1 bg-slate-950/50 rounded-2xl relative border border-slate-800/50 overflow-hidden">
-                <LiveCandlestickChart symbol={selectedAsset} timeframe={timeframe} showEMA={showIndicators.ema} showRSI={showIndicators.rsi} />
+                <LiveCandlestickChart symbol={selectedAsset} timeframe={timeframe} indicators={showIndicators} />
               </div>
             </div>
 
