@@ -5,6 +5,7 @@ import { buildAdvisor, RiskProfile } from '../ai/advisor';
 import { getSentiment, getWhaleFlow, getFearGreed, signalFromSentiment } from '../ai/altdata';
 import { runAltDataPipeline } from '../ai/pipeline';
 import { classify as classifyNb, getModelInfo } from '../ai/nlp/classifier';
+import { analyzeText } from '../ai/nlp/vader';
 import { pingReddit } from '../ai/sources/reddit';
 import { pingHackerNews } from '../ai/sources/hackerNews';
 import { pingFearGreed, fetchFearGreedReal } from '../ai/sources/fearGreed';
@@ -168,7 +169,35 @@ aiRouter.get('/alt-data/model/info', (c) => c.json(getModelInfo()));
 aiRouter.post('/alt-data/classify', async (c) => {
   const body = await c.req.json().catch(() => ({})) as { text?: string };
   if (!body.text) return c.json({ error: 'text required' }, 400);
-  return c.json(classifyNb(body.text));
+
+  const nb = classifyNb(body.text);
+  const vader = analyzeText(body.text);
+  const nbHasSignal = nb.matchedFeatures.length > 0;
+  const vaderHasSignal = vader.matchedTerms.length > 0;
+
+  // The NB model is trained on crypto-finance text only. For comments built
+  // from out-of-vocabulary words (casual speech, profanity) — or where NB has
+  // only a weak read — it collapses toward its class prior, which skews
+  // "positive". Trust NB only when it has a confident in-vocab read; otherwise
+  // defer to the VADER lexicon (covers everyday + profanity terms). If neither
+  // has a clear signal, return Neutral — never a guessed Positive.
+  const nbConfident = nbHasSignal && nb.confidence >= 0.6;
+  if (!nbConfident && vaderHasSignal) {
+    const cmp = vader.compound;
+    const label = cmp >= 0.05 ? 'positive' : cmp <= -0.05 ? 'negative' : 'neutral';
+    return c.json({
+      ...nb,
+      label,
+      compound: Number(cmp.toFixed(4)),
+      confidence: Number(Math.min(0.95, 0.55 + Math.abs(cmp) * 0.45).toFixed(4)),
+      source: nbHasSignal ? 'vader-override' : 'vader-fallback',
+      vader: { compound: cmp, matchedTerms: vader.matchedTerms },
+    });
+  }
+  if (!nbHasSignal && !vaderHasSignal) {
+    return c.json({ ...nb, label: 'neutral', compound: 0, confidence: 0.34, source: 'no-signal' });
+  }
+  return c.json({ ...nb, source: 'naive-bayes' });
 });
 
 aiRouter.get('/alt-data/sources/health', async (c) => {

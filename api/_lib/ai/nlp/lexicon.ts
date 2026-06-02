@@ -39,6 +39,12 @@ export const LEXICON: Record<string, number> = {
   optimistic: 2.0, hopeful: 1.5, confident: 1.8, strong: 1.5,
   outperform: 2.0, outperforming: 2.0, beat: 1.5,
   upside: 1.5,
+  // General (non-crypto) positive words — comments aren't always domain text.
+  love: 2.5, loved: 2.0, loving: 2.0, like: 1.0, likes: 1.0, liked: 1.0,
+  nice: 1.5, cool: 1.2, happy: 1.8, glad: 1.5, best: 2.0, better: 1.2,
+  perfect: 2.5, wonderful: 2.5, fantastic: 2.6, brilliant: 2.4, beautiful: 2.0,
+  won: 1.5, gem: 2.0, solid: 1.5,
+  promising: 1.8, recommend: 1.5, impressive: 2.0, agree: 1.0, fun: 1.5,
 
   // ─── Strongly bearish (-3 to -4) ───
   crash: -3.5, crashing: -3.5, crashed: -3.5, crashes: -3.0,
@@ -72,6 +78,15 @@ export const LEXICON: Record<string, number> = {
   fear: -2.0, scared: -1.8, panic: -2.5, panicking: -2.5, panicked: -2.5,
   bad: -1.8, terrible: -2.8, awful: -2.5, horrible: -2.8,
   pessimistic: -2.0, doom: -2.5, doomed: -2.5,
+  // General (non-crypto) negative words + profanity — casual comments need them
+  // or the NB model collapses to its prior and mislabels them positive.
+  shit: -2.2, shitty: -2.5, crap: -2.0, crappy: -2.2, garbage: -2.8, trash: -2.8,
+  fuck: -2.5, fucked: -2.8, fuckin: -1.5, wtf: -1.5, damn: -1.2,
+  hate: -2.6, hated: -2.4, hates: -2.4, suck: -2.0, sucks: -2.2, sucked: -2.0,
+  stupid: -2.2, dumb: -2.0, idiot: -2.5, idiots: -2.5, joke: -1.5, nonsense: -2.0,
+  ugly: -1.8, worst: -3.0, pathetic: -2.5, useless: -2.5, disaster: -2.8,
+  disappointing: -2.2, disappointed: -2.0, annoying: -1.8, angry: -2.0, mad: -1.5,
+  boring: -1.2, lame: -1.8, fake: -2.0, liar: -2.5, lies: -2.0, lying: -2.0,
   risk: -0.8, risky: -1.5, dangerous: -1.8,
   uncertain: -1.0, uncertainty: -1.2,
   reject: -1.5, rejected: -1.5, rejection: -1.5,
