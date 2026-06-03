@@ -37,7 +37,7 @@ interface BankAccountInfo {
 }
 interface BankTxn {
   id: string; ref: string;
-  type: 'DEPOSIT' | 'WITHDRAW' | 'ARENA_ENTRY' | 'ARENA_PRIZE'
+  type: 'DEPOSIT' | 'WITHDRAW' | 'ARENA_ENTRY' | 'ARENA_PRIZE' | 'REFERRAL_PAYOUT'
       | 'PREMIUM_UPGRADE' | 'COURSE_PURCHASE' | 'STAKE_LOCK' | 'ACCOUNT_TOPUP';
   amountVnd: number; balanceAfterVnd: number; note: string; timestamp: number;
 }
@@ -59,6 +59,7 @@ const TXN_META: Record<BankTxn['type'], { label: string; color: string; icon: st
   WITHDRAW:        { label: 'Withdrawal',        color: 'text-amber-400',   icon: '↑' },
   ARENA_ENTRY:     { label: 'Arena Fee',         color: 'text-rose-400',    icon: '⚔' },
   ARENA_PRIZE:     { label: 'Arena Prize',       color: 'text-emerald-400', icon: '🏆' },
+  REFERRAL_PAYOUT: { label: 'Referral Reward',   color: 'text-emerald-400', icon: '🎁' },
   PREMIUM_UPGRADE: { label: 'Membership Plan',   color: 'text-violet-400',  icon: '★' },
   COURSE_PURCHASE: { label: 'Academy Course',    color: 'text-blue-400',    icon: '📘' },
   STAKE_LOCK:      { label: 'Earn Lock-up',      color: 'text-cyan-400',    icon: '🔒' },
@@ -303,7 +304,9 @@ const App: React.FC = () => {
         ) : (
           <ul className="divide-y divide-slate-800/60">
             {statement.map((t) => {
-              const meta = TXN_META[t.type];
+              // Defensive fallback so an unknown/new transaction type can never
+              // blank the whole page (this crashed when REFERRAL_PAYOUT was added).
+              const meta = TXN_META[t.type] || { label: String(t.type || 'Transaction'), color: 'text-slate-300', icon: '•' };
               const positive = t.amountVnd >= 0;
               return (
                 <li key={t.id} className="py-3 flex items-center justify-between gap-3">

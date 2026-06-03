@@ -23,6 +23,7 @@ import AIInsightCard from './components/AIInsightCard';
 import LiveCandlestickChart from './components/LiveCandlestickChart';
 import OrderBookPanel from './components/OrderBookPanel';
 import TransactionSuccessModal, { TxnSuccessData } from './components/TransactionSuccessModal';
+import StripePayoutModal from './components/StripePayoutModal';
 import { UserState, MarketData, LeaderboardEntry, SubscriptionTier, StakePosition } from './types';
 import { fetchMarketPrices } from './services/api';
 import { apiBankReferralClaim } from './services/coinwiseApi';
@@ -44,6 +45,7 @@ const App: React.FC = () => {
   const [showIndicators, setShowIndicators] = useState({ ma: false, ema: true, boll: false, vol: true, macd: false, rsi: false });
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [txnSuccess, setTxnSuccess] = useState<TxnSuccessData | null>(null);
+  const [referralClaimOpen, setReferralClaimOpen] = useState(false);
 
   const showToast = (msg: string, type: 'success' | 'error' | 'info' = 'success') => {
     setToast({ msg, type });
@@ -350,36 +352,41 @@ const App: React.FC = () => {
     saveUserData(updatedUser);
   };
 
-  const handleClaimReferral = async () => {
+  // Opening the claim flow shows the same Stripe Payouts screen the Arena uses.
+  const handleClaimReferral = () => {
     if (!currentUser) return;
-    const claimable = currentUser.referralEarnings || 0;
-    if (claimable <= 0) {
+    if ((currentUser.referralEarnings || 0) <= 0) {
       showToast('No referral rewards to claim yet.', 'info');
       return;
     }
-    try {
-      // Credit the accrued balance into the CoinWise Bank (USD → VND), then
-      // reset the pending balance and bump the lifetime-claimed total.
-      await apiBankReferralClaim(currentUser.accountId, claimable, currentUser.name);
-      const updatedUser: UserState = {
-        ...currentUser,
-        referralEarnings: 0,
-        referralClaimed: Number(((currentUser.referralClaimed || 0) + claimable).toFixed(2)),
-      };
-      saveUserData(updatedUser);
-      showTxnSuccess({
-        title: 'Referral Reward Claimed',
-        subtitle: 'Your referral earnings were credited to your CoinWise Bank.',
-        amount: `+ $${claimable.toFixed(2)}`,
-        direction: 'in',
-        rows: [
-          { label: 'Claimed', value: `$${claimable.toFixed(2)}` },
-          { label: 'Credited to', value: 'CoinWise Bank (VND)' },
-        ],
-      });
-    } catch {
-      showToast('Claim failed. Please try again.', 'error');
-    }
+    setReferralClaimOpen(true);
+  };
+
+  // Runs when the user confirms the Stripe payout — does the real bank credit.
+  const doReferralClaim = async () => {
+    if (!currentUser) return;
+    const claimable = currentUser.referralEarnings || 0;
+    if (claimable <= 0) return;
+    // Credit the accrued balance into the CoinWise Bank (USD → VND), then reset
+    // the pending balance and bump the lifetime-claimed total.
+    const res = await apiBankReferralClaim(currentUser.accountId, claimable, currentUser.name);
+    const updatedUser: UserState = {
+      ...currentUser,
+      referralEarnings: 0,
+      referralClaimed: Number(((currentUser.referralClaimed || 0) + claimable).toFixed(2)),
+    };
+    saveUserData(updatedUser);
+    showTxnSuccess({
+      title: 'Referral Reward Received',
+      subtitle: 'Your referral earnings have been credited to your CoinWise Bank account.',
+      amount: `+ ${res.amountVnd ? res.amountVnd.toLocaleString('vi-VN') + ' ₫' : `$${claimable.toFixed(2)}`}`,
+      direction: 'in',
+      rows: [
+        { label: 'Type', value: 'Referral Reward Payout' },
+        { label: 'Account', value: currentUser.accountId },
+      ],
+      reference: res.ref,
+    });
   };
 
   const handleEnrollCourse = (courseId: string, finalPrice: number) => {
@@ -642,6 +649,16 @@ const App: React.FC = () => {
         </div>
       )}
       <TransactionSuccessModal data={txnSuccess} onClose={() => setTxnSuccess(null)} />
+      {referralClaimOpen && currentUser && (
+        <StripePayoutModal
+          amountUsd={currentUser.referralEarnings || 0}
+          holder={currentUser.name}
+          heading="Claim your referral reward"
+          blurb={<>Your accrued referral rewards are paid out through Stripe. CoinWise's OpenAPI <code className="text-[12px] bg-slate-100 px-1.5 py-0.5 rounded">/api/v1/fx/convert</code> converts the USD reward to <b>VND</b> and credits your CoinWise Bank.</>}
+          onClose={() => setReferralClaimOpen(false)}
+          onConfirm={doReferralClaim}
+        />
+      )}
     </Layout>
   );
 };
