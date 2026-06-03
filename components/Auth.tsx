@@ -6,6 +6,10 @@ import { INITIAL_STATE } from '../constants';
 import { auth, db } from '../firebaseConfig';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
 import { ref, set, get } from 'firebase/database';
+import {
+  referralCodeForUid, registerReferralCode, creditReferrer,
+  getPendingReferral, clearPendingReferral,
+} from '../services/referral';
 
 interface AuthProps {
   onLogin: (user: UserState) => void;
@@ -47,8 +51,10 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
             ...INITIAL_STATE,
             name: email.split('@')[0], // Lấy tạm tên từ email
             accountId: email,
+            referralCode: referralCodeForUid(uid),
           };
           await set(ref(db, `users/${uid}`), newUser);
+          await registerReferralCode(uid, newUser.referralCode!);
           onLogin(newUser);
         }
 
@@ -63,18 +69,28 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const uid = userCredential.user.uid;
 
-        // 2. Khởi tạo dữ liệu người dùng ban đầu
+        // 2. Khởi tạo dữ liệu người dùng ban đầu (kèm mã giới thiệu riêng + ai đã
+        //    giới thiệu mình, nếu vào từ link ?ref=CODE)
+        const pendingRef = getPendingReferral();
         const newUser: UserState = {
           ...INITIAL_STATE,
           name,
           accountId: email, // Dùng email làm ID hiển thị
+          referralCode: referralCodeForUid(uid),
+          referredBy: pendingRef || undefined,
           // Lưu ý: Không lưu password vào DB để bảo mật
         };
 
-        // 3. Lưu lên Firebase Database
+        // 3. Lưu lên Firebase Database + đăng ký mã vào index để người khác tra cứu
         await set(ref(db, `users/${uid}`), newUser);
+        await registerReferralCode(uid, newUser.referralCode!);
 
-        // 4. Vào game
+        // 4. Cộng điểm cho người giới thiệu (chỉ khi đăng ký thành công, không
+        //    tính theo lượt bấm; tự bỏ qua nếu mã sai hoặc tự giới thiệu mình)
+        await creditReferrer(pendingRef, uid);
+        clearPendingReferral();
+
+        // 5. Vào game
         onLogin(newUser);
       }
     } catch (err: any) {

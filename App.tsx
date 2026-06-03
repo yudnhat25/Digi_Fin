@@ -31,6 +31,7 @@ import { computeRoundEndsAt, computeNextRoundStartsAt } from './services/arena';
 import { auth, db } from './firebaseConfig';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { ref, set, get, update } from 'firebase/database';
+import { captureReferralFromUrl, referralCodeForUid, registerReferralCode } from './services/referral';
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<UserState | null>(null);
@@ -87,6 +88,9 @@ const App: React.FC = () => {
     }
   };
 
+  // Capture a ?ref=CODE from the landing URL before any signup happens.
+  useEffect(() => { captureReferralFromUrl(); }, []);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
@@ -116,6 +120,13 @@ const App: React.FC = () => {
           }
           if (data.referralEarnings === undefined) data.referralEarnings = 0;
           if (data.referralCount === undefined) data.referralCount = 0;
+          // Backfill a stable referral code + lookup index for accounts created
+          // before referral attribution existed, so their share link works.
+          if (!data.referralCode) {
+            data.referralCode = referralCodeForUid(firebaseUser.uid);
+            update(ref(db, `users/${firebaseUser.uid}`), { referralCode: data.referralCode });
+          }
+          registerReferralCode(firebaseUser.uid, data.referralCode);
           if (typeof data.balance !== 'number') data.balance = 1000000;
           setCurrentUser(data);
         }

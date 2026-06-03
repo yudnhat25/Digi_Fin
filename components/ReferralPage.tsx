@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { UserState } from '../types';
+import { referralLink } from '../services/referral';
 
 interface ReferralPageProps {
   user: UserState;
@@ -7,10 +8,17 @@ interface ReferralPageProps {
 
 const ReferralPage: React.FC<ReferralPageProps> = ({ user }) => {
   const [copied, setCopied] = useState(false);
+  const [shareNote, setShareNote] = useState('');
 
-  // Generate deterministic ref code
+  // Stable ref code (stored at signup); fall back to a deterministic one.
   const refCode = user.referralCode || `CW-${user.accountId.split('@')[0].toUpperCase().substring(0, 6)}-${user.accountId.length.toString(36).toUpperCase()}`;
-  const refLink = `https://coinwise.app/r/${refCode}`;
+  const refLink = referralLink(refCode);
+
+  // Short intro blurb generated for every share action.
+  const introText = `🚀 Mình đang dùng CoinWise AI — nền tảng giao dịch crypto + AI alt-data, thực hành miễn phí không rủi ro. Đăng ký qua link của mình nhé:`;
+  const shareText = `${introText} ${refLink}`;
+
+  const flash = (msg: string) => { setShareNote(msg); setTimeout(() => setShareNote(''), 2500); };
 
   const copyLink = async () => {
     try {
@@ -18,6 +26,31 @@ const ReferralPage: React.FC<ReferralPageProps> = ({ user }) => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {}
+  };
+
+  const copyMessage = async () => {
+    try { await navigator.clipboard.writeText(shareText); flash('✓ Đã copy lời mời — dán vào đâu cũng được'); } catch {}
+  };
+
+  // Each channel opens a pre-filled composer with the intro text + link.
+  const share = (channel: string) => {
+    const t = encodeURIComponent(introText);
+    const u = encodeURIComponent(refLink);
+    const full = encodeURIComponent(shareText);
+    const urls: Record<string, string> = {
+      'Twitter / X': `https://twitter.com/intent/tweet?text=${t}&url=${u}`,
+      'Telegram': `https://t.me/share/url?url=${u}&text=${t}`,
+      'WhatsApp': `https://wa.me/?text=${full}`,
+      'Email': `mailto:?subject=${encodeURIComponent('Join me on CoinWise AI')}&body=${full}`,
+    };
+    if (channel === 'Discord') {
+      navigator.clipboard.writeText(shareText).then(
+        () => flash('✓ Đã copy lời mời — dán vào Discord'),
+        () => flash('Không copy được, hãy thử nút Copy message'),
+      );
+      return;
+    }
+    window.open(urls[channel], '_blank', 'noopener,noreferrer');
   };
 
   const earnings = user.referralEarnings || 0;
@@ -69,10 +102,26 @@ const ReferralPage: React.FC<ReferralPageProps> = ({ user }) => {
               { l: 'Discord', c: 'violet' },
               { l: 'Email', c: 'slate' }
             ].map(s => (
-              <button key={s.l} className={`bg-${s.c}-500/10 hover:bg-${s.c}-500/20 text-${s.c}-400 text-xs font-black uppercase tracking-widest px-4 py-2 rounded-xl transition`}>
+              <button
+                key={s.l}
+                onClick={() => share(s.l)}
+                className={`bg-${s.c}-500/10 hover:bg-${s.c}-500/20 text-${s.c}-400 text-xs font-black uppercase tracking-widest px-4 py-2 rounded-xl transition`}
+              >
                 Share via {s.l}
               </button>
             ))}
+          </div>
+
+          {/* Generated invite message preview */}
+          <div className="mt-5 max-w-2xl bg-slate-950/60 border border-slate-700 rounded-2xl p-4">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Your invite message</p>
+              <button onClick={copyMessage} className="text-[10px] font-black uppercase tracking-widest text-emerald-400 hover:text-emerald-300">
+                Copy message
+              </button>
+            </div>
+            <p className="text-sm text-slate-300 leading-relaxed">{introText} <span className="text-emerald-400 break-all">{refLink}</span></p>
+            {shareNote && <p className="text-[11px] text-emerald-400 font-bold mt-2">{shareNote}</p>}
           </div>
         </div>
       </div>
