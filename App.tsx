@@ -339,20 +339,18 @@ const App: React.FC = () => {
 
   const handleEnrollCourse = (courseId: string, finalPrice: number) => {
     if (!currentUser) return;
-    if (finalPrice > 0 && currentUser.balance < finalPrice) {
-      showToast('Insufficient balance for course purchase.', 'error');
-      return;
-    }
+    // Paid courses are charged to the CoinWise Bank (VND) inside
+    // BankCheckoutModal before this fires — the bank verifies funds and records
+    // the debit on its own statement. So we only register the enrollment here;
+    // do NOT also deduct the paper-trading balance (that was a double charge).
     const existing = (currentUser.enrollments || []).find(e => e.courseId === courseId);
     if (existing) return;
     const updatedUser: UserState = {
       ...currentUser,
-      balance: currentUser.balance - finalPrice,
       enrollments: [...(currentUser.enrollments || []), { courseId, enrolledAt: Date.now(), progress: 0 }],
-      transactions: finalPrice > 0 ? [...currentUser.transactions, { id: Math.random().toString(36).substr(2, 9), type: 'DEPOSIT', asset: `COURSE-${courseId.toUpperCase()}`, amount: 1, price: finalPrice, total: -finalPrice, timestamp: Date.now() }] : currentUser.transactions
     };
     saveUserData(updatedUser);
-    showToast(finalPrice > 0 ? `Enrolled! $${finalPrice} charged.` : 'Enrolled successfully!');
+    showToast(finalPrice > 0 ? `Enrolled! $${finalPrice} paid from your CoinWise Bank.` : 'Enrolled successfully!');
   };
 
   const handleStake = (productId: string, amount: number) => {
