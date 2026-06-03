@@ -4569,10 +4569,22 @@ ${p.selftext.slice(0, 300)}`,
   };
 }
 async function getRealSentimentScore(symbol) {
-  const r = await runAltDataPipeline(symbol);
-  return { score: r.fusion.compositeScore, label: r.fusion.label, spike: r.anomaly.spike };
+  const key = symbol.toUpperCase();
+  const now = Date.now();
+  const hit = sentimentCache.get(key);
+  if (hit && now - hit.ts < SENTIMENT_CACHE_TTL_MS) return hit.p;
+  const p = runAltDataPipeline(symbol).then((r) => ({
+    score: r.fusion.compositeScore,
+    label: r.fusion.label,
+    spike: r.anomaly.spike
+  }));
+  sentimentCache.set(key, { p, ts: now });
+  p.catch(() => {
+    if (sentimentCache.get(key)?.p === p) sentimentCache.delete(key);
+  });
+  return p;
 }
-var MENTION_HISTORY, HISTORY_MAX;
+var MENTION_HISTORY, HISTORY_MAX, SENTIMENT_CACHE_TTL_MS, sentimentCache;
 var init_pipeline = __esm({
   "api/_lib/ai/pipeline.ts"() {
     init_reddit();
@@ -4583,6 +4595,8 @@ var init_pipeline = __esm({
     init_classifier();
     MENTION_HISTORY = /* @__PURE__ */ new Map();
     HISTORY_MAX = 24;
+    SENTIMENT_CACHE_TTL_MS = 10 * 60 * 1e3;
+    sentimentCache = /* @__PURE__ */ new Map();
   }
 });
 
@@ -4607,18 +4621,10 @@ function checkFraud(accountId, tx) {
     risk += 0.2;
     reasons.push("Trade consumes >30% of available cash \u2014 concentration risk.");
   }
-  if (tx.asset) {
-    const s = getSentiment(tx.asset);
-    if (tx.type === "BUY" && s.score < -0.5) {
-      risk += 0.18;
-      reasons.push(
-        `Buying ${tx.asset} while social sentiment is ${s.label.toLowerCase()} (${s.score.toFixed(2)}).`
-      );
-    }
-  }
   const hour = new Date(tx.timestamp ?? Date.now()).getUTCHours();
-  if (hour >= 19 || hour <= 22) {
+  if (hour >= 19 && hour <= 22) {
     risk += 0.05;
+    reasons.push("Off-hours trade (2\u20135am Vietnam time) \u2014 mild account-takeover signal.");
   }
   risk = Math.min(1, Number(risk.toFixed(3)));
   const verdict = risk > 0.7 ? "BLOCK" : risk > 0.4 ? "REVIEW" : "SAFE";
@@ -4660,7 +4666,6 @@ async function checkFraudWithRealAltData(accountId, tx) {
 var init_fraud = __esm({
   "api/_lib/ai/fraud.ts"() {
     init_state();
-    init_altdata();
     init_pipeline();
   }
 });
@@ -4906,7 +4911,7 @@ var init_ai = __esm({
     aiRouter.post("/fraud-check", async (c) => {
       const body = await c.req.json().catch(() => null);
       if (!body?.accountId || !body.transaction) return c.json({ error: "accountId & transaction required" }, 400);
-      return c.json(checkFraud(body.accountId, body.transaction));
+      return c.json(await checkFraudWithRealAltData(body.accountId, body.transaction));
     });
     aiRouter.post("/advisor", async (c) => {
       const body = await c.req.json().catch(() => ({}));
@@ -5200,7 +5205,7 @@ var init_accounts = __esm({
         total: body.side === "BUY" ? -usdNotional : usdNotional,
         timestamp: Date.now()
       };
-      const fraud = checkFraud(id, txCandidate);
+      const fraud = await checkFraudWithRealAltData(id, txCandidate);
       if (fraud.verdict === "BLOCK") {
         return c.json({ ok: false, blocked: true, fraudCheck: fraud }, 200);
       }
@@ -5410,7 +5415,7 @@ var init_agent = __esm({
               total: side === "BUY" ? -amountUsd : amountUsd,
               timestamp: Date.now()
             };
-            const fraud = checkFraud(accountId, txCandidate);
+            const fraud = await checkFraudWithRealAltData(accountId, txCandidate);
             return c.json({
               quoted: true,
               requiresUserConfirm: true,

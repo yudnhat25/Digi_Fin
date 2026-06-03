@@ -87,6 +87,9 @@ export interface FraudCheck {
   verdict: 'SAFE' | 'REVIEW' | 'BLOCK';
   reasons: string[];
   recommendedAction: string;
+  // Present when scored via the real alt-data variant (VADER+CoinGecko
+  // sentiment + Reddit mention-spike). compositeScore ∈ [-1, 1].
+  altData?: { compositeScore: number; label: string; spike: boolean };
 }
 export interface AdvisorSources {
   sentiment: 'coingecko' | 'binance' | 'alternative.me' | 'synthetic' | 'unavailable';

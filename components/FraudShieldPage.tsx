@@ -73,7 +73,8 @@ const FraudShieldPage: React.FC<{ user: UserState }> = ({ user }) => {
         <h1 className="text-3xl md:text-4xl font-black tracking-tighter mb-2">Anomaly &amp; Fraud Detection</h1>
         <p className="text-slate-400 text-sm max-w-3xl">
           Every transaction is run through the CoinWise OpenAPI <code className="text-fuchsia-300">/api/v1/ai/fraud-check</code> endpoint —
-          a behavioural anomaly detector that uses velocity, notional, cash-burst and sentiment contradiction signals.
+          a behavioural anomaly detector that blends account-data rules (velocity, notional, cash-burst, off-hours) with
+          <strong className="text-slate-200"> live alt-data</strong>: VADER+CoinGecko sentiment and Reddit mention-spike detection.
         </p>
       </div>
 
@@ -110,9 +111,17 @@ const FraudShieldPage: React.FC<{ user: UserState }> = ({ user }) => {
                     </p>
                     <p className="text-[10px] text-slate-500 font-bold">{new Date(s.timestamp).toLocaleString()}</p>
                   </div>
-                  <span className={`text-[10px] font-black uppercase tracking-widest border px-2 py-1 rounded ${b.color}`}>
-                    {b.label}
-                  </span>
+                  <div className="flex flex-col items-end gap-1">
+                    <span className={`text-[10px] font-black uppercase tracking-widest border px-2 py-1 rounded ${b.color}`}>
+                      {b.label}
+                    </span>
+                    {s.check.altData && (
+                      <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest text-emerald-300/80">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                        Alt-data: {s.check.altData.label}{s.check.altData.spike ? ' · spike' : ''}
+                      </span>
+                    )}
+                  </div>
                   <div className="w-24">
                     <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
                       <div

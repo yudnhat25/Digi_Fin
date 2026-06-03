@@ -7,7 +7,6 @@
  * by alternative data such as device fingerprint, geo-velocity, social signal.
  */
 import { getAccount } from '../state';
-import { getSentiment } from './altdata';
 import { getRealSentimentScore } from './pipeline';
 
 export interface FraudTx {
@@ -54,22 +53,14 @@ export function checkFraud(accountId: string, tx: FraudTx): FraudResult {
     reasons.push('Trade consumes >30% of available cash — concentration risk.');
   }
 
-  // 4. Sentiment contradiction: chasing a sharply bearish coin
-  if (tx.asset) {
-    const s = getSentiment(tx.asset);
-    if (tx.type === 'BUY' && s.score < -0.5) {
-      risk += 0.18;
-      reasons.push(
-        `Buying ${tx.asset} while social sentiment is ${s.label.toLowerCase()} (${s.score.toFixed(2)}).`,
-      );
-    }
-  }
-
-  // 5. Off-hours behaviour (3-5am UTC+7)
+  // 4. Off-hours behaviour: 2-5am Vietnam time (UTC+7) = 19:00-22:00 UTC.
+  // Account-takeover trades cluster in the victim's small hours. The sentiment
+  // contradiction rule lives in checkFraudWithRealAltData() so it can use REAL
+  // alt-data instead of a synthetic stub.
   const hour = new Date(tx.timestamp ?? Date.now()).getUTCHours();
-  if (hour >= 19 || hour <= 22) {
-    // late evening UTC = 2-5am Vietnam → mild signal
+  if (hour >= 19 && hour <= 22) {
     risk += 0.05;
+    reasons.push('Off-hours trade (2–5am Vietnam time) — mild account-takeover signal.');
   }
 
   risk = Math.min(1, Number(risk.toFixed(3)));

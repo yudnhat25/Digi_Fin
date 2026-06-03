@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { getAccount, shortId, ServerTransaction } from '../state';
 import { usdToVnd, vndToUsd, getRates } from '../fx';
-import { checkFraud } from '../ai/fraud';
+import { checkFraudWithRealAltData } from '../ai/fraud';
 
 export const accountsRouter = new Hono();
 
@@ -136,7 +136,7 @@ accountsRouter.post('/:accountId/trade', async (c) => {
     total: body.side === 'BUY' ? -usdNotional : usdNotional,
     timestamp: Date.now(),
   };
-  const fraud = checkFraud(id, txCandidate);
+  const fraud = await checkFraudWithRealAltData(id, txCandidate);
   if (fraud.verdict === 'BLOCK') {
     return c.json({ ok: false, blocked: true, fraudCheck: fraud }, 200);
   }

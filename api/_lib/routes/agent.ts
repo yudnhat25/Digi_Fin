@@ -11,7 +11,7 @@ import { getAccount } from '../state';
 import { usdToVnd, vndToUsd, convert, getRates } from '../fx';
 import { getSentiment, getWhaleFlow, getFearGreed } from '../ai/altdata';
 import { buildAdvisor, RiskProfile } from '../ai/advisor';
-import { checkFraud } from '../ai/fraud';
+import { checkFraudWithRealAltData } from '../ai/fraud';
 
 export const agentRouter = new Hono();
 
@@ -185,7 +185,7 @@ agentRouter.post('/execute', async (c) => {
           amount: baseAmount, price,
           total: side === 'BUY' ? -amountUsd : amountUsd, timestamp: Date.now(),
         };
-        const fraud = checkFraud(accountId, txCandidate);
+        const fraud = await checkFraudWithRealAltData(accountId, txCandidate);
         return c.json({
           quoted: true,
           requiresUserConfirm: true,

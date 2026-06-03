@@ -513,11 +513,34 @@ export async function runAltDataPipeline(symbol: string): Promise<RealSentimentR
 }
 
 /**
- * Cheaper variant used by /fraud-check that only needs the
- * scalar composite + label, no per-post breakdown. Backed by the same fetch
- * cache so it's free after the first run.
+ * Cheaper variant used by /fraud-check & /advisor that only needs the scalar
+ * composite + label, no per-post breakdown.
+ *
+ * The full pipeline (Reddit + HN + CoinGecko + F&G + NLP) is expensive, and
+ * callers like the Fraud Shield page scan ~15 transactions in parallel — many
+ * for the same asset. We cache the RESULT PROMISE per symbol (10-min TTL) so
+ * concurrent calls for one symbol share a single pipeline run (in-flight
+ * dedup) and repeated scans are free. A rejected run is evicted so the next
+ * call retries instead of caching the failure.
  */
-export async function getRealSentimentScore(symbol: string): Promise<{ score: number; label: SentimentLabel; spike: boolean }> {
-  const r = await runAltDataPipeline(symbol);
-  return { score: r.fusion.compositeScore, label: r.fusion.label, spike: r.anomaly.spike };
+type RealSentiment = { score: number; label: SentimentLabel; spike: boolean };
+const SENTIMENT_CACHE_TTL_MS = 10 * 60 * 1000;
+const sentimentCache = new Map<string, { p: Promise<RealSentiment>; ts: number }>();
+
+export async function getRealSentimentScore(symbol: string): Promise<RealSentiment> {
+  const key = symbol.toUpperCase();
+  const now = Date.now();
+  const hit = sentimentCache.get(key);
+  if (hit && now - hit.ts < SENTIMENT_CACHE_TTL_MS) return hit.p;
+
+  const p = runAltDataPipeline(symbol).then((r) => ({
+    score: r.fusion.compositeScore,
+    label: r.fusion.label,
+    spike: r.anomaly.spike,
+  }));
+  sentimentCache.set(key, { p, ts: now });
+  p.catch(() => {
+    if (sentimentCache.get(key)?.p === p) sentimentCache.delete(key);
+  });
+  return p;
 }
