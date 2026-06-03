@@ -7,6 +7,7 @@ import { db } from '../firebaseConfig';
 import { ref, onValue, remove } from 'firebase/database';
 import { useCurrency } from '../services/currency';
 import { apiFxConvert, apiBankPayout } from '../services/coinwiseApi';
+import { TxnSuccessData } from './TransactionSuccessModal';
 
 type PayoutRegion = 'US' | 'VN';
 
@@ -21,11 +22,12 @@ interface CompetitionViewProps {
   onRegister: () => void;
   onReset: () => void;
   onArenaExit?: () => void;
+  onTxnSuccess?: (data: TxnSuccessData) => void;
 }
 
 type CompTab = 'leaderboard' | 'stats' | 'history' | 'rules';
 
-const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, onRegister, onReset, onArenaExit }) => {
+const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, onRegister, onReset, onArenaExit, onTxnSuccess }) => {
   const { usdVnd, formatVND } = useCurrency();
   const [payoutRegion, setPayoutRegion] = useState<PayoutRegion>('VN');
   const [fxQuote, setFxQuote] = useState<{ amountVnd: number; rate: number; asOf: string } | null>(null);
@@ -235,7 +237,17 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
       // account via the OpenAPI server — the same rail the entry fee was paid
       // from. The Stripe-styled UI is just the wrapper around this transfer.
       const res = await apiBankPayout(user.accountId, prizePool || ENTRY_FEE, user.name);
-      alert(`Transferred ${formatVND(res.amountVnd)} in prize money to your CoinWise Bank account!`);
+      onTxnSuccess?.({
+        title: 'Prize Money Received',
+        subtitle: 'Your Arena winnings have been credited to your CoinWise Bank account.',
+        amount: `+ ${formatVND(res.amountVnd)}`,
+        direction: 'in',
+        rows: [
+          { label: 'Type', value: 'Arena Prize Payout' },
+          { label: 'Account', value: user.accountId },
+        ],
+        reference: res.ref,
+      });
     } catch (err) {
       alert(`Payout failed: ${(err as Error).message}`);
     } finally {

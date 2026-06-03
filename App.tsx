@@ -23,9 +23,10 @@ import ApiDocsPage from './components/ApiDocsPage';
 import AIInsightCard from './components/AIInsightCard';
 import LiveCandlestickChart from './components/LiveCandlestickChart';
 import OrderBookPanel from './components/OrderBookPanel';
+import TransactionSuccessModal, { TxnSuccessData } from './components/TransactionSuccessModal';
 import { UserState, MarketData, LeaderboardEntry, SubscriptionTier, StakePosition } from './types';
 import { fetchMarketPrices } from './services/api';
-import { CRYPTO_SYMBOLS, BASELINE_NET_WORTH, EARN_PRODUCTS } from './constants';
+import { CRYPTO_SYMBOLS, BASELINE_NET_WORTH, EARN_PRODUCTS, ENTRY_FEE } from './constants';
 import { computeRoundEndsAt, computeNextRoundStartsAt } from './services/arena';
 
 import { auth, db } from './firebaseConfig';
@@ -41,11 +42,16 @@ const App: React.FC = () => {
   const [timeframe, setTimeframe] = useState('15m');
   const [showIndicators, setShowIndicators] = useState({ ma: false, ema: true, boll: false, vol: true, macd: false, rsi: false });
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [txnSuccess, setTxnSuccess] = useState<TxnSuccessData | null>(null);
 
   const showToast = (msg: string, type: 'success' | 'error' | 'info' = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3500);
   };
+
+  // Prominent centered "Transaction Successful" pop-up for money movements
+  // (deposits, transfers, stakes, payouts) — richer than the corner toast.
+  const showTxnSuccess = (data: TxnSuccessData) => setTxnSuccess(data);
 
   const saveUserData = (updatedUser: UserState) => {
     setCurrentUser(updatedUser);
@@ -181,7 +187,13 @@ const App: React.FC = () => {
     };
     saveUserData(updatedUser);
     setIsCompPaymentOpen(false);
-    showToast('Arena entry confirmed! Race begins now.');
+    showTxnSuccess({
+      title: 'Arena Entry Confirmed',
+      subtitle: 'Your entry fee has been paid from your CoinWise Bank. The race begins now!',
+      amount: `- $${ENTRY_FEE.toFixed(2)}`,
+      direction: 'out',
+      rows: [{ label: 'Type', value: 'Arena Entry Fee' }],
+    });
   };
 
   const handleArenaExit = () => {
@@ -291,7 +303,16 @@ const App: React.FC = () => {
       transactions: [...currentUser.transactions, { id: Math.random().toString(36).substr(2, 9), type: 'DEPOSIT', asset: 'USD', amount, price: 1, total: amount, timestamp: Date.now() }]
     };
     saveUserData(updatedUser);
-    showToast(`Deposited $${amount.toLocaleString()}`);
+    showTxnSuccess({
+      title: 'Deposit Successful',
+      subtitle: 'Simulation capital has been added to your trading account.',
+      amount: `+ $${amount.toLocaleString()}`,
+      direction: 'in',
+      rows: [
+        { label: 'Type', value: 'Account Top-up' },
+        { label: 'New balance', value: `$${updatedUser.balance.toLocaleString(undefined, { maximumFractionDigits: 2 })}` },
+      ],
+    });
   };
 
   const handleUpgrade = (tier: SubscriptionTier) => {
@@ -359,7 +380,17 @@ const App: React.FC = () => {
       transactions: [...currentUser.transactions, { id: Math.random().toString(36).substr(2, 9), type: 'DEPOSIT', asset: `STAKE-${product.symbol}`, amount: 1, price: amount, total: -amount, timestamp: Date.now() }]
     };
     saveUserData(updatedUser);
-    showToast(`Staked $${amount.toLocaleString()} at ${(product.apy * 100).toFixed(2)}% APY.`);
+    showTxnSuccess({
+      title: 'Stake Successful',
+      subtitle: `Your funds are now earning ${(product.apy * 100).toFixed(2)}% APY.`,
+      amount: `- $${amount.toLocaleString()}`,
+      direction: 'out',
+      rows: [
+        { label: 'Product', value: product.name },
+        { label: 'Lock period', value: `${product.lockDays} days` },
+        { label: 'APY', value: `${(product.apy * 100).toFixed(2)}%` },
+      ],
+    });
   };
 
   const handleUnstake = (stakeId: string) => {
@@ -376,7 +407,17 @@ const App: React.FC = () => {
       transactions: [...currentUser.transactions, { id: Math.random().toString(36).substr(2, 9), type: 'DEPOSIT', asset: `UNSTAKE-${stake.symbol}`, amount: 1, price: totalReturn, total: totalReturn, timestamp: Date.now() }]
     };
     saveUserData(updatedUser);
-    showToast(`Unstaked. Received $${totalReturn.toFixed(2)} (+$${earnings.toFixed(2)} earned).`);
+    showTxnSuccess({
+      title: 'Funds Received',
+      subtitle: 'Your stake has been unlocked and returned to your balance.',
+      amount: `+ $${totalReturn.toFixed(2)}`,
+      direction: 'in',
+      rows: [
+        { label: 'Principal', value: `$${stake.amount.toLocaleString()}` },
+        { label: 'Earnings', value: `+ $${earnings.toFixed(2)}` },
+        { label: 'Held for', value: `${daysActive} day${daysActive === 1 ? '' : 's'}` },
+      ],
+    });
   };
 
   const currentPrice = marketPrices.find(m => m.symbol === selectedAsset)?.price || 0;
@@ -385,7 +426,7 @@ const App: React.FC = () => {
 
   const renderContent = () => {
     if (activeTab === 'competition') {
-      return <CompetitionView user={currentUser} marketPrices={marketPrices} onRegister={handleRegisterClick} onReset={handleResetCompetition} onArenaExit={handleArenaExit} />;
+      return <CompetitionView user={currentUser} marketPrices={marketPrices} onRegister={handleRegisterClick} onReset={handleResetCompetition} onArenaExit={handleArenaExit} onTxnSuccess={showTxnSuccess} />;
     }
     if (activeTab === 'markets') {
       return <MarketsPage marketData={marketPrices} user={currentUser} onSelectAsset={setSelectedAsset} onGoToTerminal={() => setActiveTab('dashboard')} onToggleWatchlist={handleToggleWatchlist} />;
@@ -561,6 +602,7 @@ const App: React.FC = () => {
           {toast.msg}
         </div>
       )}
+      <TransactionSuccessModal data={txnSuccess} onClose={() => setTxnSuccess(null)} />
     </Layout>
   );
 };

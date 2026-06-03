@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
+import TransactionSuccessModal, { TxnSuccessData } from '../components/TransactionSuccessModal';
 
 /**
  * CoinWise Bank — standalone simulated VND retail bank web.
@@ -125,7 +126,7 @@ const App: React.FC = () => {
   const [amount, setAmount] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [flash, setFlash] = useState<string | null>(null);
+  const [success, setSuccess] = useState<TxnSuccessData | null>(null);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async (id: string) => {
@@ -153,8 +154,6 @@ const App: React.FC = () => {
     return () => clearInterval(t);
   }, [accountId, refresh]);
 
-  const showFlash = (msg: string) => { setFlash(msg); setTimeout(() => setFlash(null), 2500); };
-
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     const id = loginInput.trim();
@@ -172,7 +171,18 @@ const App: React.FC = () => {
       setAccount(acc);
       setAmount('');
       await refresh(accountId);
-      showFlash(kind === 'deposit' ? `Deposited ${fmtVnd(amt)}` : `Withdrew ${fmtVnd(amt)}`);
+      setSuccess({
+        title: kind === 'deposit' ? 'Deposit Successful' : 'Withdrawal Successful',
+        subtitle: kind === 'deposit'
+          ? 'Funds have been added to your CoinWise Bank account.'
+          : 'Funds have been sent from your CoinWise Bank account.',
+        amount: `${kind === 'deposit' ? '+ ' : '- '}${fmtVnd(amt)}`,
+        direction: kind === 'deposit' ? 'in' : 'out',
+        rows: [
+          { label: 'Account', value: acc.bankAccountNo || accountId },
+          { label: 'New balance', value: fmtVnd(acc.balanceVnd) },
+        ],
+      });
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -194,11 +204,8 @@ const App: React.FC = () => {
         <a href="/" className="text-xs font-bold text-slate-400 hover:text-emerald-400 transition">← CoinWise App</a>
       </header>
 
-      {flash && (
-        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 bg-emerald-500 text-slate-950 font-black text-sm px-5 py-2.5 rounded-xl shadow-2xl animate-pulse">
-          {flash}
-        </div>
-      )}
+      <TransactionSuccessModal data={success} onClose={() => setSuccess(null)} />
+
 
       {/* Account-id banner — makes it unmissable WHICH account is loaded so
           users don't end up debiting one and checking the balance on another. */}
