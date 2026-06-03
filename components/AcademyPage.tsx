@@ -34,6 +34,8 @@ const AcademyPage: React.FC<AcademyPageProps> = ({ user, onEnroll, onUpgradeClic
   );
 
   const totalLessons = ACADEMY_COURSES.reduce((s, c) => s + c.lessons, 0);
+  const totalCourses = ACADEMY_COURSES.length;
+  const bundleValue = ACADEMY_COURSES.reduce((s, c) => s + c.price, 0);
   const myEnrollments = (user.enrollments || []).length;
   const completed = (user.enrollments || []).filter(e => e.progress >= 100).length;
   const courseToEnroll = checkout ? ACADEMY_COURSES.find(c => c.id === checkout) : null;
@@ -197,7 +199,7 @@ const AcademyPage: React.FC<AcademyPageProps> = ({ user, onEnroll, onUpgradeClic
           <div className="flex-1">
             <span className="inline-block text-[10px] font-black uppercase tracking-widest text-amber-400 mb-2">Bundle Offer</span>
             <h2 className="text-2xl md:text-3xl font-black mb-2">Get every Academy course — free with Elite.</h2>
-            <p className="text-slate-400">All 6 courses ($824 value) + 1-on-1 monthly strategy calls + private Discord. Less than $3.30/day.</p>
+            <p className="text-slate-400">All {totalCourses} courses (${bundleValue.toLocaleString()} value) + 1-on-1 monthly strategy calls + private Discord. Less than $3.30/day.</p>
           </div>
           <button onClick={onUpgradeClick} className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-7 py-3.5 rounded-xl whitespace-nowrap transition">
             Upgrade to Elite — $99/mo

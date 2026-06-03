@@ -69,11 +69,18 @@ export const ARENA_ROOMS = [
 
 export const ACADEMY_COURSES = [
   { id: 'fund', title: 'Crypto Fundamentals', lessons: 12, duration: '2h', price: 0, level: 'Beginner', icon: '🎓', color: 'emerald', instructor: 'Sarah Chen, Ex-Coinbase', enrolled: 84321, rating: 4.9 },
+  { id: 'wallet', title: 'Wallets & Self-Custody 101', lessons: 9, duration: '1.5h', price: 0, level: 'Beginner', icon: '🔐', color: 'emerald', instructor: 'Mai Nguyen, Security Lead', enrolled: 51230, rating: 4.8 },
+  { id: 'psych', title: 'Trading Psychology', lessons: 14, duration: '3h', price: 39, level: 'Beginner', icon: '🧠', color: 'rose', instructor: 'Dr. Elena Voss, Behavioral Finance', enrolled: 27650, rating: 4.7 },
   { id: 'ta', title: 'Technical Analysis Mastery', lessons: 24, duration: '6h', price: 49, level: 'Intermediate', icon: '📈', color: 'blue', instructor: 'David Rodriguez, CMT', enrolled: 32104, rating: 4.8 },
   { id: 'defi', title: 'DeFi & Yield Farming', lessons: 18, duration: '4h', price: 79, level: 'Intermediate', icon: '🌾', color: 'violet', instructor: 'Andre Crypto, DeFi OG', enrolled: 18742, rating: 4.7 },
+  { id: 'onchain', title: 'On-Chain Analytics', lessons: 20, duration: '5h', price: 69, level: 'Intermediate', icon: '🔍', color: 'cyan', instructor: 'James Okoro, Glassnode Analyst', enrolled: 14980, rating: 4.8 },
+  { id: 'nft', title: 'NFTs & Web3 Gaming', lessons: 16, duration: '3.5h', price: 59, level: 'Intermediate', icon: '🎮', color: 'violet', instructor: 'Yuki Tanaka, Web3 Builder', enrolled: 11320, rating: 4.6 },
   { id: 'risk', title: 'Risk Management Pro', lessons: 15, duration: '3h', price: 99, level: 'Advanced', icon: '🛡️', color: 'rose', instructor: 'Linda Park, Ex-Citadel', enrolled: 12480, rating: 4.9 },
   { id: 'algo', title: 'Algorithmic Trading 101', lessons: 32, duration: '8h', price: 149, level: 'Advanced', icon: '🤖', color: 'amber', instructor: 'Marcus Tan, Quant Dev', enrolled: 9214, rating: 4.8 },
-  { id: 'hedge', title: 'Hedge Fund Strategies', lessons: 40, duration: '12h', price: 299, level: 'Expert', icon: '💎', color: 'cyan', instructor: 'Robert Klein, Ex-Goldman', enrolled: 4108, rating: 5.0 }
+  { id: 'futures', title: 'Futures & Derivatives', lessons: 28, duration: '7h', price: 129, level: 'Advanced', icon: '⚡', color: 'amber', instructor: 'Priya Sharma, Ex-Binance Futures', enrolled: 8470, rating: 4.7 },
+  { id: 'tax', title: 'Crypto Tax & Compliance', lessons: 11, duration: '2.5h', price: 89, level: 'Advanced', icon: '🧾', color: 'blue', instructor: 'Tom Becker, CPA', enrolled: 6210, rating: 4.6 },
+  { id: 'hedge', title: 'Hedge Fund Strategies', lessons: 40, duration: '12h', price: 299, level: 'Expert', icon: '💎', color: 'cyan', instructor: 'Robert Klein, Ex-Goldman', enrolled: 4108, rating: 5.0 },
+  { id: 'mev', title: 'MEV & Market Microstructure', lessons: 22, duration: '6h', price: 349, level: 'Expert', icon: '🛰️', color: 'rose', instructor: 'Alex Petrov, Flashbots Researcher', enrolled: 1980, rating: 4.9 }
 ];
 
 export const EARN_PRODUCTS = [
