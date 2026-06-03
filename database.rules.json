@@ -2,8 +2,8 @@
   "rules": {
     "users": {
       "$uid": {
-        ".read": "$uid === auth.uid",
-        ".write": "$uid === auth.uid",
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
 
         "referralCount": {
           ".read": "auth != null",
@@ -37,8 +37,17 @@
     },
 
     "competition": {
+      ".read": "auth != null",
+      "players": {
+        "$pid": {
+          ".write": "auth != null"
+        }
+      }
+    },
+
+    "banks": {
       ".read": true,
-      ".write": "auth != null"
+      ".write": true
     },
 
     "community": {
