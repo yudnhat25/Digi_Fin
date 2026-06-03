@@ -5576,6 +5576,18 @@ var init_bank = __esm({
         ...await summary(body.accountId)
       });
     });
+    bankRouter.post("/referral-payout", async (c) => {
+      const body = await c.req.json().catch(() => ({}));
+      if (!body.accountId) return c.json({ error: "accountId required" }, 400);
+      const usd = Number(body.amountUsd);
+      if (!Number.isFinite(usd) || usd <= 0) return c.json({ error: "amountUsd must be a positive number" }, 400);
+      const acc = await getBankAccount(body.accountId, body.holder);
+      const { vnd, rate } = usdToVnd2(usd);
+      acc.balanceVnd += vnd;
+      const txn = recordBankTxn(acc, "REFERRAL_PAYOUT", vnd, `Referral reward payout ($${usd})`);
+      await saveBankToFirebase(acc);
+      return c.json({ ok: true, credited: true, amountUsd: usd, amountVnd: vnd, rate, ref: txn.ref, ...await summary(body.accountId) });
+    });
     bankRouter.post("/arena/payout", async (c) => {
       const body = await c.req.json().catch(() => ({}));
       if (!body.accountId) return c.json({ error: "accountId required" }, 400);

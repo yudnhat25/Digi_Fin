@@ -19,8 +19,12 @@ import { ref, get, set, runTransaction } from 'firebase/database';
 
 const PENDING_KEY = 'coinwise_pending_ref';
 
-/** Simulated reward added to the referrer per successful referred signup. */
-export const REFERRAL_SIGNUP_REWARD_USD = 5;
+/**
+ * Reward accrued (as a claimable balance, not paid yet) to the referrer per
+ * successful referred signup. Kept modest — a referee that hasn't spent
+ * anything shouldn't mint much "money", and attribution is client-side.
+ */
+export const REFERRAL_SIGNUP_REWARD_USD = 1;
 
 /** Stable, human-readable referral code derived from the Firebase uid. */
 export function referralCodeForUid(uid: string): string {

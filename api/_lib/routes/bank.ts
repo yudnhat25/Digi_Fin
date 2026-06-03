@@ -147,6 +147,24 @@ bankRouter.post('/pay-purchase', async (c) => {
   });
 });
 
+// ───── Referral: claim accrued rewards into the bank (credit) ─────
+// The user claims their pending referral balance in one go; we convert USD→VND
+// and credit the bank with a typed transaction so the statement reads cleanly.
+bankRouter.post('/referral-payout', async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as {
+    accountId?: string; holder?: string; amountUsd?: number;
+  };
+  if (!body.accountId) return c.json({ error: 'accountId required' }, 400);
+  const usd = Number(body.amountUsd);
+  if (!Number.isFinite(usd) || usd <= 0) return c.json({ error: 'amountUsd must be a positive number' }, 400);
+  const acc = await getBankAccount(body.accountId, body.holder);
+  const { vnd, rate } = usdToVnd(usd);
+  acc.balanceVnd += vnd;
+  const txn = recordBankTxn(acc, 'REFERRAL_PAYOUT', vnd, `Referral reward payout ($${usd})`);
+  await saveBankToFirebase(acc);
+  return c.json({ ok: true, credited: true, amountUsd: usd, amountVnd: vnd, rate, ref: txn.ref, ...(await summary(body.accountId)) });
+});
+
 // ───── Arena: pay out prize (credit) ─────
 bankRouter.post('/arena/payout', async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as {

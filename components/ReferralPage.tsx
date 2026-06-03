@@ -5,6 +5,7 @@ import { auth } from '../firebaseConfig';
 
 interface ReferralPageProps {
   user: UserState;
+  onClaim?: () => void | Promise<void>;
 }
 
 // Compact "x ago" formatter for the referral list.
@@ -19,10 +20,11 @@ function timeAgo(ts: number): string {
   const mo = Math.floor(d / 30); return `${mo} month${mo === 1 ? '' : 's'} ago`;
 }
 
-const ReferralPage: React.FC<ReferralPageProps> = ({ user }) => {
+const ReferralPage: React.FC<ReferralPageProps> = ({ user, onClaim }) => {
   const [copied, setCopied] = useState(false);
   const [shareNote, setShareNote] = useState('');
   const [referrals, setReferrals] = useState<ReferralRecord[]>([]);
+  const [claiming, setClaiming] = useState(false);
 
   // Load the real list of people who signed up via this user's code.
   useEffect(() => {
@@ -76,9 +78,16 @@ const ReferralPage: React.FC<ReferralPageProps> = ({ user }) => {
     window.open(urls[channel], '_blank', 'noopener,noreferrer');
   };
 
-  const earnings = user.referralEarnings || 0;
+  const claimable = user.referralEarnings || 0;       // pending, not yet in bank
+  const claimed = user.referralClaimed || 0;          // already moved to bank
+  const lifetime = Number((claimable + claimed).toFixed(2));
   const refCount = user.referralCount || 0;
-  const projectedMonthly = refCount * 8.5; // simulated
+
+  const handleClaim = async () => {
+    if (!onClaim || claimable <= 0 || claiming) return;
+    setClaiming(true);
+    try { await onClaim(); } finally { setClaiming(false); }
+  };
 
   // Tier system
   const refTiers = [
@@ -150,13 +159,19 @@ const ReferralPage: React.FC<ReferralPageProps> = ({ user }) => {
         </div>
         <div className="bg-slate-900/50 border border-emerald-500/30 rounded-2xl p-5">
           <p className="text-[10px] uppercase tracking-widest font-black text-emerald-400 mb-1">Lifetime Earnings</p>
-          <p className="text-3xl font-black text-emerald-400">${earnings.toFixed(2)}</p>
-          <p className="text-[10px] text-slate-500 mt-1">Paid via Stripe</p>
+          <p className="text-3xl font-black text-emerald-400">${lifetime.toFixed(2)}</p>
+          <p className="text-[10px] text-slate-500 mt-1">${claimed.toFixed(2)} claimed to bank</p>
         </div>
-        <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-5">
-          <p className="text-[10px] uppercase tracking-widest font-black text-slate-500 mb-1">This Month</p>
-          <p className="text-3xl font-black text-blue-400">${projectedMonthly.toFixed(2)}</p>
-          <p className="text-[10px] text-slate-500 mt-1">Projected based on activity</p>
+        <div className="bg-slate-900/50 border border-blue-500/30 rounded-2xl p-5 flex flex-col">
+          <p className="text-[10px] uppercase tracking-widest font-black text-blue-400 mb-1">Claimable</p>
+          <p className="text-3xl font-black text-blue-400">${claimable.toFixed(2)}</p>
+          <button
+            onClick={handleClaim}
+            disabled={claimable <= 0 || claiming}
+            className="mt-2 bg-blue-500 hover:bg-blue-400 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 font-black text-[11px] uppercase tracking-widest py-2 rounded-lg transition"
+          >
+            {claiming ? 'Claiming…' : claimable > 0 ? 'Claim to Bank' : 'Nothing to claim'}
+          </button>
         </div>
         <div className="bg-slate-900/50 border border-amber-500/30 rounded-2xl p-5">
           <p className="text-[10px] uppercase tracking-widest font-black text-amber-400 mb-1">Current Tier</p>

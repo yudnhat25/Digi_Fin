@@ -76,7 +76,8 @@ export interface UserState {
   enrollments?: AcademyEnrollment[];
   referralCode?: string;
   referredBy?: string;
-  referralEarnings?: number;
+  referralEarnings?: number;   // claimable (pending) referral balance in USD
+  referralClaimed?: number;    // lifetime referral rewards already moved to bank
   referralCount?: number;
 }
 

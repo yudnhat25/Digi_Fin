@@ -25,6 +25,7 @@ import OrderBookPanel from './components/OrderBookPanel';
 import TransactionSuccessModal, { TxnSuccessData } from './components/TransactionSuccessModal';
 import { UserState, MarketData, LeaderboardEntry, SubscriptionTier, StakePosition } from './types';
 import { fetchMarketPrices } from './services/api';
+import { apiBankReferralClaim } from './services/coinwiseApi';
 import { CRYPTO_SYMBOLS, BASELINE_NET_WORTH, EARN_PRODUCTS, ENTRY_FEE } from './constants';
 import { computeRoundEndsAt, computeNextRoundStartsAt } from './services/arena';
 
@@ -119,6 +120,7 @@ const App: React.FC = () => {
             data.competition = { isCompeting: false, entryNetWorth: 0, entryTime: 0, pnlPercent: 0, currentRank: 0 };
           }
           if (data.referralEarnings === undefined) data.referralEarnings = 0;
+          if (data.referralClaimed === undefined) data.referralClaimed = 0;
           if (data.referralCount === undefined) data.referralCount = 0;
           // Backfill a stable referral code + lookup index for accounts created
           // before referral attribution existed, so their share link works.
@@ -348,6 +350,38 @@ const App: React.FC = () => {
     saveUserData(updatedUser);
   };
 
+  const handleClaimReferral = async () => {
+    if (!currentUser) return;
+    const claimable = currentUser.referralEarnings || 0;
+    if (claimable <= 0) {
+      showToast('No referral rewards to claim yet.', 'info');
+      return;
+    }
+    try {
+      // Credit the accrued balance into the CoinWise Bank (USD → VND), then
+      // reset the pending balance and bump the lifetime-claimed total.
+      await apiBankReferralClaim(currentUser.accountId, claimable, currentUser.name);
+      const updatedUser: UserState = {
+        ...currentUser,
+        referralEarnings: 0,
+        referralClaimed: Number(((currentUser.referralClaimed || 0) + claimable).toFixed(2)),
+      };
+      saveUserData(updatedUser);
+      showTxnSuccess({
+        title: 'Referral Reward Claimed',
+        subtitle: 'Your referral earnings were credited to your CoinWise Bank.',
+        amount: `+ $${claimable.toFixed(2)}`,
+        direction: 'in',
+        rows: [
+          { label: 'Claimed', value: `$${claimable.toFixed(2)}` },
+          { label: 'Credited to', value: 'CoinWise Bank (VND)' },
+        ],
+      });
+    } catch {
+      showToast('Claim failed. Please try again.', 'error');
+    }
+  };
+
   const handleEnrollCourse = (courseId: string, finalPrice: number) => {
     if (!currentUser) return;
     // Paid courses are charged to the CoinWise Bank (VND) inside
@@ -449,7 +483,7 @@ const App: React.FC = () => {
       return <EarnPage user={currentUser} onStake={handleStake} onUnstake={handleUnstake} onUpgradeClick={() => setActiveTab('pro')} />;
     }
     if (activeTab === 'referral') {
-      return <ReferralPage user={currentUser} />;
+      return <ReferralPage user={currentUser} onClaim={handleClaimReferral} />;
     }
     if (activeTab === 'pulse') {
       return <SocialPulsePage onSelectAsset={setSelectedAsset} userState={currentUser} marketData={marketPrices} />;

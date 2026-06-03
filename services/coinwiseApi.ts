@@ -361,7 +361,7 @@ export type BankPurchasePurpose =
 export interface BankTxn {
   id: string;
   ref: string;
-  type: 'DEPOSIT' | 'WITHDRAW' | 'ARENA_ENTRY' | 'ARENA_PRIZE' | BankPurchasePurpose;
+  type: 'DEPOSIT' | 'WITHDRAW' | 'ARENA_ENTRY' | 'ARENA_PRIZE' | 'REFERRAL_PAYOUT' | BankPurchasePurpose;
   amountVnd: number;
   balanceAfterVnd: number;
   note: string;
@@ -405,6 +405,12 @@ export const apiBankPayEntry = (accountId: string, amountUsd?: number, opts?: { 
   });
 export const apiBankPayout = (accountId: string, amountUsd: number, holder?: string) =>
   call<ArenaPayoutResult>('/api/v1/bank/arena/payout', {
+    method: 'POST', body: JSON.stringify({ accountId, amountUsd, holder }),
+  });
+
+// Claim accrued referral rewards into the CoinWise Bank (USD → VND credit).
+export const apiBankReferralClaim = (accountId: string, amountUsd: number, holder?: string) =>
+  call<ArenaPayoutResult>('/api/v1/bank/referral-payout', {
     method: 'POST', body: JSON.stringify({ accountId, amountUsd, holder }),
   });
 

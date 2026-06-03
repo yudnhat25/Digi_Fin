@@ -71,7 +71,7 @@ export type BankPurchaseType =
 export interface BankTransaction {
   id: string;
   ref: string;
-  type: 'DEPOSIT' | 'WITHDRAW' | 'ARENA_ENTRY' | 'ARENA_PRIZE' | BankPurchaseType;
+  type: 'DEPOSIT' | 'WITHDRAW' | 'ARENA_ENTRY' | 'ARENA_PRIZE' | 'REFERRAL_PAYOUT' | BankPurchaseType;
   amountVnd: number;        // signed: positive = credit, negative = debit
   balanceAfterVnd: number;
   note: string;
