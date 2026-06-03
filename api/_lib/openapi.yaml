@@ -26,6 +26,7 @@ tags:
   - name: Accounts
   - name: Agent
   - name: Bank (VND)
+  - name: Earn
     description: >-
       Simulated VND retail bank (CoinWise Bank). Money rail for the standalone
       bank web and the Arena — entry fees are debited and prizes credited here.
@@ -145,6 +146,26 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/SocialPulseRow' }
+
+  /api/v1/earn/yields:
+    get:
+      tags: [Earn]
+      summary: Live per-asset APY (median of reputable DefiLlama pools, cached 30m)
+      responses:
+        '200':
+          description: Per-asset yields + provenance
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  yields:
+                    type: object
+                    additionalProperties: { type: number }
+                    description: 'Fraction APY keyed by asset, e.g. { "USDT": 0.0271 }'
+                  source: { type: string, enum: [defillama, unavailable] }
+                  degraded: { type: boolean }
+                  asOf: { type: string, format: date-time }
 
   /api/v1/ai/fraud-check:
     post:

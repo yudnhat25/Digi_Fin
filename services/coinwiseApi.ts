@@ -143,6 +143,14 @@ export const apiSocialPulse = () => call<SocialPulseRow[]>('/api/v1/market/socia
 export const apiCoinInsight = (symbol: string) =>
   call<CoinInsight>('/api/v1/ai/insight', { method: 'POST', body: JSON.stringify({ symbol }) });
 
+export interface EarnYields {
+  yields: Partial<Record<'USDT' | 'BTC' | 'ETH' | 'SOL' | 'BNB', number>>;
+  source: 'defillama' | 'unavailable';
+  degraded: boolean;
+  asOf: string;
+}
+export const apiEarnYields = () => call<EarnYields>('/api/v1/earn/yields');
+
 export const apiFraudCheck = (accountId: string, transaction: any) =>
   call<FraudCheck>('/api/v1/ai/fraud-check', { method: 'POST', body: JSON.stringify({ accountId, transaction }) });
 export const apiAdvisor = (accountId: string, riskProfile = 'BALANCED') =>

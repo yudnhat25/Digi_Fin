@@ -16,6 +16,7 @@ const ENDPOINTS = [
   { method: 'GET', path: '/api/v1/accounts/{id}/balance', tag: 'Accounts' },
   { method: 'POST', path: '/api/v1/accounts/{id}/deposit-vnd', tag: 'Accounts' },
   { method: 'POST', path: '/api/v1/accounts/{id}/trade', tag: 'Accounts' },
+  { method: 'GET', path: '/api/v1/earn/yields', tag: 'Earn' },
   { method: 'POST', path: '/api/v1/agent/execute', tag: 'Agent' },
 ];
 
@@ -31,6 +32,7 @@ const tagColor: Record<string, string> = {
   'Alt Data': 'bg-fuchsia-500/10 text-fuchsia-300',
   AI: 'bg-fuchsia-500/10 text-fuchsia-300',
   Accounts: 'bg-amber-500/10 text-amber-300',
+  Earn: 'bg-emerald-500/10 text-emerald-300',
   Agent: 'bg-violet-500/10 text-violet-300',
 };
 

@@ -1,7 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { UserState, StakePosition, SubscriptionTier } from '../types';
 import { EARN_PRODUCTS } from '../constants';
-import BankCheckoutModal from './BankCheckoutModal';
+import { apiEarnYields, type EarnYields } from '../services/coinwiseApi';
 
 interface EarnPageProps {
   user: UserState;
@@ -16,16 +16,27 @@ const EarnPage: React.FC<EarnPageProps> = ({ user, onStake, onUnstake, onUpgrade
   const [selected, setSelected] = useState<string | null>(null);
   const [amount, setAmount] = useState('1000');
   const [risk, setRisk] = useState<'ALL' | 'Low' | 'Medium' | 'High'>('ALL');
-  const [stakeCheckoutOpen, setStakeCheckoutOpen] = useState(false);
+  const [yields, setYields] = useState<EarnYields | null>(null);
 
   const tier = user.tier || 'STARTER';
   const userTierRank = TIER_RANK[tier];
 
-  const filtered = useMemo(() => {
-    return EARN_PRODUCTS.filter(p => risk === 'ALL' || p.risk === risk);
-  }, [risk]);
+  useEffect(() => {
+    let alive = true;
+    apiEarnYields().then((y) => { if (alive) setYields(y); }).catch(() => { /* keep static fallback */ });
+    return () => { alive = false; };
+  }, []);
 
-  const product = selected ? EARN_PRODUCTS.find(p => p.id === selected) : null;
+  // Overlay live market APY (DefiLlama) onto the product catalog; fall back to
+  // the static per-product estimate when a symbol has no live pool data.
+  const products = useMemo(() => EARN_PRODUCTS.map((p) => {
+    const live = yields?.yields?.[p.symbol as keyof EarnYields['yields']];
+    return { ...p, apy: typeof live === 'number' ? live : p.apy, apyLive: typeof live === 'number' };
+  }), [yields]);
+
+  const filtered = useMemo(() => products.filter(p => risk === 'ALL' || p.risk === risk), [products, risk]);
+
+  const product = selected ? products.find(p => p.id === selected) : null;
   const amountNum = parseFloat(amount) || 0;
   const projectedEarning = product ? amountNum * product.apy * (product.lockDays || 365) / 365 : 0;
 
@@ -122,6 +133,16 @@ const EarnPage: React.FC<EarnPageProps> = ({ user, onStake, onUnstake, onUpgrade
         ))}
       </div>
 
+      {/* APY provenance */}
+      <div className="flex items-center gap-2 -mt-3">
+        <span className={`w-1.5 h-1.5 rounded-full ${yields && !yields.degraded ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+        <p className="text-[11px] text-slate-500">
+          {yields && !yields.degraded
+            ? `APY = live market median from DefiLlama (as of ${new Date(yields.asOf).toLocaleTimeString()}). Assets without a live pool show a static estimate.`
+            : 'APY = static estimate — live DefiLlama feed unavailable.'}
+        </p>
+      </div>
+
       {/* Products */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {filtered.map(p => {
@@ -150,7 +171,12 @@ const EarnPage: React.FC<EarnPageProps> = ({ user, onStake, onUnstake, onUpgrade
                 </div>
               </div>
               <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 mb-4">
-                <p className="text-[10px] uppercase tracking-widest font-black text-slate-500 mb-1">Est. APY</p>
+                <p className="text-[10px] uppercase tracking-widest font-black text-slate-500 mb-1">
+                  {p.apyLive ? 'APY' : 'Est. APY'}
+                  {p.apyLive
+                    ? <span className="text-emerald-400"> · live</span>
+                    : <span className="text-amber-400"> · est</span>}
+                </p>
                 <p className={`text-3xl font-black ${p.apy >= 0.15 ? 'text-amber-400' : p.apy >= 0.08 ? 'text-emerald-400' : 'text-slate-200'}`}>
                   {(p.apy * 100).toFixed(2)}%
                 </p>
@@ -231,37 +257,18 @@ const EarnPage: React.FC<EarnPageProps> = ({ user, onStake, onUnstake, onUpgrade
             </div>
 
             <button
-              onClick={() => setStakeCheckoutOpen(true)}
-              disabled={amountNum <= 0}
+              onClick={() => {
+                onStake(product.id, amountNum);
+                setSelected(null);
+                setAmount('1000');
+              }}
+              disabled={amountNum <= 0 || amountNum > user.balance}
               className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 font-black py-4 rounded-xl text-lg transition"
             >
-              Confirm Stake — ${amountNum.toLocaleString()}
+              {amountNum > user.balance ? 'Insufficient balance' : `Confirm Stake — $${amountNum.toLocaleString()}`}
             </button>
           </div>
         </div>
-      )}
-
-      {/* CoinWise Bank checkout for the stake lock — debits VND from the bank
-          like any other purchase. onSuccess fires onStake which locks the
-          position in user state. */}
-      {stakeCheckoutOpen && product && (
-        <BankCheckoutModal
-          accountId={user.accountId}
-          holder={user.name}
-          amountUsd={amountNum}
-          purpose="STAKE_LOCK"
-          title={product.name}
-          subtitle={`${(product.apy * 100).toFixed(2)}% APY · ${product.lockDays === 0 ? 'Flexible' : `${product.lockDays}d lock`}`}
-          label={product.id}
-          ctaText={`Lock $${amountNum.toLocaleString()} in ${product.symbol}`}
-          onClose={() => setStakeCheckoutOpen(false)}
-          onSuccess={() => {
-            onStake(product.id, amountNum);
-            setStakeCheckoutOpen(false);
-            setSelected(null);
-            setAmount('1000');
-          }}
-        />
       )}
 
       {/* Upgrade CTA */}

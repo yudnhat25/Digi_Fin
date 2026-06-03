@@ -5591,6 +5591,72 @@ var init_bank = __esm({
   }
 });
 
+// api/_lib/earn.ts
+function median(xs) {
+  const s = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+async function getEarnYields() {
+  const now = Date.now();
+  if (cache2 && now - cache2.ts < TTL_MS7) return cache2.data;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 6e3);
+    const res = await fetch("https://yields.llama.fi/pools", {
+      signal: ctrl.signal,
+      headers: { accept: "application/json" }
+    });
+    clearTimeout(timer);
+    if (!res.ok) throw new Error(`http ${res.status}`);
+    const json = await res.json();
+    const pools = json.data || [];
+    if (!pools.length) throw new Error("empty payload");
+    const out = {};
+    Object.keys(MATCH).forEach((sym) => {
+      const set = new Set(MATCH[sym]);
+      const apys = pools.filter((p) => p.symbol && set.has(p.symbol.toUpperCase())).filter((p) => Number.isFinite(p.apy) && p.apy > 0 && p.apy <= 100).filter((p) => Number.isFinite(p.tvlUsd) && p.tvlUsd >= 1e6).sort((a, b) => b.tvlUsd - a.tvlUsd).slice(0, 30).map((p) => p.apy);
+      if (apys.length) out[sym] = Number((median(apys) / 100).toFixed(4));
+    });
+    if (!Object.keys(out).length) throw new Error("no symbol matches");
+    const data = {
+      yields: out,
+      source: "defillama",
+      degraded: false,
+      asOf: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    cache2 = { data, ts: now };
+    return data;
+  } catch {
+    return { yields: {}, source: "unavailable", degraded: true, asOf: (/* @__PURE__ */ new Date()).toISOString() };
+  }
+}
+var MATCH, TTL_MS7, cache2;
+var init_earn = __esm({
+  "api/_lib/earn.ts"() {
+    MATCH = {
+      USDT: ["USDT"],
+      BTC: ["WBTC", "BTCB", "BTC", "TBTC", "CBBTC"],
+      ETH: ["WETH", "ETH", "STETH", "WSTETH", "RETH", "CBETH"],
+      SOL: ["SOL", "MSOL", "JITOSOL", "BSOL", "JSOL"],
+      BNB: ["BNB", "WBNB", "BNBX", "SLISBNB", "ANKRBNB"]
+    };
+    TTL_MS7 = 30 * 60 * 1e3;
+    cache2 = null;
+  }
+});
+
+// api/_lib/routes/earn.ts
+var earnRouter;
+var init_earn2 = __esm({
+  "api/_lib/routes/earn.ts"() {
+    init_dist();
+    init_earn();
+    earnRouter = new Hono2();
+    earnRouter.get("/yields", async (c) => c.json(await getEarnYields()));
+  }
+});
+
 // api/_lib/app.ts
 var app_exports = {};
 __export(app_exports, {
@@ -5632,6 +5698,7 @@ var init_app = __esm({
     init_accounts();
     init_agent();
     init_bank();
+    init_earn2();
     startedAt2 = Date.now();
     app = new Hono2();
     app.use("*", cors({ origin: "*", allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"] }));
@@ -5654,6 +5721,7 @@ var init_app = __esm({
     app.route("/api/v1/accounts", accountsRouter);
     app.route("/api/v1/agent", agentRouter);
     app.route("/api/v1/bank", bankRouter);
+    app.route("/api/v1/earn", earnRouter);
     app.get("/api/openapi.yaml", (c) => {
       const spec = loadSpec();
       if (!spec) return c.json({ error: "Spec file not in bundle. Check vercel.json includeFiles." }, 500);
