@@ -63,14 +63,27 @@ export async function registerReferralCode(uid: string, code: string): Promise<v
   try { await set(ref(db, `referralCodes/${code}`), uid); } catch { /* best-effort */ }
 }
 
+/** One referred signup, as shown in the referrer's "Recent Referrals" list. */
+export interface ReferralRecord {
+  uid: string;
+  name: string;
+  joinedAt: number;
+  rewardUsd: number;
+}
+
 /**
  * Credit the referrer for a successful NEW signup.
  *  - credits only on registration (never on click)
  *  - ignores unknown codes and self-referral
  *  - one new account credits its referrer exactly once
+ *  - records the referred user under referrals/{referrerUid} for the list
  * Returns the referrer uid if credited, else null.
  */
-export async function creditReferrer(code: string | null, newUid: string): Promise<string | null> {
+export async function creditReferrer(
+  code: string | null,
+  newUid: string,
+  info?: { name?: string },
+): Promise<string | null> {
   if (!code) return null;
   try {
     const snap = await get(ref(db, `referralCodes/${code}`));
@@ -80,8 +93,32 @@ export async function creditReferrer(code: string | null, newUid: string): Promi
     await runTransaction(ref(db, `users/${referrerUid}/referralCount`), (n) => (Number(n) || 0) + 1);
     await runTransaction(ref(db, `users/${referrerUid}/referralEarnings`),
       (n) => Number(((Number(n) || 0) + REFERRAL_SIGNUP_REWARD_USD).toFixed(2)));
+    await set(ref(db, `referrals/${referrerUid}/${newUid}`), {
+      name: info?.name || 'New user',
+      joinedAt: Date.now(),
+      rewardUsd: REFERRAL_SIGNUP_REWARD_USD,
+    });
     return referrerUid;
   } catch {
     return null;
+  }
+}
+
+/** Real list of people who signed up via this user's code, newest first. */
+export async function getReferralList(referrerUid: string): Promise<ReferralRecord[]> {
+  try {
+    const snap = await get(ref(db, `referrals/${referrerUid}`));
+    if (!snap.exists()) return [];
+    const val = snap.val() as Record<string, { name?: string; joinedAt?: number; rewardUsd?: number }>;
+    return Object.entries(val)
+      .map(([uid, r]) => ({
+        uid,
+        name: r?.name || 'New user',
+        joinedAt: Number(r?.joinedAt) || 0,
+        rewardUsd: Number(r?.rewardUsd) || 0,
+      }))
+      .sort((a, b) => b.joinedAt - a.joinedAt);
+  } catch {
+    return [];
   }
 }

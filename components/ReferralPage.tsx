@@ -1,14 +1,37 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserState } from '../types';
-import { referralLink } from '../services/referral';
+import { referralLink, getReferralList, ReferralRecord, REFERRAL_SIGNUP_REWARD_USD } from '../services/referral';
+import { auth } from '../firebaseConfig';
 
 interface ReferralPageProps {
   user: UserState;
 }
 
+// Compact "x ago" formatter for the referral list.
+function timeAgo(ts: number): string {
+  if (!ts) return '';
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return 'just now';
+  const m = Math.floor(s / 60); if (m < 60) return `${m} min ago`;
+  const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24); if (d < 7) return `${d} day${d === 1 ? '' : 's'} ago`;
+  const w = Math.floor(d / 7); if (w < 5) return `${w} week${w === 1 ? '' : 's'} ago`;
+  const mo = Math.floor(d / 30); return `${mo} month${mo === 1 ? '' : 's'} ago`;
+}
+
 const ReferralPage: React.FC<ReferralPageProps> = ({ user }) => {
   const [copied, setCopied] = useState(false);
   const [shareNote, setShareNote] = useState('');
+  const [referrals, setReferrals] = useState<ReferralRecord[]>([]);
+
+  // Load the real list of people who signed up via this user's code.
+  useEffect(() => {
+    let alive = true;
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    getReferralList(uid).then((list) => { if (alive) setReferrals(list); }).catch(() => {});
+    return () => { alive = false; };
+  }, [user.referralCount]);
 
   // Stable ref code (stored at signup); fall back to a deterministic one.
   const refCode = user.referralCode || `CW-${user.accountId.split('@')[0].toUpperCase().substring(0, 6)}-${user.accountId.length.toString(36).toUpperCase()}`;
@@ -66,14 +89,6 @@ const ReferralPage: React.FC<ReferralPageProps> = ({ user }) => {
   ];
   const currentRefTier = refTiers.find(t => refCount >= t.min && refCount <= t.max) || refTiers[0];
   const nextTier = refTiers.find(t => t.min > refCount);
-
-  const sampleReferrals = [
-    { name: 'Alex K.', date: '3 days ago', earned: 32.50, status: 'Pro Subscription' },
-    { name: 'Maria S.', date: '1 week ago', earned: 5.00, status: 'Bronze Arena' },
-    { name: 'Yuki T.', date: '2 weeks ago', earned: 198.00, status: 'Elite Subscription' },
-    { name: 'Daniel R.', date: '3 weeks ago', earned: 19.80, status: 'Pro Subscription' },
-    { name: 'Sofia M.', date: '1 month ago', earned: 100.00, status: 'Gold Arena' }
-  ].slice(0, Math.max(refCount, 0));
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-12">
@@ -203,11 +218,11 @@ const ReferralPage: React.FC<ReferralPageProps> = ({ user }) => {
           <h2 className="font-black text-lg">Recent Referrals</h2>
           <button className="text-xs font-black uppercase tracking-widest text-emerald-400 hover:text-emerald-300">View All</button>
         </div>
-        {sampleReferrals.length === 0 ? (
+        {referrals.length === 0 ? (
           <div className="py-16 text-center">
             <div className="text-5xl mb-4">📬</div>
             <p className="text-slate-400 font-black">No referrals yet</p>
-            <p className="text-slate-500 text-sm mt-2">Share your link to start earning lifetime commissions.</p>
+            <p className="text-slate-500 text-sm mt-2">Share your link — you earn ${REFERRAL_SIGNUP_REWARD_USD} each time someone signs up with it.</p>
           </div>
         ) : (
           <table className="w-full text-left">
@@ -220,17 +235,17 @@ const ReferralPage: React.FC<ReferralPageProps> = ({ user }) => {
               </tr>
             </thead>
             <tbody>
-              {sampleReferrals.map((r, i) => (
-                <tr key={i} className="border-b border-slate-800/40">
+              {referrals.map((r) => (
+                <tr key={r.uid} className="border-b border-slate-800/40">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-black text-emerald-400">{r.name.substring(0, 2)}</div>
+                      <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-black text-emerald-400">{r.name.substring(0, 2).toUpperCase()}</div>
                       <p className="font-bold text-sm">{r.name}</p>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-sm text-slate-400">{r.date}</td>
-                  <td className="px-6 py-4 text-sm text-slate-300">{r.status}</td>
-                  <td className="px-6 py-4 text-right font-black text-emerald-400">+${r.earned.toFixed(2)}</td>
+                  <td className="px-6 py-4 text-sm text-slate-400">{timeAgo(r.joinedAt)}</td>
+                  <td className="px-6 py-4 text-sm text-slate-300">Signed up</td>
+                  <td className="px-6 py-4 text-right font-black text-emerald-400">+${r.rewardUsd.toFixed(2)}</td>
                 </tr>
               ))}
             </tbody>

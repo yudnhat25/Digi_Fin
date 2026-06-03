@@ -87,7 +87,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
 
         // 4. Cộng điểm cho người giới thiệu (chỉ khi đăng ký thành công, không
         //    tính theo lượt bấm; tự bỏ qua nếu mã sai hoặc tự giới thiệu mình)
-        await creditReferrer(pendingRef, uid);
+        await creditReferrer(pendingRef, uid, { name });
         clearPendingReferral();
 
         // 5. Vào game

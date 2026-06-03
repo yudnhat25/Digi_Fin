@@ -3,13 +3,44 @@
     "users": {
       "$uid": {
         ".read": "$uid === auth.uid",
-        ".write": "$uid === auth.uid"
+        ".write": "$uid === auth.uid",
+
+        "referralCount": {
+          ".read": "auth != null",
+          ".write": "auth != null",
+          ".validate": "newData.isNumber()"
+        },
+        "referralEarnings": {
+          ".read": "auth != null",
+          ".write": "auth != null",
+          ".validate": "newData.isNumber()"
+        }
       }
     },
+
+    "referralCodes": {
+      ".read": "auth != null",
+      "$code": {
+        ".write": "auth != null && !data.exists() && newData.val() === auth.uid",
+        ".validate": "newData.isString()"
+      }
+    },
+
+    "referrals": {
+      "$referrerUid": {
+        ".read": "auth != null && $referrerUid === auth.uid",
+        "$newUid": {
+          ".write": "auth != null && $newUid === auth.uid && !data.exists()",
+          ".validate": "newData.hasChildren(['joinedAt', 'rewardUsd'])"
+        }
+      }
+    },
+
     "competition": {
       ".read": true,
       ".write": "auth != null"
     },
+
     "community": {
       "posts": {
         ".read": true,
