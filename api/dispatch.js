@@ -5613,9 +5613,11 @@ async function getEarnYields() {
     const pools = json.data || [];
     if (!pools.length) throw new Error("empty payload");
     const out = {};
-    Object.keys(MATCH).forEach((sym) => {
-      const set = new Set(MATCH[sym]);
-      const apys = pools.filter((p) => p.symbol && set.has(p.symbol.toUpperCase())).filter((p) => Number.isFinite(p.apy) && p.apy > 0 && p.apy <= 100).filter((p) => Number.isFinite(p.tvlUsd) && p.tvlUsd >= 1e6).sort((a, b) => b.tvlUsd - a.tvlUsd).slice(0, 30).map((p) => p.apy);
+    Object.keys(ASSETS).forEach((sym) => {
+      const cfg = ASSETS[sym];
+      const set = new Set(cfg.match);
+      const floor = cfg.kind === "staking" ? STAKING_FLOOR : 0;
+      const apys = pools.filter((p) => p.symbol && set.has(p.symbol.toUpperCase())).filter((p) => p.exposure === "single").filter((p) => Number.isFinite(p.apy) && p.apy > floor && p.apy <= 100).filter((p) => Number.isFinite(p.tvlUsd) && p.tvlUsd >= MIN_TVL).sort((a, b) => b.tvlUsd - a.tvlUsd).slice(0, 20).map((p) => p.apy);
       if (apys.length) out[sym] = Number((median(apys) / 100).toFixed(4));
     });
     if (!Object.keys(out).length) throw new Error("no symbol matches");
@@ -5631,16 +5633,18 @@ async function getEarnYields() {
     return { yields: {}, source: "unavailable", degraded: true, asOf: (/* @__PURE__ */ new Date()).toISOString() };
   }
 }
-var MATCH, TTL_MS7, cache2;
+var ASSETS, MIN_TVL, STAKING_FLOOR, TTL_MS7, cache2;
 var init_earn = __esm({
   "api/_lib/earn.ts"() {
-    MATCH = {
-      USDT: ["USDT"],
-      BTC: ["WBTC", "BTCB", "BTC", "TBTC", "CBBTC"],
-      ETH: ["WETH", "ETH", "STETH", "WSTETH", "RETH", "CBETH"],
-      SOL: ["SOL", "MSOL", "JITOSOL", "BSOL", "JSOL"],
-      BNB: ["BNB", "WBNB", "BNBX", "SLISBNB", "ANKRBNB"]
+    ASSETS = {
+      USDT: { match: ["USDT"], kind: "lending" },
+      BTC: { match: ["WBTC", "BTCB", "TBTC", "CBBTC"], kind: "lending" },
+      ETH: { match: ["STETH", "WSTETH", "RETH", "CBETH"], kind: "staking" },
+      SOL: { match: ["MSOL", "JITOSOL", "BSOL", "JSOL"], kind: "staking" },
+      BNB: { match: ["SLISBNB", "BNBX", "ANKRBNB"], kind: "staking" }
     };
+    MIN_TVL = 1e7;
+    STAKING_FLOOR = 1;
     TTL_MS7 = 30 * 60 * 1e3;
     cache2 = null;
   }
