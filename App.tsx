@@ -16,7 +16,6 @@ import { TopMoversWidget, NewsWidget, PortfolioBreakdownWidget } from './compone
 import CommunityPulse from './components/CommunityPulse';
 import SocialPulsePage from './components/SocialPulsePage';
 import AltDataPipelinePage from './components/AltDataPipelinePage';
-import CreditScorePage from './components/CreditScorePage';
 import AIAdvisorPage from './components/AIAdvisorPage';
 import FraudShieldPage from './components/FraudShieldPage';
 import ApiDocsPage from './components/ApiDocsPage';
@@ -448,9 +447,6 @@ const App: React.FC = () => {
     }
     if (activeTab === 'pipeline') {
       return <AltDataPipelinePage />;
-    }
-    if (activeTab === 'credit') {
-      return <CreditScorePage user={currentUser} onUpgradeClick={() => setActiveTab('pro')} />;
     }
     if (activeTab === 'advisor') {
       return <AIAdvisorPage user={currentUser} />;

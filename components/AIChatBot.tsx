@@ -21,7 +21,6 @@ interface ChatMessage {
 
 const QUICK_PROMPTS = [
   "What's my balance?",
-  "What's my credit score?",
   'Sentiment for BTC and ETH?',
   'Suggest a low-risk portfolio',
   'Buy 5,000,000 VND of BTC',
@@ -60,7 +59,7 @@ const AIChatBot: React.FC<AIChatBotProps> = ({ userState, marketData, onTradeExe
       role: 'ai',
       content:
         `Hi ${userState.name.split(' ')[0]}! I'm the CoinWise AI Agent. ` +
-        `I can check your balance, AI credit score, sentiment, fear & greed, ` +
+        `I can check your balance, sentiment, fear & greed, ` +
         `suggest a portfolio, or place trades through the OpenAPI server. ` +
         `Try the quick prompts below 👇`,
     },
@@ -324,7 +323,7 @@ const AIChatBot: React.FC<AIChatBotProps> = ({ userState, marketData, onTradeExe
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && send(input)}
-                placeholder="Ask anything — ‘buy 5,000,000 VND of BTC’, ‘credit score’…"
+                placeholder="Ask anything — ‘buy 5,000,000 VND of BTC’, ‘sentiment for BTC’…"
                 className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
               />
               <button

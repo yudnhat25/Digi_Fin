@@ -3,7 +3,7 @@
  *
  * Uses Gemini function-calling so the chatbot doesn't merely talk — it
  * dispatches tools that hit the CoinWise OpenAPI server to fetch balances,
- * AI credit score, sentiment, fear & greed, or quote trades.
+ * sentiment, fear & greed, or quote trades.
  *
  * The frontend then renders structured tool results in the chat thread.
  */
@@ -17,11 +17,6 @@ const TOOLS: FunctionDeclaration[] = [
   {
     name: 'getBalance',
     description: 'Get the user current cash balance and asset holdings in both USD and VND.',
-    parameters: { type: Type.OBJECT, properties: {}, required: [] },
-  },
-  {
-    name: 'getCreditScore',
-    description: 'Get the user AI Credit Score (0-1000) computed from alternative data (mobile usage, utility bills, trading footprint, deposit cadence).',
     parameters: { type: Type.OBJECT, properties: {}, required: [] },
   },
   {
@@ -140,7 +135,7 @@ Current user profile:
 - Tier: ${userState.tier || 'STARTER'}
 - Current balance: $${(userState.balance || 0).toLocaleString()} USDT
 
-You have function-calling tools that hit the CoinWise OpenAPI server (internal backend). Always call a tool when the user asks for numbers, balance, signals, sentiment, credit score, or wants to trade. NEVER make up numbers.
+You have function-calling tools that hit the CoinWise OpenAPI server (internal backend). Always call a tool when the user asks for numbers, balance, signals, sentiment, or wants to trade. NEVER make up numbers.
 
 **LANGUAGE RULES (MANDATORY):**
 - Always reply in **English**.
@@ -284,7 +279,7 @@ ${marketData.slice(0, 8).map(m => `- ${m.symbol}: $${m.price.toLocaleString()} (
       const retryMatch = msg.match(/"retryDelay"\s*:\s*"(\d+)s"/);
       const wait = retryMatch ? `~${retryMatch[1]}s` : '~1 min';
       return {
-        text: `⏳ Gemini free-tier quota reached (15 req/min). Wait ${wait} and try again — or use the side-panel tools directly (Sentiment / Credit Score / Advisor).`,
+        text: `⏳ Gemini free-tier quota reached (15 req/min). Wait ${wait} and try again — or use the side-panel tools directly (Sentiment / Advisor).`,
         toolCalls,
       };
     }

@@ -2771,6 +2771,84 @@ var init_altdata = __esm({
   }
 });
 
+// api/_lib/ai/sources/cryptoNewsRss.ts
+function decodeEntities(s) {
+  return s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").replace(/<[^>]+>/g, "").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n))).replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16))).replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+}
+function extract(block, tag) {
+  const m = block.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`, "i"));
+  return m ? m[1].trim() : "";
+}
+function tagFor(title) {
+  for (const r of TAG_RULES) if (r.re.test(title)) return { tag: r.tag, tagColor: r.tagColor };
+  return { tag: "NEWS", tagColor: "slate" };
+}
+function parseFeed(xml, source) {
+  const items = xml.match(/<item[\s\S]*?<\/item>/gi) || [];
+  const out = [];
+  for (const block of items) {
+    const title = decodeEntities(extract(block, "title"));
+    const link = decodeEntities(extract(block, "link") || extract(block, "guid"));
+    const pub = extract(block, "pubDate");
+    if (!title || !link) continue;
+    const ts = pub ? Math.floor(new Date(pub).getTime() / 1e3) : 0;
+    const { tag, tagColor } = tagFor(title);
+    out.push({ id: link, title, source, url: link, publishedAt: ts || 0, tag, tagColor });
+  }
+  return out;
+}
+async function fetchFeed(feed) {
+  const res = await fetch(feed.url, {
+    headers: { "User-Agent": "CoinWiseAI/1.0", Accept: "application/rss+xml, application/xml, text/xml" }
+  });
+  if (!res.ok) throw new Error(`${feed.source}_${res.status}`);
+  const xml = await res.text();
+  return parseFeed(xml, feed.source);
+}
+async function fetchLatestNews(limit = 8) {
+  if (CACHE && Date.now() - CACHE.ts < TTL_MS2) return CACHE.data.slice(0, limit);
+  const results = await Promise.allSettled(FEEDS.map(fetchFeed));
+  const merged = [];
+  for (const r of results) if (r.status === "fulfilled") merged.push(...r.value);
+  const seen = /* @__PURE__ */ new Set();
+  const deduped = [];
+  for (const n of merged) {
+    const key = n.url.toLowerCase();
+    const tkey = n.title.toLowerCase().slice(0, 60);
+    if (seen.has(key) || seen.has(tkey)) continue;
+    seen.add(key);
+    seen.add(tkey);
+    deduped.push(n);
+  }
+  deduped.sort((a, b) => b.publishedAt - a.publishedAt);
+  if (deduped.length) CACHE = { ts: Date.now(), data: deduped };
+  return deduped.slice(0, limit);
+}
+var FEEDS, TTL_MS2, CACHE, TAG_RULES;
+var init_cryptoNewsRss = __esm({
+  "api/_lib/ai/sources/cryptoNewsRss.ts"() {
+    FEEDS = [
+      { source: "Cointelegraph", url: "https://cointelegraph.com/rss" },
+      { source: "Decrypt", url: "https://decrypt.co/feed" },
+      { source: "CryptoSlate", url: "https://cryptoslate.com/feed/" },
+      { source: "Bitcoinist", url: "https://bitcoinist.com/feed/" }
+    ];
+    TTL_MS2 = 5 * 60 * 1e3;
+    CACHE = null;
+    TAG_RULES = [
+      { tag: "BTC", tagColor: "amber", re: /\bbitcoin\b|\bbtc\b/i },
+      { tag: "ETH", tagColor: "blue", re: /\bethereum\b|\bether\b|\beth\b/i },
+      { tag: "SOL", tagColor: "cyan", re: /\bsolana\b|\bsol\b/i },
+      { tag: "XRP", tagColor: "sky", re: /\bxrp\b|\bripple\b/i },
+      { tag: "BNB", tagColor: "orange", re: /\bbinance\b|\bbnb\b/i },
+      { tag: "DOGE", tagColor: "yellow", re: /\bdogecoin\b|\bdoge\b/i },
+      { tag: "DEFI", tagColor: "violet", re: /\bdefi\b|\baave\b|\buniswap\b|\bdex\b|\blending\b|\bstaking\b|\byield\b/i },
+      { tag: "NFT", tagColor: "pink", re: /\bnft\b/i },
+      { tag: "MACRO", tagColor: "emerald", re: /\bfed\b|\bfomc\b|\bsec\b|\betf\b|\bregulat|\binflation\b|\brate cut\b|\binterest rate\b|\bgovernment\b|\blawsuit\b/i }
+    ];
+  }
+});
+
 // api/_lib/routes/market.ts
 var marketRouter, BINANCE;
 var init_market = __esm({
@@ -2778,6 +2856,7 @@ var init_market = __esm({
     init_dist();
     init_fx();
     init_altdata();
+    init_cryptoNewsRss();
     marketRouter = new Hono2();
     BINANCE = "https://api.binance.com/api/v3";
     marketRouter.get("/prices", async (c) => {
@@ -2811,6 +2890,16 @@ var init_market = __esm({
     marketRouter.get("/:symbol/whale-flow", (c) => c.json(getWhaleFlow(c.req.param("symbol"))));
     marketRouter.get("/fear-greed", async (c) => c.json(await getFearGreed()));
     marketRouter.get("/social-pulse", async (c) => c.json(await getSocialPulse()));
+    marketRouter.get("/news", async (c) => {
+      const limit = Math.min(20, Math.max(1, Number(c.req.query("limit")) || 8));
+      try {
+        const items = await fetchLatestNews(limit);
+        if (!items.length) return c.json({ items: [], source: "rss", degraded: true });
+        return c.json({ items, source: "rss", degraded: false, fetchedAt: (/* @__PURE__ */ new Date()).toISOString() });
+      } catch (e) {
+        return c.json({ items: [], source: "rss", degraded: true, error: e.message }, 200);
+      }
+    });
   }
 });
 
@@ -2958,12 +3047,12 @@ function parseChildren(json) {
 }
 async function fetchSubredditHot(subreddit, limit = 50) {
   const key = `sub:${subreddit}:${limit}`;
-  const hit = CACHE.get(key);
-  if (hit && Date.now() - hit.ts < TTL_MS2) return hit.data;
+  const hit = CACHE2.get(key);
+  if (hit && Date.now() - hit.ts < TTL_MS3) return hit.data;
   const url = `https://www.reddit.com/r/${encodeURIComponent(subreddit)}/hot.json?limit=${limit}&t=day`;
   const json = await fetchJson(url);
   const posts = parseChildren(json);
-  CACHE.set(key, { ts: Date.now(), data: posts });
+  CACHE2.set(key, { ts: Date.now(), data: posts });
   return posts;
 }
 async function collectCorpusForSymbol(symbol) {
@@ -3003,11 +3092,11 @@ async function pingReddit() {
     return { ok: false, latencyMs: Date.now() - t0, error: e.message };
   }
 }
-var CACHE, TTL_MS2, USER_AGENT, PER_COIN_SUBS;
+var CACHE2, TTL_MS3, USER_AGENT, PER_COIN_SUBS;
 var init_reddit = __esm({
   "api/_lib/ai/sources/reddit.ts"() {
-    CACHE = /* @__PURE__ */ new Map();
-    TTL_MS2 = 5 * 60 * 1e3;
+    CACHE2 = /* @__PURE__ */ new Map();
+    TTL_MS3 = 5 * 60 * 1e3;
     USER_AGENT = "web:coinwise-ai:v1.0.0 (by /u/coinwise_dev)";
     PER_COIN_SUBS = {
       BTC: ["Bitcoin", "BitcoinMarkets"],
@@ -3031,8 +3120,8 @@ var init_reddit = __esm({
 // api/_lib/ai/sources/hackerNews.ts
 async function fetchSearch(query, page = 0) {
   const key = `hn:${query}:${page}`;
-  const hit = CACHE2.get(key);
-  if (hit && Date.now() - hit.ts < TTL_MS3) return hit.data;
+  const hit = CACHE3.get(key);
+  if (hit && Date.now() - hit.ts < TTL_MS4) return hit.data;
   const url = new URL("https://hn.algolia.com/api/v1/search");
   url.searchParams.set("query", query);
   url.searchParams.set("tags", "story");
@@ -3054,7 +3143,7 @@ async function fetchSearch(query, page = 0) {
     url: String(h.url || ""),
     hnUrl: `https://news.ycombinator.com/item?id=${h.objectID}`
   }));
-  CACHE2.set(key, { ts: Date.now(), data: hits });
+  CACHE3.set(key, { ts: Date.now(), data: hits });
   return hits;
 }
 async function collectHnForSymbol(symbol) {
@@ -3088,11 +3177,11 @@ async function pingHackerNews() {
     return { ok: false, latencyMs: Date.now() - t0, error: e.message };
   }
 }
-var CACHE2, TTL_MS3, USER_AGENT2, COIN_QUERIES;
+var CACHE3, TTL_MS4, USER_AGENT2, COIN_QUERIES;
 var init_hackerNews = __esm({
   "api/_lib/ai/sources/hackerNews.ts"() {
-    CACHE2 = /* @__PURE__ */ new Map();
-    TTL_MS3 = 10 * 60 * 1e3;
+    CACHE3 = /* @__PURE__ */ new Map();
+    TTL_MS4 = 10 * 60 * 1e3;
     USER_AGENT2 = "CoinWiseAI/1.0";
     COIN_QUERIES = {
       BTC: ["bitcoin", "BTC"],
@@ -3116,14 +3205,14 @@ var init_hackerNews = __esm({
 // api/_lib/ai/sources/fearGreed.ts
 async function fetchFearGreedReal(limit = 30) {
   const cappedLimit = Math.min(Math.max(limit, 1), 365);
-  if (CACHE3 && Date.now() - CACHE3.ts < TTL_MS4 && CACHE3.limit >= cappedLimit) {
-    if (CACHE3.limit === cappedLimit) return CACHE3.data;
-    const trimmed = CACHE3.data.history.slice(-cappedLimit);
+  if (CACHE4 && Date.now() - CACHE4.ts < TTL_MS5 && CACHE4.limit >= cappedLimit) {
+    if (CACHE4.limit === cappedLimit) return CACHE4.data;
+    const trimmed = CACHE4.data.history.slice(-cappedLimit);
     const cur = trimmed[trimmed.length - 1];
     const yesterday = trimmed[trimmed.length - 2];
     const lastWeek = trimmed[trimmed.length - 8] || trimmed[0];
     return {
-      ...CACHE3.data,
+      ...CACHE4.data,
       current: cur,
       delta24h: yesterday ? cur.value - yesterday.value : 0,
       delta7d: lastWeek ? cur.value - lastWeek.value : 0,
@@ -3153,7 +3242,7 @@ async function fetchFearGreedReal(limit = 30) {
       delta7d: lastWeek ? current.value - lastWeek.value : 0,
       history: points
     };
-    CACHE3 = { ts: Date.now(), limit: cappedLimit, data };
+    CACHE4 = { ts: Date.now(), limit: cappedLimit, data };
     return data;
   } catch (e) {
     return { ok: false, error: e.message, fetchedAt: (/* @__PURE__ */ new Date()).toISOString() };
@@ -3166,11 +3255,11 @@ async function pingFearGreed() {
   const err = "error" in r ? r.error : "unknown";
   return { ok: false, latencyMs: Date.now() - t0, error: err };
 }
-var CACHE3, TTL_MS4, USER_AGENT3;
+var CACHE4, TTL_MS5, USER_AGENT3;
 var init_fearGreed = __esm({
   "api/_lib/ai/sources/fearGreed.ts"() {
-    CACHE3 = null;
-    TTL_MS4 = 30 * 60 * 1e3;
+    CACHE4 = null;
+    TTL_MS5 = 30 * 60 * 1e3;
     USER_AGENT3 = "CoinWiseAI/1.0 (Vietnam fintech assignment)";
   }
 });
@@ -3182,8 +3271,8 @@ async function fetchCoinGecko(symbol) {
   if (!coinId) {
     return { ok: false, coinId: base, error: "unknown_coin_id", fetchedAt: (/* @__PURE__ */ new Date()).toISOString() };
   }
-  const hit = CACHE4.get(coinId);
-  if (hit && Date.now() - hit.ts < TTL_MS5) return hit.data;
+  const hit = CACHE5.get(coinId);
+  if (hit && Date.now() - hit.ts < TTL_MS6) return hit.data;
   try {
     const url = `https://api.coingecko.com/api/v3/coins/${coinId}?localization=false&tickers=false&market_data=false&community_data=true&developer_data=true&sparkline=false`;
     const res = await fetch(url, { headers: { "User-Agent": USER_AGENT4, "Accept": "application/json" } });
@@ -3203,7 +3292,7 @@ async function fetchCoinGecko(symbol) {
       communityScore: Number(json.community_score) || 0,
       alexaRank: json.public_interest_stats?.alexa_rank ?? null
     };
-    CACHE4.set(coinId, { ts: Date.now(), data });
+    CACHE5.set(coinId, { ts: Date.now(), data });
     return data;
   } catch (e) {
     return { ok: false, coinId, error: e.message, fetchedAt: (/* @__PURE__ */ new Date()).toISOString() };
@@ -3220,7 +3309,7 @@ async function pingCoinGecko() {
     return { ok: false, latencyMs: Date.now() - t0, error: e.message };
   }
 }
-var COIN_IDS, CACHE4, TTL_MS5, USER_AGENT4;
+var COIN_IDS, CACHE5, TTL_MS6, USER_AGENT4;
 var init_coingecko = __esm({
   "api/_lib/ai/sources/coingecko.ts"() {
     COIN_IDS = {
@@ -3243,8 +3332,8 @@ var init_coingecko = __esm({
       ARB: "arbitrum",
       OP: "optimism"
     };
-    CACHE4 = /* @__PURE__ */ new Map();
-    TTL_MS5 = 10 * 60 * 1e3;
+    CACHE5 = /* @__PURE__ */ new Map();
+    TTL_MS6 = 10 * 60 * 1e3;
     USER_AGENT4 = "CoinWiseAI/1.0 (Vietnam fintech assignment)";
   }
 });
@@ -3359,6 +3448,32 @@ var init_lexicon = __esm({
       outperforming: 2,
       beat: 1.5,
       upside: 1.5,
+      // General (non-crypto) positive words — comments aren't always domain text.
+      love: 2.5,
+      loved: 2,
+      loving: 2,
+      like: 1,
+      likes: 1,
+      liked: 1,
+      nice: 1.5,
+      cool: 1.2,
+      happy: 1.8,
+      glad: 1.5,
+      best: 2,
+      better: 1.2,
+      perfect: 2.5,
+      wonderful: 2.5,
+      fantastic: 2.6,
+      brilliant: 2.4,
+      beautiful: 2,
+      won: 1.5,
+      gem: 2,
+      solid: 1.5,
+      promising: 1.8,
+      recommend: 1.5,
+      impressive: 2,
+      agree: 1,
+      fun: 1.5,
       // ─── Strongly bearish (-3 to -4) ───
       crash: -3.5,
       crashing: -3.5,
@@ -3466,6 +3581,47 @@ var init_lexicon = __esm({
       pessimistic: -2,
       doom: -2.5,
       doomed: -2.5,
+      // General (non-crypto) negative words + profanity — casual comments need them
+      // or the NB model collapses to its prior and mislabels them positive.
+      shit: -2.2,
+      shitty: -2.5,
+      crap: -2,
+      crappy: -2.2,
+      garbage: -2.8,
+      trash: -2.8,
+      fuck: -2.5,
+      fucked: -2.8,
+      fuckin: -1.5,
+      wtf: -1.5,
+      damn: -1.2,
+      hate: -2.6,
+      hated: -2.4,
+      hates: -2.4,
+      suck: -2,
+      sucks: -2.2,
+      sucked: -2,
+      stupid: -2.2,
+      dumb: -2,
+      idiot: -2.5,
+      idiots: -2.5,
+      joke: -1.5,
+      nonsense: -2,
+      ugly: -1.8,
+      worst: -3,
+      pathetic: -2.5,
+      useless: -2.5,
+      disaster: -2.8,
+      disappointing: -2.2,
+      disappointed: -2,
+      annoying: -1.8,
+      angry: -2,
+      mad: -1.5,
+      boring: -1.2,
+      lame: -1.8,
+      fake: -2,
+      liar: -2.5,
+      lies: -2,
+      lying: -2,
       risk: -0.8,
       risky: -1.5,
       dangerous: -1.8,
@@ -4115,12 +4271,6 @@ function compositeSignal(compound, confidence) {
   return "HOLD";
 }
 function buildApplication(composite, spike, signal) {
-  const creditImpact = Math.round(Math.max(-40, Math.min(60, composite * 60)));
-  const creditScoreFactor = {
-    label: "Social sentiment (alt-data, VADER NLP on HN+Reddit)",
-    impact: creditImpact,
-    rationale: composite > 0.2 ? "Sustained bullish discourse \u2014 borrower is engaging with healthy market context." : composite < -0.2 ? "Capitulation discourse around held assets \u2014 flag for over-leverage risk." : "Neutral social context \u2014 no adjustment."
-  };
   const fraudTriggered = composite < -0.4 || spike && composite < 0;
   const fraudRule = {
     label: "Sentiment-contradiction & FOMO-spike rule",
@@ -4133,7 +4283,7 @@ function buildApplication(composite, spike, signal) {
     tiltPct,
     rationale: signal === "STRONG_BUY" ? `Tilt target weight up ${tiltPct}% \u2014 strong real-time social signal.` : signal === "STRONG_SELL" ? `Tilt target weight down ${Math.abs(tiltPct)}% \u2014 capitulation detected, reduce exposure.` : "Hold base allocation \u2014 no actionable tilt."
   };
-  return { creditScoreFactor, fraudRule, advisorTilt };
+  return { fraudRule, advisorTilt };
 }
 async function runAltDataPipeline(symbol) {
   const base = symbol.replace(/USDT$|USD$/i, "").toUpperCase();
@@ -4436,112 +4586,6 @@ var init_pipeline = __esm({
   }
 });
 
-// api/_lib/ai/credit.ts
-function computeCreditScore(accountId) {
-  const acc = getAccount(accountId);
-  const txs = acc.transactions;
-  const depositCount = txs.filter((t) => t.type === "DEPOSIT").length;
-  const tradeCount = txs.filter((t) => t.type === "BUY" || t.type === "SELL").length;
-  const realisedPnl = txs.filter((t) => t.type === "SELL").reduce((s, t) => s + t.total, 0) - txs.filter((t) => t.type === "BUY").reduce((s, t) => s + Math.abs(t.total), 0);
-  const cashRatio = acc.cashUsd / Math.max(1e6, acc.cashUsd + acc.positions.length * 1e5);
-  const mobileSignalSeed = (accountId.charCodeAt(0) || 65) % 30;
-  const mobileEngagement = 0.55 + mobileSignalSeed / 100;
-  const utilityRegularity = 0.6 + accountId.length * 7 % 30 / 100;
-  const factors = [
-    {
-      key: "deposit_cadence",
-      label: "Deposit cadence (alt-data proxy for income stability)",
-      impact: Math.min(160, depositCount * 12),
-      value: `${depositCount} deposits`
-    },
-    {
-      key: "trading_activity",
-      label: "Trading footprint (paper-trade engagement)",
-      impact: Math.min(140, tradeCount * 6),
-      value: `${tradeCount} trades`
-    },
-    {
-      key: "realised_pnl",
-      label: "Realised P&L signal",
-      impact: Math.max(-100, Math.min(180, Math.round(realisedPnl / 5e3))),
-      value: `${realisedPnl >= 0 ? "+" : ""}$${realisedPnl.toFixed(0)}`
-    },
-    {
-      key: "cash_discipline",
-      label: "Cash discipline ratio",
-      impact: Math.round(cashRatio * 150),
-      value: `${(cashRatio * 100).toFixed(0)}%`
-    },
-    {
-      key: "mobile_alt",
-      label: "Mobile usage regularity (alt-data)",
-      impact: Math.round(mobileEngagement * 120),
-      value: `${(mobileEngagement * 100).toFixed(0)}/100`
-    },
-    {
-      key: "utility_alt",
-      label: "Utility-bill payment regularity (alt-data)",
-      impact: Math.round(utilityRegularity * 130),
-      value: `${(utilityRegularity * 100).toFixed(0)}/100`
-    }
-  ];
-  const baseline = 480;
-  const score = Math.max(
-    280,
-    Math.min(995, baseline + factors.reduce((s, f) => s + f.impact, 0))
-  );
-  const band = score >= 820 ? "Excellent" : score >= 720 ? "Good" : score >= 600 ? "Fair" : score >= 480 ? "Poor" : "Subprime";
-  const marginLoanUsd = band === "Excellent" ? 25e3 : band === "Good" ? 12e3 : band === "Fair" ? 4e3 : band === "Poor" ? 1e3 : 0;
-  const recommendation = band === "Excellent" ? "Eligible for Elite margin facility and VIP yield products. Consider enabling 2x margin." : band === "Good" ? "Solid alt-data profile \u2014 unlock Pro tier perks and 12% APY products." : band === "Fair" ? "Build deposit cadence and complete 5 more trades to reach Good band (\u2265720)." : "Increase utility-bill linkage and avoid loss-heavy trades. Education modules will lift score.";
-  return {
-    accountId,
-    score,
-    band,
-    factors,
-    recommendation,
-    eligibility: {
-      marginLoanVnd: usdToVnd(marginLoanUsd),
-      premiumProducts: score >= 720
-    },
-    asOf: (/* @__PURE__ */ new Date()).toISOString()
-  };
-}
-async function computeCreditScoreWithRealAltData(accountId, proxySymbol = "BTCUSDT") {
-  const base = computeCreditScore(accountId);
-  try {
-    const alt = await getRealSentimentScore(proxySymbol);
-    const impact = Math.round(Math.max(-40, Math.min(60, alt.score * 60)));
-    const altFactor = {
-      key: "sentiment_alt",
-      label: `Real-time sentiment context (VADER+CoinGecko on ${proxySymbol})`,
-      impact,
-      value: `${alt.label} (${(alt.score * 100).toFixed(0)}/100)`
-    };
-    const factors = [...base.factors, altFactor];
-    const baseline = 480;
-    const adjustedScore = Math.max(280, Math.min(995, baseline + factors.reduce((s, f) => s + f.impact, 0)));
-    const band = adjustedScore >= 820 ? "Excellent" : adjustedScore >= 720 ? "Good" : adjustedScore >= 600 ? "Fair" : adjustedScore >= 480 ? "Poor" : "Subprime";
-    const marginLoanUsd = band === "Excellent" ? 25e3 : band === "Good" ? 12e3 : band === "Fair" ? 4e3 : band === "Poor" ? 1e3 : 0;
-    return {
-      ...base,
-      score: adjustedScore,
-      band,
-      factors,
-      eligibility: { marginLoanVnd: usdToVnd(marginLoanUsd), premiumProducts: adjustedScore >= 720 },
-      altDataFactor: { score: alt.score, label: alt.label, impact }
-    };
-  } catch {
-    return { ...base, altDataFactor: { score: 0, label: "Neutral", impact: 0 } };
-  }
-}
-var init_credit = __esm({
-  "api/_lib/ai/credit.ts"() {
-    init_state();
-    init_fx();
-    init_pipeline();
-  }
-});
-
 // api/_lib/ai/fraud.ts
 function checkFraud(accountId, tx) {
   const acc = getAccount(accountId);
@@ -4808,23 +4852,18 @@ var aiRouter, INSIGHT_PIPELINE_TIMEOUT_MS;
 var init_ai = __esm({
   "api/_lib/routes/ai.ts"() {
     init_dist();
-    init_credit();
     init_fraud();
     init_advisor();
     init_altdata();
     init_pipeline();
     init_classifier();
+    init_vader();
     init_reddit();
     init_hackerNews();
     init_fearGreed();
     init_coingecko();
     init_btcMarket();
     aiRouter = new Hono2();
-    aiRouter.post("/credit-score", async (c) => {
-      const body = await c.req.json().catch(() => ({}));
-      if (!body.accountId) return c.json({ error: "accountId required" }, 400);
-      return c.json(computeCreditScore(body.accountId));
-    });
     aiRouter.post("/fraud-check", async (c) => {
       const body = await c.req.json().catch(() => null);
       if (!body?.accountId || !body.transaction) return c.json({ error: "accountId & transaction required" }, 400);
@@ -4919,7 +4958,27 @@ var init_ai = __esm({
     aiRouter.post("/alt-data/classify", async (c) => {
       const body = await c.req.json().catch(() => ({}));
       if (!body.text) return c.json({ error: "text required" }, 400);
-      return c.json(classify2(body.text));
+      const nb = classify2(body.text);
+      const vader = analyzeText(body.text);
+      const nbHasSignal = nb.matchedFeatures.length > 0;
+      const vaderHasSignal = vader.matchedTerms.length > 0;
+      const nbConfident = nbHasSignal && nb.confidence >= 0.6;
+      if (!nbConfident && vaderHasSignal) {
+        const cmp = vader.compound;
+        const label = cmp >= 0.05 ? "positive" : cmp <= -0.05 ? "negative" : "neutral";
+        return c.json({
+          ...nb,
+          label,
+          compound: Number(cmp.toFixed(4)),
+          confidence: Number(Math.min(0.95, 0.55 + Math.abs(cmp) * 0.45).toFixed(4)),
+          source: nbHasSignal ? "vader-override" : "vader-fallback",
+          vader: { compound: cmp, matchedTerms: vader.matchedTerms }
+        });
+      }
+      if (!nbHasSignal && !vaderHasSignal) {
+        return c.json({ ...nb, label: "neutral", compound: 0, confidence: 0.34, source: "no-signal" });
+      }
+      return c.json({ ...nb, source: "naive-bayes" });
     });
     aiRouter.get("/alt-data/sources/health", async (c) => {
       const [reddit, news, fg, cg] = await Promise.all([
@@ -4982,12 +5041,6 @@ var init_ai = __esm({
           btcHistory: hist.ok ? "real" : "unavailable"
         }
       });
-    });
-    aiRouter.post("/credit-score-real", async (c) => {
-      const body = await c.req.json().catch(() => ({}));
-      if (!body.accountId) return c.json({ error: "accountId required" }, 400);
-      const result = await computeCreditScoreWithRealAltData(body.accountId, body.proxySymbol || "BTCUSDT");
-      return c.json(result);
     });
     aiRouter.post("/fraud-check-real", async (c) => {
       const body = await c.req.json().catch(() => null);
@@ -5192,7 +5245,6 @@ var init_agent = __esm({
     init_state();
     init_fx();
     init_altdata();
-    init_credit();
     init_advisor();
     init_fraud();
     agentRouter = new Hono2();
@@ -5224,10 +5276,6 @@ var init_agent = __esm({
               netVnd: usdToVnd(netUsd),
               positions
             });
-          }
-          case "getCreditScore": {
-            if (!accountId) throw new Error("accountId required");
-            return c.json(computeCreditScore(accountId));
           }
           case "getSentiment": {
             if (!args.symbol) throw new Error("symbol required");
@@ -5275,27 +5323,27 @@ var init_agent = __esm({
               const acc = getAccount(accountId);
               const pos = acc.positions.find((p) => p.symbol === symbol);
               if (!pos || pos.amount <= 0) {
-                throw new Error(`B\u1EA1n kh\xF4ng s\u1EDF h\u1EEFu ${symbol.replace("USDT", "")} \u0111\u1EC3 b\xE1n.`);
+                throw new Error(`You don't own any ${symbol.replace("USDT", "")} to sell.`);
               }
               amountUsd = pos.amount * price;
             } else if (Number.isFinite(sellPct) && sellPct > 0 && side === "SELL") {
               const acc = getAccount(accountId);
               const pos = acc.positions.find((p) => p.symbol === symbol);
               if (!pos || pos.amount <= 0) {
-                throw new Error(`B\u1EA1n kh\xF4ng s\u1EDF h\u1EEFu ${symbol.replace("USDT", "")} \u0111\u1EC3 b\xE1n.`);
+                throw new Error(`You don't own any ${symbol.replace("USDT", "")} to sell.`);
               }
               const pct = Math.min(100, Math.max(0, sellPct));
               amountUsd = pos.amount * (pct / 100) * price;
             } else if (args.buyAllCash === true && side === "BUY") {
               const acc = getAccount(accountId);
               if (acc.cashUsd <= 0) {
-                throw new Error("S\u1ED1 d\u01B0 cash kh\xF4ng \u0111\u1EE7 \u0111\u1EC3 mua.");
+                throw new Error("Insufficient cash balance to buy.");
               }
               amountUsd = acc.cashUsd / (1 + FEE_RATE);
             } else if (Number.isFinite(buyPct) && buyPct > 0 && side === "BUY") {
               const acc = getAccount(accountId);
               if (acc.cashUsd <= 0) {
-                throw new Error("S\u1ED1 d\u01B0 cash kh\xF4ng \u0111\u1EE7 \u0111\u1EC3 mua.");
+                throw new Error("Insufficient cash balance to buy.");
               }
               const pct = Math.min(100, Math.max(0, buyPct));
               const target = acc.cashUsd * (pct / 100);
@@ -5303,7 +5351,7 @@ var init_agent = __esm({
             } else {
               amountUsd = Number(args.amountUsd ?? (args.amountVnd ? vndToUsd(Number(args.amountVnd)) : 0));
               if (!amountUsd || !Number.isFinite(amountUsd) || amountUsd <= 0) {
-                throw new Error("amountUsd, amountVnd, sellAll, buyAllCash, sellPercent, ho\u1EB7c buyPercent b\u1EAFt bu\u1ED9c");
+                throw new Error("amountUsd, amountVnd, sellAll, buyAllCash, sellPercent, or buyPercent required");
               }
             }
             if (side === "BUY") {
@@ -5401,7 +5449,7 @@ var init_bank = __esm({
       if (amt > 1e9) return c.json({ error: "amountVnd exceeds 1,000,000,000 demo limit" }, 400);
       const acc = await getBankAccount(id, body.holder);
       acc.balanceVnd += amt;
-      const txn = recordBankTxn(acc, "DEPOSIT", amt, "N\u1EA1p ti\u1EC1n v\xE0o t\xE0i kho\u1EA3n");
+      const txn = recordBankTxn(acc, "DEPOSIT", amt, "Deposit to account");
       await saveBankToFirebase(acc);
       return c.json({ ok: true, ...await summary(id), ref: txn.ref, transaction: txn });
     });
@@ -5412,10 +5460,10 @@ var init_bank = __esm({
       if (!Number.isFinite(amt) || amt <= 0) return c.json({ error: "amountVnd must be a positive number" }, 400);
       const acc = await getBankAccount(id);
       if (acc.balanceVnd < amt) {
-        return c.json({ ok: false, error: "S\u1ED1 d\u01B0 kh\xF4ng \u0111\u1EE7", balanceVnd: acc.balanceVnd, required: amt }, 402);
+        return c.json({ ok: false, error: "Insufficient balance", balanceVnd: acc.balanceVnd, required: amt }, 402);
       }
       acc.balanceVnd -= amt;
-      const txn = recordBankTxn(acc, "WITHDRAW", -amt, "R\xFAt ti\u1EC1n kh\u1ECFi t\xE0i kho\u1EA3n");
+      const txn = recordBankTxn(acc, "WITHDRAW", -amt, "Withdrawal from account");
       await saveBankToFirebase(acc);
       return c.json({ ok: true, ...await summary(id), ref: txn.ref, transaction: txn });
     });
@@ -5427,12 +5475,12 @@ var init_bank = __esm({
       const { vnd, rate } = usdToVnd2(usd);
       if (acc.balanceVnd < vnd) {
         return c.json(
-          { ok: false, paid: false, error: "S\u1ED1 d\u01B0 ng\xE2n h\xE0ng kh\xF4ng \u0111\u1EE7 \u0111\u1EC3 thanh to\xE1n ph\xED tham gia", requiredVnd: vnd, amountUsd: usd, balanceVnd: acc.balanceVnd },
+          { ok: false, paid: false, error: "Insufficient bank balance to pay the entry fee", requiredVnd: vnd, amountUsd: usd, balanceVnd: acc.balanceVnd },
           402
         );
       }
       acc.balanceVnd -= vnd;
-      const txn = recordBankTxn(acc, "ARENA_ENTRY", -vnd, `Ph\xED tham gia Arena${body.room ? ` \xB7 ${body.room}` : ""} ($${usd})`);
+      const txn = recordBankTxn(acc, "ARENA_ENTRY", -vnd, `Arena entry fee${body.room ? ` \xB7 ${body.room}` : ""} ($${usd})`);
       await saveBankToFirebase(acc);
       return c.json({ ok: true, paid: true, amountUsd: usd, amountVnd: vnd, rate, ref: txn.ref, ...await summary(body.accountId) });
     });
@@ -5443,10 +5491,10 @@ var init_bank = __esm({
       ACCOUNT_TOPUP: "ACCOUNT_TOPUP"
     };
     PURPOSE_TO_VI = {
-      PREMIUM_UPGRADE: "N\xE2ng c\u1EA5p g\xF3i th\xE0nh vi\xEAn",
-      COURSE_PURCHASE: "Mua kh\xF3a h\u1ECDc Academy",
-      STAKE_LOCK: "Kho\xE1 v\u1ED1n s\u1EA3n ph\u1EA9m Earn",
-      ACCOUNT_TOPUP: "N\u1EA1p v\u1ED1n v\xE0o t\xE0i kho\u1EA3n giao d\u1ECBch"
+      PREMIUM_UPGRADE: "Membership plan upgrade",
+      COURSE_PURCHASE: "Academy course purchase",
+      STAKE_LOCK: "Earn product lock-up",
+      ACCOUNT_TOPUP: "Top up trading account"
     };
     bankRouter.post("/pay-purchase", async (c) => {
       const body = await c.req.json().catch(() => ({}));
@@ -5464,7 +5512,7 @@ var init_bank = __esm({
       const { vnd, rate } = usdToVnd2(usd);
       if (acc.balanceVnd < vnd) {
         return c.json(
-          { ok: false, paid: false, error: "S\u1ED1 d\u01B0 ng\xE2n h\xE0ng kh\xF4ng \u0111\u1EE7", requiredVnd: vnd, amountUsd: usd, balanceVnd: acc.balanceVnd },
+          { ok: false, paid: false, error: "Insufficient bank balance", requiredVnd: vnd, amountUsd: usd, balanceVnd: acc.balanceVnd },
           402
         );
       }
@@ -5492,7 +5540,7 @@ var init_bank = __esm({
       const acc = await getBankAccount(body.accountId, body.holder);
       const { vnd, rate } = usdToVnd2(usd);
       acc.balanceVnd += vnd;
-      const txn = recordBankTxn(acc, "ARENA_PRIZE", vnd, `Ti\u1EC1n th\u01B0\u1EDFng Arena ($${usd})`);
+      const txn = recordBankTxn(acc, "ARENA_PRIZE", vnd, `Arena prize ($${usd})`);
       await saveBankToFirebase(acc);
       return c.json({ ok: true, credited: true, amountUsd: usd, amountVnd: vnd, rate, ref: txn.ref, ...await summary(body.accountId) });
     });

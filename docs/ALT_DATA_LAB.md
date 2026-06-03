@@ -48,7 +48,6 @@ Thay vì chỉ đưa ra một con số "sentiment = 72" như một hộp đen, t
           └────────────────────────────┬───────────────────────────────┘
                                         ▼
           ┌────────────────── STAGE 4 · FINTECH APPLY ───────────────┐
-          │  • Credit Score   ← yếu tố alt-data (±60 điểm)            │
           │  • Fraud Shield   ← luật "mua ngược sentiment = FOMO"     │
           │  • AI Advisor     ← tilt phân bổ danh mục ±25%           │
           └──────────────────────────────────────────────────────────┘
@@ -120,11 +119,10 @@ Bốn kỹ thuật AI học trong môn, chạy trên cùng corpus:
 Trả về object `RealSentimentResult` đầy đủ: điểm số, nhãn, độ tin cậy, **provenance** (top post tích cực/tiêu cực kèm từ khớp), và **observability** (mỗi stage có `status` + `message` + `latencyMs`). Đây là thứ UI vẽ ra thành các "Stage Card".
 
 ### STAGE 4 — FINTECH APPLICATION
-Đây là điểm mấu chốt: alt-data **không dừng ở con số đẹp** mà feed thẳng vào 3 module business (`buildApplication()`):
+Đây là điểm mấu chốt: alt-data **không dừng ở con số đẹp** mà feed thẳng vào 2 module business (`buildApplication()`):
 
 | Module | Cách dùng composite score | Khoảng tác động |
 |---|---|---|
-| **Credit Score** | Sentiment bền vững tích cực = proxy yếu cho hành vi thận trọng; capitulation = cờ rủi ro over-leverage | `±60 điểm` (trên thang 0–1000) |
 | **Fraud Shield** | Luật: lệnh BUY khi sentiment rất tiêu cực HOẶC đúng lúc spike mention = momentum-chasing/FOMO → yêu cầu xác nhận | bật/tắt cờ |
 | **AI Advisor** | Tilt tỉ trọng danh mục theo độ mạnh tín hiệu | `±25%` |
 
@@ -271,7 +269,6 @@ File: [`components/AltDataPipelinePage.tsx`](../components/AltDataPipelinePage.t
 | `GET /api/v1/ai/alt-data/sources/health` | Trạng thái 4 nguồn dữ liệu |
 | `GET /api/v1/ai/alt-data/model/info` | Metadata + metrics model NB |
 | `POST /api/v1/ai/alt-data/classify` | Phân loại 1 đoạn text bất kỳ |
-| `POST /api/v1/ai/credit-score-real` | Credit score có nhúng yếu tố alt-data |
 | `POST /api/v1/ai/fraud-check-real` | Fraud check có luật sentiment |
 
 Tất cả nằm trong OpenAPI spec ([`api/_lib/openapi.yaml`](../api/_lib/openapi.yaml)), xem Swagger UI tại `/docs`.
@@ -280,4 +277,4 @@ Tất cả nằm trong OpenAPI spec ([`api/_lib/openapi.yaml`](../api/_lib/opena
 
 ## 8. Tóm tắt cho phần pitch / report
 
-> Alt-Data Lab chứng minh trọn vẹn yêu cầu Part A: thu thập **alternative data thật** (social text từ Hacker News/Reddit, Fear & Greed, CoinGecko), phân tích bằng **hai kỹ thuật NLP** — một lexicon VADER và một **Multinomial Naive Bayes tự train** theo quy trình distant-supervision (gold hand-labeled + silver auto-labeled, test trên gold), cộng **Z-score anomaly detection** và **multi-source fusion**, rồi biến tín hiệu thành **ba ứng dụng fintech cụ thể** (Credit Score, Fraud Shield, AI Advisor). Mọi bước đều minh bạch, giải thích được tới từng từ, và toàn bộ trọng số model được Python train rồi serve nguyên vẹn trong runtime TypeScript qua custom OpenAPI server.
+> Alt-Data Lab chứng minh trọn vẹn yêu cầu Part A: thu thập **alternative data thật** (social text từ Hacker News/Reddit, Fear & Greed, CoinGecko), phân tích bằng **hai kỹ thuật NLP** — một lexicon VADER và một **Multinomial Naive Bayes tự train** theo quy trình distant-supervision (gold hand-labeled + silver auto-labeled, test trên gold), cộng **Z-score anomaly detection** và **multi-source fusion**, rồi biến tín hiệu thành **hai ứng dụng fintech cụ thể** (Fraud Shield, AI Advisor). Mọi bước đều minh bạch, giải thích được tới từng từ, và toàn bộ trọng số model được Python train rồi serve nguyên vẹn trong runtime TypeScript qua custom OpenAPI server.

@@ -59,7 +59,6 @@ We don't rely on price/transaction history alone. Our **Alt-Data pipeline** scra
 
 ### 3.2 Risk & personalization utility *(built)*
 Insights are translated into concrete product advantages:
-- **AI Credit Score** — blends behavior with an alt-data factor (`/ai/credit-score-real`).
 - **Fraud Shield** — flags momentum-chasing/FOMO trades (e.g., buying into extreme-negative sentiment or attention spikes) (`/ai/fraud-check-real`).
 - **AI Advisor** — risk-profiled allocation tilt driven by the composite signal.
 
@@ -92,7 +91,7 @@ The server systematically exposes endpoints that **deliver AI-processed alternat
 | `POST /ai/alt-data/classify` | Score any text with the trained model (NB + VADER OOV fallback) |
 | `GET /ai/alt-data/model/info` | Model metadata + eval metrics |
 | `POST /ai/insight` | Composite per-coin AI insight |
-| `POST /ai/credit-score-real`, `/ai/fraud-check-real` | Alt-data-driven risk |
+| `POST /ai/fraud-check-real` | Alt-data-driven risk |
 | `POST /agent/execute` | Tool dispatcher consumed by the AI agent |
 
 Architecture: **React/Vite frontend ↔ custom Hono OpenAPI server (Vercel) ↔ AI pipeline + trained model ↔ Firebase (auth/state) ↔ market data (Binance, RSS)**.
@@ -105,7 +104,7 @@ Architecture: **React/Vite frontend ↔ custom Hono OpenAPI server (Vercel) ↔ 
 
 **Frictionless AI automation *(built)*:** a **Gemini function-calling agent** moves beyond static chat to **actively trigger transactions and call backend APIs** via natural language. It can:
 - Place trades with a confirmation card — understands localized intent like **"buy 5,000,000 VND of BTC"**, "sell half my ETH", "all-in".
-- Answer account questions (balance, AI credit score), pull sentiment/Fear&Greed, **community pulse**, and advisor allocations — all by calling the OpenAPI server live.
+- Answer account questions (balance), pull sentiment/Fear&Greed, **community pulse**, and advisor allocations — all by calling the OpenAPI server live.
 
 **Conversational logic *(built)*:** smoothly resolves account status, VND/USD calculations, and localized platform actions; every tool call is shown transparently in-chat. Inline AI is also embedded in **Community Pulse** (ask about a coin + automatic market-state verdict).
 
@@ -136,7 +135,7 @@ Multiple revenue lines are **already surfaced in the product** *(built)*; moneti
 
 ## 7. Traction & Status
 
-- **Deployed MVP** *(built)*: full app — Terminal (live charts + exchange-grade indicators MA/EMA/BOLL/VOL/MACD/RSI, order book, trade tape), Markets, Social Pulse, Alt-Data Lab, Credit Score, AI Advisor, Fraud Shield, Community Pulse, Arena, Earn, Academy, Referral, agentic chatbot.
+- **Deployed MVP** *(built)*: full app — Terminal (live charts + exchange-grade indicators MA/EMA/BOLL/VOL/MACD/RSI, order book, trade tape), Markets, Social Pulse, Alt-Data Lab, AI Advisor, Fraud Shield, Community Pulse, Arena, Earn, Academy, Referral, agentic chatbot.
 - **Real integrations** *(built)*: Binance (prices/klines/WS), live FX, RSS market news, Firebase auth/state, Gemini agent.
 - **Stage:** pre-revenue; paper-trading validates engagement and AI value before handling real funds.
 
@@ -188,7 +187,7 @@ Multiple revenue lines are **already surfaced in the product** *(built)*; moneti
 
 ## Appendix B — Demo Day script
 1. Alt-Data Lab: scrape → VADER + trained NB → composite signal (show provenance + model metrics).
-2. Apply: Credit Score / Fraud Shield / AI Advisor driven by that signal.
+2. Apply: Fraud Shield / AI Advisor driven by that signal.
 3. Community Pulse: post a take → scored live → AI verdict (data flywheel).
 4. Agentic chatbot: "buy 5,000,000 VND BTC" → quote → confirm → executed via OpenAPI server in VND.
 5. Close on the moat + incubation ask.

@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import { computeCreditScore, computeCreditScoreWithRealAltData } from '../ai/credit';
 import { checkFraud, checkFraudWithRealAltData } from '../ai/fraud';
 import { buildAdvisor, RiskProfile } from '../ai/advisor';
 import { getSentiment, getWhaleFlow, getFearGreed, signalFromSentiment } from '../ai/altdata';
@@ -13,12 +12,6 @@ import { pingCoinGecko } from '../ai/sources/coingecko';
 import { fetchBtcSnapshot, fetchBtcHistory } from '../ai/sources/btcMarket';
 
 export const aiRouter = new Hono();
-
-aiRouter.post('/credit-score', async (c) => {
-  const body = await c.req.json().catch(() => ({})) as { accountId?: string };
-  if (!body.accountId) return c.json({ error: 'accountId required' }, 400);
-  return c.json(computeCreditScore(body.accountId));
-});
 
 aiRouter.post('/fraud-check', async (c) => {
   const body = await c.req.json().catch(() => null) as { accountId?: string; transaction?: any } | null;
@@ -264,13 +257,6 @@ aiRouter.get('/fear-greed/full', async (c) => {
       btcHistory: hist.ok ? 'real' : 'unavailable',
     },
   });
-});
-
-aiRouter.post('/credit-score-real', async (c) => {
-  const body = await c.req.json().catch(() => ({})) as { accountId?: string; proxySymbol?: string };
-  if (!body.accountId) return c.json({ error: 'accountId required' }, 400);
-  const result = await computeCreditScoreWithRealAltData(body.accountId, body.proxySymbol || 'BTCUSDT');
-  return c.json(result);
 });
 
 aiRouter.post('/fraud-check-real', async (c) => {

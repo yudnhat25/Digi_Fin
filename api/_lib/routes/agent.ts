@@ -10,7 +10,6 @@ import { Hono } from 'hono';
 import { getAccount } from '../state';
 import { usdToVnd, vndToUsd, convert, getRates } from '../fx';
 import { getSentiment, getWhaleFlow, getFearGreed } from '../ai/altdata';
-import { computeCreditScore } from '../ai/credit';
 import { buildAdvisor, RiskProfile } from '../ai/advisor';
 import { checkFraud } from '../ai/fraud';
 
@@ -84,10 +83,6 @@ agentRouter.post('/execute', async (c) => {
           netVnd: usdToVnd(netUsd),
           positions,
         });
-      }
-      case 'getCreditScore': {
-        if (!accountId) throw new Error('accountId required');
-        return c.json(computeCreditScore(accountId));
       }
       case 'getSentiment': {
         if (!args.symbol) throw new Error('symbol required');

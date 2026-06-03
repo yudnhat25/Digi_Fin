@@ -66,15 +66,13 @@ Lựa chọn khả thi (không cần API trả phí thật, có thể mock thôn
 | **On-chain Whale Activity** | Binance/Etherscan public — có endpoint free | Detect smart money flow → trade signal, anti-manipulation alert | ✅ **Bắt buộc** |
 | **Fear & Greed Index** (Alternative.me free API) | Rất dễ | Risk gauge, portfolio rebalance suggestion | ✅ **Bắt buộc** |
 | **News Sentiment** (CryptoPanic free API hoặc RSS) | Dễ | Real-time news scoring | ✅ |
-| **Mobile usage / utilities bill** | Mock dataset (giả lập user data) | Credit score cho user fintech VN | ✅ Cho module Credit Score |
 | **Web-scraped retail trends** | Mock dataset DeFi/NFT trending | Personalized investment advice | ⏩ Optional |
 | **Satellite imagery** | Quá phức tạp cho timeline | — | ❌ Skip |
 
 **Output AI Analytics** (đây là điểm bán hàng):
-1. **AI Credit Score 0-1000** — kết hợp on-chain history + utility/mobile usage giả lập + sentiment exposure → ra điểm tín dụng tài chính cho user (use-case quan trọng ở VN — bank không có)
-2. **Sentiment-Augmented Signals** — mỗi coin có Sentiment Score + AI Buy/Hold/Sell rating có giải thích
-3. **Fraud Detection** — flag giao dịch bất thường (giá lệch, volume spike, sentiment trái chiều)
-4. **Personalized Investment Advice** — dựa trên risk profile + alternative data, AI đề xuất danh mục mẫu
+1. **Sentiment-Augmented Signals** — mỗi coin có Sentiment Score + AI Buy/Hold/Sell rating có giải thích
+2. **Fraud Detection** — flag giao dịch bất thường (giá lệch, volume spike, sentiment trái chiều)
+3. **Personalized Investment Advice** — dựa trên risk profile + alternative data, AI đề xuất danh mục mẫu
 
 → Tất cả expose qua **Custom OpenAPI server** để Chatbot + UI cùng đọc được.
 
@@ -98,7 +96,6 @@ GET    /api/v1/market/{symbol}/sentiment
 GET    /api/v1/market/{symbol}/whale-flow
 GET    /api/v1/market/fear-greed
 
-POST   /api/v1/ai/credit-score       # {userId} → 0..1000 + explanation
 POST   /api/v1/ai/fraud-check        # {transaction} → risk score
 POST   /api/v1/ai/advisor            # {userId, riskProfile} → portfolio gợi ý
 POST   /api/v1/ai/insight            # tổng hợp insight cho 1 coin
@@ -132,7 +129,6 @@ POST   /api/v1/agent/execute         # tool dispatcher cho function-calling
 - Chuyển sang Gemini **function calling** (`@google/genai` Type system)
 - Tools đăng ký:
   - `getPortfolio()` — đọc từ OpenAPI server
-  - `getCreditScore()`
   - `getSentiment(symbol)`
   - `getFraudReport(txId)`
   - `placeTrade(symbol, side, amountUSD)` — yêu cầu confirm UI
@@ -149,7 +145,6 @@ POST   /api/v1/agent/execute         # tool dispatcher cho function-calling
 
 | Module | Giá trị business | Độ phức tạp |
 |---|---|---|
-| 🇻🇳 **AI Credit Score VN** (alternative data → 0-1000 score) | Use-case cực nóng ở VN, ngân hàng + ví điện tử đều thiếu | Medium |
 | 📊 **Smart Portfolio Advisor** | Dùng AI gợi ý rebalance định kỳ → upsell Pro/Elite | Medium |
 | 🚨 **Fraud Shield** | AI rà mỗi giao dịch lớn, cảnh báo bất thường, KYC-lite | Medium |
 | 🌐 **Social Pulse Dashboard** | Trang riêng — top coin theo sentiment, mood index, whale alert feed | Medium |
@@ -168,7 +163,7 @@ POST   /api/v1/agent/execute         # tool dispatcher cho function-calling
 ┌─────────────────────────────────────────────────────────┐
 │  Frontend (React + Vite)                                │
 │  • Dashboard, Markets, Portfolio, Arena, Academy, Earn  │
-│  • + Social Pulse, Credit Score, AI Advisor, Fraud      │
+│  • + Social Pulse, AI Advisor, Fraud Shield             │
 │  • + VND/USD toggle, Live chart, Smart Alerts           │
 │  • Agentic Chatbot (Gemini function-calling)            │
 └──────────────┬──────────────────────────────────────────┘
@@ -220,10 +215,10 @@ POST   /api/v1/agent/execute         # tool dispatcher cho function-calling
 ## 7. Roadmap thực thi (sequencing)
 
 1. **Backend foundation**: Tạo `/server` folder, Hono + OpenAPI spec, mock data sources, endpoints + Swagger UI. Dev script.
-2. **AI Analytics layer**: Module `server/ai/` — credit-score, fraud, sentiment, advisor, fear-greed wrapper. Gemini integration cho reasoning.
+2. **AI Analytics layer**: Module `server/ai/` — fraud, sentiment, advisor, fear-greed wrapper. Gemini integration cho reasoning.
 3. **Frontend service layer**: `services/coinwiseApi.ts` thay/bổ sung cho `api.ts`, expose typed client gọi backend mới.
 4. **VND localization**: Currency context + toggle + helpers `formatVND`, `formatUSD`. Update PortfolioSummary, TradingPanel, Markets.
-5. **New pages**: `SocialPulsePage`, `CreditScorePage`, `AIAdvisorPage`, `FraudShieldPage`. Add tabs trong Layout.
+5. **New pages**: `SocialPulsePage`, `AIAdvisorPage`, `FraudShieldPage`. Add tabs trong Layout.
 6. **Live chart**: Replace mock chart với `lightweight-charts`, kéo data từ OpenAPI server (proxy klines).
 7. **Agentic chatbot**: Refactor `geminiService.ts` → tool definitions + dispatcher gọi backend.
 8. **Polish + Smart Alerts**: in-app notification feed, AI-generated daily brief.
@@ -235,8 +230,8 @@ POST   /api/v1/agent/execute         # tool dispatcher cho function-calling
 
 - [ ] `/server/openapi.yaml` mở được trong Swagger UI tại `http://localhost:3001/docs`
 - [ ] Có ≥ 12 endpoint, ít nhất 4 endpoint phục vụ AI alternative data
-- [ ] FE hiển thị Credit Score, Sentiment Dashboard, Fraud alerts, AI advisor, VND toggle
-- [ ] Chatbot có thể: kiểm tra số dư, hỏi credit score, đặt lệnh mua bằng câu tiếng Việt
+- [ ] FE hiển thị Sentiment Dashboard, Fraud alerts, AI advisor, VND toggle
+- [ ] Chatbot có thể: kiểm tra số dư, hỏi sentiment, đặt lệnh mua bằng câu tiếng Việt
 - [ ] Tất cả persistence (paper-account state) đi qua OpenAPI server (server là source of truth)
 - [ ] Build & run pass, screenshot demo cho từng tính năng
 

@@ -406,7 +406,7 @@ const AltDataPipelinePage: React.FC = () => {
             <p className="text-slate-400 text-sm max-w-2xl">
               This page proves the full chain demanded by the brief: real text scraped from Reddit + alternative.me Fear &amp;
               Greed Index + CoinGecko community signals, analysed with a VADER-style lexicon sentiment model and a Z-score
-              anomaly detector, then translated into concrete fintech actions — a Credit Score factor, a Fraud Shield rule,
+              anomaly detector, then translated into concrete fintech actions — a Fraud Shield rule
               and an AI Advisor allocation tilt.
             </p>
           </div>
@@ -704,18 +704,7 @@ const AltDataPipelinePage: React.FC = () => {
             title="Fintech application — translate the AI output into product actions"
             subtitle="The pipeline isn't a research artefact. Every signal feeds at least one production fintech feature inside CoinWise AI."
           >
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.03] p-4">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-400 mb-2">▸ Credit Score</p>
-                <p className="text-sm font-bold mb-1">{data.application.creditScoreFactor.label}</p>
-                <p className="text-xs text-slate-400 leading-relaxed">{data.application.creditScoreFactor.rationale}</p>
-                <div className="mt-3 pt-3 border-t border-white/[0.06] flex justify-between items-center">
-                  <span className="text-[10px] text-slate-500 uppercase tracking-wider">Score impact</span>
-                  <span className={cls('text-lg font-black tabular-nums', data.application.creditScoreFactor.impact >= 0 ? 'text-emerald-400' : 'text-rose-400')}>
-                    {data.application.creditScoreFactor.impact >= 0 ? '+' : ''}{data.application.creditScoreFactor.impact}
-                  </span>
-                </div>
-              </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className={cls('rounded-xl border p-4', data.application.fraudRule.triggered ? 'border-amber-500/30 bg-amber-500/[0.05]' : 'border-white/[0.06] bg-white/[0.02]')}>
                 <p className={cls('text-[10px] font-bold uppercase tracking-widest mb-2', data.application.fraudRule.triggered ? 'text-amber-300' : 'text-slate-500')}>▸ Fraud Shield</p>
                 <p className="text-sm font-bold mb-1">{data.application.fraudRule.label}</p>

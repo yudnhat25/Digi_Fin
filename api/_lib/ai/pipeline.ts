@@ -17,7 +17,6 @@
  *     full provenance (which post drove which delta).
  *
  *   STAGE 4 — FINTECH APPLICATION
- *     - feeds into Credit Score (alt-data factor, weighted ≤120)
  *     - feeds into Fraud Shield (sentiment-contradiction rule)
  *     - feeds into AI Advisor (sentiment tilt)
  */
@@ -138,7 +137,7 @@ export interface RealSentimentResult {
     coinGeckoWeight: number;
     fearGreedWeight: number;
     compositeScore: number;       // [-1, 1]
-    composite0to100: number;      // for credit / UI
+    composite0to100: number;      // for UI
     label: SentimentLabel;
     confidence: number;           // 0–1
     signal: 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL' | 'NEUTRAL';
@@ -146,7 +145,6 @@ export interface RealSentimentResult {
 
   // Stage 4 — fintech application
   application: {
-    creditScoreFactor: { label: string; impact: number; rationale: string };
     fraudRule: { label: string; triggered: boolean; rationale: string };
     advisorTilt: { label: string; tiltPct: number; rationale: string };
   };
@@ -179,19 +177,6 @@ function buildApplication(
   spike: boolean,
   signal: RealSentimentResult['fusion']['signal'],
 ): RealSentimentResult['application'] {
-  // Credit Score factor (alt-data): consistent positive sentiment is a
-  // weak proxy for prudent behavior. Range -40 .. +60.
-  const creditImpact = Math.round(Math.max(-40, Math.min(60, composite * 60)));
-  const creditScoreFactor = {
-    label: 'Social sentiment (alt-data, VADER NLP on HN+Reddit)',
-    impact: creditImpact,
-    rationale: composite > 0.2
-      ? 'Sustained bullish discourse — borrower is engaging with healthy market context.'
-      : composite < -0.2
-      ? 'Capitulation discourse around held assets — flag for over-leverage risk.'
-      : 'Neutral social context — no adjustment.',
-  };
-
   // Fraud rule: BUY orders during capitulation or sentiment spike are
   // momentum-chasing; raise flag.
   const fraudTriggered = composite < -0.4 || (spike && composite < 0);
@@ -215,7 +200,7 @@ function buildApplication(
       : 'Hold base allocation — no actionable tilt.',
   };
 
-  return { creditScoreFactor, fraudRule, advisorTilt };
+  return { fraudRule, advisorTilt };
 }
 
 // ─── Main pipeline ───
@@ -528,7 +513,7 @@ export async function runAltDataPipeline(symbol: string): Promise<RealSentimentR
 }
 
 /**
- * Cheaper variant used by /credit-score and /fraud-check that only needs the
+ * Cheaper variant used by /fraud-check that only needs the
  * scalar composite + label, no per-post breakdown. Backed by the same fetch
  * cache so it's free after the first run.
  */

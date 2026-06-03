@@ -10,7 +10,6 @@ const ENDPOINTS = [
   { method: 'GET', path: '/api/v1/market/{symbol}/whale-flow', tag: 'Alt Data' },
   { method: 'GET', path: '/api/v1/market/fear-greed', tag: 'Alt Data' },
   { method: 'GET', path: '/api/v1/market/social-pulse', tag: 'Alt Data' },
-  { method: 'POST', path: '/api/v1/ai/credit-score', tag: 'AI' },
   { method: 'POST', path: '/api/v1/ai/fraud-check', tag: 'AI' },
   { method: 'POST', path: '/api/v1/ai/advisor', tag: 'AI' },
   { method: 'POST', path: '/api/v1/ai/insight', tag: 'AI' },

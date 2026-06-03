@@ -82,15 +82,6 @@ export interface SocialPulseRow {
   delta: number; momentum: 'Spike' | 'Rising' | 'Stable' | 'Cooling';
   source?: 'coingecko' | 'synthetic';
 }
-export interface CreditFactor { key: string; label: string; impact: number; value: string }
-export interface CreditScore {
-  accountId: string; score: number;
-  band: 'Excellent' | 'Good' | 'Fair' | 'Poor' | 'Subprime';
-  factors: CreditFactor[];
-  recommendation: string;
-  eligibility: { marginLoanVnd: number; premiumProducts: boolean };
-  asOf: string;
-}
 export interface FraudCheck {
   riskScore: number;
   verdict: 'SAFE' | 'REVIEW' | 'BLOCK';
@@ -141,8 +132,6 @@ export const apiSocialPulse = () => call<SocialPulseRow[]>('/api/v1/market/socia
 export const apiCoinInsight = (symbol: string) =>
   call<CoinInsight>('/api/v1/ai/insight', { method: 'POST', body: JSON.stringify({ symbol }) });
 
-export const apiCreditScore = (accountId: string) =>
-  call<CreditScore>('/api/v1/ai/credit-score', { method: 'POST', body: JSON.stringify({ accountId }) });
 export const apiFraudCheck = (accountId: string, transaction: any) =>
   call<FraudCheck>('/api/v1/ai/fraud-check', { method: 'POST', body: JSON.stringify({ accountId, transaction }) });
 export const apiAdvisor = (accountId: string, riskProfile = 'BALANCED') =>
@@ -191,7 +180,6 @@ export interface AltDataPipelineResult {
     label: string; confidence: number; signal: string;
   };
   application: {
-    creditScoreFactor: { label: string; impact: number; rationale: string };
     fraudRule: { label: string; triggered: boolean; rationale: string };
     advisorTilt: { label: string; tiltPct: number; rationale: string };
   };

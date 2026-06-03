@@ -7,7 +7,7 @@ info:
     & financial-intelligence platform. This server resolves the localization gaps left
     by Stripe / Plaid (which lack first-class **VND** support) and exposes endpoints
     that serve the AI **Alternative Data** analytics layer (sentiment, on-chain whale
-    flow, fear & greed, AI credit score, fraud detection, AI advisor).
+    flow, fear & greed, fraud detection, AI advisor).
 
     Built for the Advanced Fintech Synthesis assignment — UII incubator demo.
   contact:
@@ -145,22 +145,6 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/SocialPulseRow' }
-
-  /api/v1/ai/credit-score:
-    post:
-      tags: [AI / Alternative Data]
-      summary: AI Credit Score for a user using alternative data
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/CreditScoreRequest' }
-      responses:
-        '200':
-          description: Score + explanation
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/CreditScoreResponse' }
 
   /api/v1/ai/fraud-check:
     post:
@@ -505,36 +489,6 @@ components:
         sentiment: { type: number }
         delta: { type: number }
         momentum: { type: string, enum: [Spike, Rising, Stable, Cooling] }
-    CreditScoreRequest:
-      type: object
-      required: [accountId]
-      properties:
-        accountId: { type: string }
-        signals:
-          type: object
-          description: Optional alternative-data overrides (mobile-usage, utility, etc.)
-          additionalProperties: true
-    CreditScoreResponse:
-      type: object
-      properties:
-        accountId: { type: string }
-        score: { type: integer, minimum: 0, maximum: 1000 }
-        band: { type: string, enum: [Excellent, Good, Fair, Poor, Subprime] }
-        factors:
-          type: array
-          items:
-            type: object
-            properties:
-              key: { type: string }
-              label: { type: string }
-              impact: { type: number }
-              value: { type: string }
-        recommendation: { type: string }
-        eligibility:
-          type: object
-          properties:
-            marginLoanVnd: { type: number }
-            premiumProducts: { type: boolean }
     FraudCheckRequest:
       type: object
       required: [accountId, transaction]
@@ -652,7 +606,6 @@ components:
           type: string
           enum:
             - getBalance
-            - getCreditScore
             - getSentiment
             - getInsight
             - getFearGreed

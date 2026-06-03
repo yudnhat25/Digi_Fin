@@ -14,9 +14,9 @@ Built for the *Advanced Fintech Synthesis – AI Integration & API Refinement* a
 
 CoinWise AI is a paper-trading + financial-intelligence platform that combines three things which traditional global APIs (Stripe, Plaid) can't deliver in Vietnam:
 
-1. **AI-driven Alternative Data** — social sentiment, on-chain whale flow, fear & greed, mobile-usage proxies → fed into AI Credit Scoring, AI Portfolio Advisor, and Fraud Detection.
+1. **AI-driven Alternative Data** — social sentiment, on-chain whale flow, fear & greed → fed into the AI Portfolio Advisor and Fraud Detection.
 2. **A proprietary OpenAPI server** — first-class **VND localization**, custom AI analytics endpoints, and an agentic tool-dispatcher (see `server/openapi.yaml`).
-3. **An agentic chatbot** — Gemini function-calling that actually *does* things: pulls credit scores, quotes trades, deposits VND — all through the custom OpenAPI server.
+3. **An agentic chatbot** — Gemini function-calling that actually *does* things: pulls signals, quotes trades, deposits VND — all through the custom OpenAPI server.
 
 See [`REQUIREMENTS_ANALYSIS.md`](REQUIREMENTS_ANALYSIS.md) for the full requirements mapping.
 
@@ -29,7 +29,7 @@ React (Vite) ─► CoinWise OpenAPI server (Hono, port 3001) ─► Binance / G
                 │
                 ├── /api/v1/fx/*          VND localization
                 ├── /api/v1/market/*      enriched market data + alt-data
-                ├── /api/v1/ai/*          credit score, fraud, advisor, insight
+                ├── /api/v1/ai/*          fraud, advisor, insight
                 ├── /api/v1/accounts/*    paper-account state (USD + VND)
                 ├── /api/v1/agent/execute agentic tool dispatcher
                 ├── /docs                 Swagger UI
@@ -70,7 +70,6 @@ React (Vite) ─► CoinWise OpenAPI server (Hono, port 3001) ─► Binance / G
 | **Markets** | Enriched market list with AI signals + VND prices |
 | **Arena** | Trading competition with realtime leaderboard (Firebase) |
 | **Social Pulse** | AI alt-data leaderboard, fear & greed dial, mood history |
-| **Credit Score** | 0–1000 AI credit score from alternative data + lending eligibility in VND |
 | **AI Advisor** | Risk-profile-tilted allocation powered by alt-data signals |
 | **Fraud Shield** | Live anomaly detection on user transactions |
 | **API Docs** | Embedded Swagger UI for the proprietary OpenAPI server |
