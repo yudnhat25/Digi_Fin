@@ -218,7 +218,7 @@ aiRouter.get('/fear-greed/full', async (c) => {
     fetchBtcHistory(365),
   ]);
 
-  if (!fg.ok) return c.json({ ok: false, error: fg.error, fetchedAt: fg.fetchedAt }, 502);
+  if (!fg.ok) return c.json({ ok: false, error: 'error' in fg ? fg.error : 'unknown', fetchedAt: fg.fetchedAt }, 502);
 
   const points = fg.history;
   const last = points[points.length - 1];
