@@ -88,6 +88,12 @@ export interface FraudCheck {
   reasons: string[];
   recommendedAction: string;
 }
+export interface AdvisorSources {
+  sentiment: 'coingecko' | 'binance' | 'alternative.me' | 'synthetic' | 'unavailable';
+  momentum: 'coingecko' | 'binance' | 'alternative.me' | 'synthetic' | 'unavailable';
+  fearGreed: 'coingecko' | 'binance' | 'alternative.me' | 'synthetic' | 'unavailable';
+  prices: 'coingecko' | 'binance' | 'alternative.me' | 'synthetic' | 'unavailable';
+}
 export interface AdvisorResult {
   riskProfile: string;
   targetAllocation: { symbol: string; weight: number; rationale: string }[];
@@ -96,6 +102,8 @@ export interface AdvisorResult {
   volatilityPct: number;
   rebalanceActions: string[];
   narrative: string;
+  sources?: AdvisorSources;
+  degraded?: boolean;
 }
 export type InsightSource = 'real' | 'hybrid' | 'synthetic';
 export interface CoinInsightSources {

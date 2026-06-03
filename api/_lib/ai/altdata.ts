@@ -243,7 +243,7 @@ function getSocialPulseSynthetic(): SocialPulseRow[] {
   }).sort((a, b) => b.mentions24h - a.mentions24h);
 }
 
-interface CoinGeckoSnapshot {
+export interface CoinGeckoSnapshot {
   sentiment: number;     // [-1, 1] from sentiment_votes_up - down
   mentions24h: number;   // composite of Reddit posts/comments + Twitter followers
   delta: number;         // [-1, 1] derived from 24h price change as momentum proxy
@@ -269,7 +269,7 @@ let cgCache: { data: Map<string, CoinGeckoSnapshot>; ts: number } | null = null;
  * Result cached 15 minutes — CoinGecko free tier permits ~10-30 calls/min,
  * so one full refresh every quarter-hour is well below the limit.
  */
-async function loadCoinGecko(): Promise<Map<string, CoinGeckoSnapshot>> {
+export async function loadCoinGecko(): Promise<Map<string, CoinGeckoSnapshot>> {
   const now = Date.now();
   if (cgCache && now - cgCache.ts < CG_CACHE_TTL_MS) return cgCache.data;
 

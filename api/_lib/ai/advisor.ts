@@ -1,10 +1,19 @@
 /**
- * AI Portfolio Advisor — uses alternative-data signals (sentiment + fear/greed
- * + whale flow) to build a target allocation tailored to the user's risk
- * profile, plus a narrative rationale.
+ * AI Portfolio Advisor — builds a target allocation tailored to the user's risk
+ * profile, tilted by REAL alternative-data signals, plus a narrative rationale.
+ *
+ * Real data sources (no synthetic seeding):
+ *   • Social sentiment      — CoinGecko community vote % (sentiment_votes up/down)
+ *   • Price momentum        — Binance 24h ticker priceChangePercent
+ *   • Market mood           — Alternative.me Fear & Greed Index
+ *   • Position valuation     — live Binance last price (not a fixed proxy)
+ *
+ * Each signal degrades gracefully: if a source is unreachable, that coin's term
+ * collapses to neutral (0 tilt) instead of a guessed value, and the result is
+ * flagged `degraded` so the UI can stamp the provenance honestly.
  */
 import { getAccount } from '../state';
-import { getSentiment, getFearGreed, getWhaleFlow, signalFromSentiment } from './altdata';
+import { getFearGreed, loadCoinGecko } from './altdata';
 
 export type RiskProfile = 'CONSERVATIVE' | 'BALANCED' | 'GROWTH' | 'AGGRESSIVE';
 
@@ -25,6 +34,15 @@ export interface AdvisorAllocation {
   rationale: string;
 }
 
+export type SourceStatus = 'coingecko' | 'binance' | 'alternative.me' | 'synthetic' | 'unavailable';
+
+export interface AdvisorSources {
+  sentiment: SourceStatus;
+  momentum: SourceStatus;
+  fearGreed: SourceStatus;
+  prices: SourceStatus;
+}
+
 export interface AdvisorResult {
   riskProfile: RiskProfile;
   targetAllocation: AdvisorAllocation[];
@@ -33,8 +51,12 @@ export interface AdvisorResult {
   volatilityPct: number;
   rebalanceActions: string[];
   narrative: string;
+  sources: AdvisorSources;
+  degraded: boolean;
 }
 
+// Forward-looking profile model assumptions (not directly observable from
+// market data — surfaced honestly as assumptions in the narrative).
 const EXPECTED_RETURN: Record<RiskProfile, number> = {
   CONSERVATIVE: 8, BALANCED: 14, GROWTH: 22, AGGRESSIVE: 35,
 };
@@ -45,27 +67,71 @@ const CASH_BUFFER: Record<RiskProfile, number> = {
   CONSERVATIVE: 0.20, BALANCED: 0.10, GROWTH: 0.05, AGGRESSIVE: 0.02,
 };
 
+const BINANCE = 'https://api.binance.com/api/v3';
+
+/**
+ * Live Binance 24h ticker for the requested symbols (one batched call). Returns
+ * a map of symbol → { price, change24h }. Binance is geo-blocked from some
+ * serverless regions — on any failure the map is left partial/empty and the
+ * caller treats missing entries as neutral rather than inventing numbers.
+ */
+async function fetchTickers(symbols: string[]): Promise<Map<string, { price: number; change24h: number }>> {
+  const map = new Map<string, { price: number; change24h: number }>();
+  if (!symbols.length) return map;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4500);
+    const param = encodeURIComponent(JSON.stringify(symbols));
+    const res = await fetch(`${BINANCE}/ticker/24hr?symbols=${param}`, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!res.ok) throw new Error(`http ${res.status}`);
+    const arr = (await res.json()) as Array<{ symbol: string; lastPrice: string; priceChangePercent: string }>;
+    for (const d of arr) {
+      map.set(d.symbol, { price: Number(d.lastPrice), change24h: Number(d.priceChangePercent) });
+    }
+  } catch {
+    /* leave map empty — caller degrades gracefully */
+  }
+  return map;
+}
+
 export async function buildAdvisor(accountId: string, profile: RiskProfile = 'BALANCED'): Promise<AdvisorResult> {
   const acc = getAccount(accountId);
-  const fg = await getFearGreed();
 
-  // Sentiment-tilted weights (boost weight when AI signal is BUY, dampen when SELL).
+  // Fire the real sources together: Fear & Greed (alternative.me) + CoinGecko
+  // community sentiment. Then batch a Binance 24h ticker call for the universe
+  // plus whatever the user actually holds (for valuation).
+  const [fg, cg] = await Promise.all([getFearGreed(), loadCoinGecko()]);
+  const universeSymbols = UNIVERSE.map((u) => u.symbol);
+  const heldSymbols = acc.positions.map((p) => p.symbol);
+  const tickers = await fetchTickers(Array.from(new Set([...universeSymbols, ...heldSymbols])));
+
+  const cgOk = cg.size > 0;
+  const pxOk = tickers.size > 0;
+  const fgReal = fg.source === 'alternative.me';
+
+  // Sentiment-tilted weights from REAL signals: CoinGecko vote sentiment +
+  // Binance 24h momentum + contrarian Fear & Greed nudge. Missing data → 0.
   const raw = UNIVERSE.map((u) => {
-    const sent = getSentiment(u.symbol);
-    const whale = getWhaleFlow(u.symbol);
+    const snap = cg.get(u.symbol);
+    const tk = tickers.get(u.symbol);
+    const sentiment = snap ? snap.sentiment : 0;                 // [-1, 1]
+    const change24h = tk ? tk.change24h : 0;                     // %
+    const momentum = Math.max(-1, Math.min(1, change24h / 20));  // clamp ±20% → ±1
     const tilt =
-      (sent.score * 0.35) +
-      (whale.netFlow24hUsd > 0 ? 0.15 : -0.1) +
+      sentiment * 0.35 +
+      momentum * 0.15 +
       (fg.value > 60 ? -0.05 : fg.value < 40 ? 0.07 : 0);
     const base = u.defaultWeight[profile];
     const adjusted = Math.max(0, base * (1 + tilt));
-    const signal = signalFromSentiment(sent.score, 0);
+    const sentTxt = snap ? `CoinGecko sentiment ${(sentiment * 100).toFixed(0)}/100` : 'sentiment n/a';
+    const momTxt = tk ? `24h ${change24h >= 0 ? '+' : ''}${change24h.toFixed(1)}%` : 'momentum n/a';
     const rationale =
-      signal === 'BUY'
-        ? `AI BUY — sentiment ${sent.label} (${sent.score.toFixed(2)}), whales accumulating.`
-        : signal === 'SELL'
-        ? `Reduced from base — sentiment ${sent.label}, whales distributing.`
-        : `Neutral tilt — sentiment ${sent.label}, holding base allocation.`;
+      tilt > 0.05
+        ? `Overweight — ${sentTxt}, ${momTxt}.`
+        : tilt < -0.05
+        ? `Underweight — ${sentTxt}, ${momTxt}.`
+        : `Base weight — neutral real-time signals (${sentTxt}, ${momTxt}).`;
     return { symbol: u.symbol, weight: adjusted, rationale };
   });
   const sum = raw.reduce((s, r) => s + r.weight, 0) || 1;
@@ -77,11 +143,12 @@ export async function buildAdvisor(accountId: string, profile: RiskProfile = 'BA
     rationale: r.rationale,
   })).filter((r) => r.weight > 0.01);
 
-  // Build rebalance actions vs current positions.
+  // Build rebalance actions vs current positions using LIVE Binance prices.
   const currentValueBySymbol: Record<string, number> = {};
   let netWorth = acc.cashUsd;
   for (const p of acc.positions) {
-    const v = p.amount * 1000; // pseudo price proxy (server doesn't hit Binance here)
+    const px = tickers.get(p.symbol)?.price ?? 0;
+    const v = p.amount * px;
     currentValueBySymbol[p.symbol] = v;
     netWorth += v;
   }
@@ -95,6 +162,14 @@ export async function buildAdvisor(accountId: string, profile: RiskProfile = 'BA
       : `${t.symbol}: SELL -$${Math.abs(delta).toFixed(0)} to trim`;
   });
 
+  const sources: AdvisorSources = {
+    sentiment: cgOk ? 'coingecko' : 'unavailable',
+    momentum: pxOk ? 'binance' : 'unavailable',
+    fearGreed: fgReal ? 'alternative.me' : 'synthetic',
+    prices: pxOk ? 'binance' : 'unavailable',
+  };
+  const degraded = !cgOk || !pxOk || !fgReal;
+
   return {
     riskProfile: profile,
     targetAllocation,
@@ -102,10 +177,14 @@ export async function buildAdvisor(accountId: string, profile: RiskProfile = 'BA
     expectedReturnPct: EXPECTED_RETURN[profile],
     volatilityPct: VOL[profile],
     rebalanceActions: actions,
+    sources,
+    degraded,
     narrative:
-      `For a ${profile.toLowerCase()} investor, the AI advisor tilts the portfolio using ` +
-      `live alternative-data signals — Fear & Greed ${fg.value} (${fg.classification}), social sentiment, and on-chain whale flow. ` +
-      `Expected 12-month return ~${EXPECTED_RETURN[profile]}% with ~${VOL[profile]}% volatility. ` +
-      `Cash buffer ${(cashBuffer * 100).toFixed(0)}% kept for dip-buy opportunities.`,
+      `For a ${profile.toLowerCase()} investor, the AI advisor tilts the portfolio using live signals — ` +
+      `Fear & Greed ${fg.value} (${fg.classification}${fgReal ? '' : ', synthetic fallback'}), ` +
+      `${cgOk ? 'CoinGecko community sentiment' : 'sentiment unavailable'}, and ` +
+      `${pxOk ? '24h price momentum from Binance' : 'momentum unavailable'}. ` +
+      `Expected ~${EXPECTED_RETURN[profile]}% return / ~${VOL[profile]}% volatility are ${profile.toLowerCase()} ` +
+      `model assumptions, not live-derived. Cash buffer ${(cashBuffer * 100).toFixed(0)}% kept for dip-buys.`,
   };
 }

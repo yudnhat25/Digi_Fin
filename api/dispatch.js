@@ -4666,17 +4666,45 @@ var init_fraud = __esm({
 });
 
 // api/_lib/ai/advisor.ts
+async function fetchTickers(symbols) {
+  const map = /* @__PURE__ */ new Map();
+  if (!symbols.length) return map;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4500);
+    const param = encodeURIComponent(JSON.stringify(symbols));
+    const res = await fetch(`${BINANCE2}/ticker/24hr?symbols=${param}`, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!res.ok) throw new Error(`http ${res.status}`);
+    const arr = await res.json();
+    for (const d of arr) {
+      map.set(d.symbol, { price: Number(d.lastPrice), change24h: Number(d.priceChangePercent) });
+    }
+  } catch {
+  }
+  return map;
+}
 async function buildAdvisor(accountId, profile = "BALANCED") {
   const acc = getAccount(accountId);
-  const fg = await getFearGreed();
+  const [fg, cg] = await Promise.all([getFearGreed(), loadCoinGecko()]);
+  const universeSymbols = UNIVERSE.map((u) => u.symbol);
+  const heldSymbols = acc.positions.map((p) => p.symbol);
+  const tickers = await fetchTickers(Array.from(/* @__PURE__ */ new Set([...universeSymbols, ...heldSymbols])));
+  const cgOk = cg.size > 0;
+  const pxOk = tickers.size > 0;
+  const fgReal = fg.source === "alternative.me";
   const raw2 = UNIVERSE.map((u) => {
-    const sent = getSentiment(u.symbol);
-    const whale = getWhaleFlow(u.symbol);
-    const tilt = sent.score * 0.35 + (whale.netFlow24hUsd > 0 ? 0.15 : -0.1) + (fg.value > 60 ? -0.05 : fg.value < 40 ? 0.07 : 0);
+    const snap = cg.get(u.symbol);
+    const tk = tickers.get(u.symbol);
+    const sentiment = snap ? snap.sentiment : 0;
+    const change24h = tk ? tk.change24h : 0;
+    const momentum = Math.max(-1, Math.min(1, change24h / 20));
+    const tilt = sentiment * 0.35 + momentum * 0.15 + (fg.value > 60 ? -0.05 : fg.value < 40 ? 0.07 : 0);
     const base = u.defaultWeight[profile];
     const adjusted = Math.max(0, base * (1 + tilt));
-    const signal = signalFromSentiment(sent.score, 0);
-    const rationale = signal === "BUY" ? `AI BUY \u2014 sentiment ${sent.label} (${sent.score.toFixed(2)}), whales accumulating.` : signal === "SELL" ? `Reduced from base \u2014 sentiment ${sent.label}, whales distributing.` : `Neutral tilt \u2014 sentiment ${sent.label}, holding base allocation.`;
+    const sentTxt = snap ? `CoinGecko sentiment ${(sentiment * 100).toFixed(0)}/100` : "sentiment n/a";
+    const momTxt = tk ? `24h ${change24h >= 0 ? "+" : ""}${change24h.toFixed(1)}%` : "momentum n/a";
+    const rationale = tilt > 0.05 ? `Overweight \u2014 ${sentTxt}, ${momTxt}.` : tilt < -0.05 ? `Underweight \u2014 ${sentTxt}, ${momTxt}.` : `Base weight \u2014 neutral real-time signals (${sentTxt}, ${momTxt}).`;
     return { symbol: u.symbol, weight: adjusted, rationale };
   });
   const sum = raw2.reduce((s, r) => s + r.weight, 0) || 1;
@@ -4690,7 +4718,8 @@ async function buildAdvisor(accountId, profile = "BALANCED") {
   const currentValueBySymbol = {};
   let netWorth = acc.cashUsd;
   for (const p of acc.positions) {
-    const v = p.amount * 1e3;
+    const px = tickers.get(p.symbol)?.price ?? 0;
+    const v = p.amount * px;
     currentValueBySymbol[p.symbol] = v;
     netWorth += v;
   }
@@ -4701,6 +4730,13 @@ async function buildAdvisor(accountId, profile = "BALANCED") {
     if (Math.abs(delta) < 50) return `${t.symbol}: hold (within band)`;
     return delta > 0 ? `${t.symbol}: BUY +$${delta.toFixed(0)} to reach target weight ${(t.weight * 100).toFixed(1)}%` : `${t.symbol}: SELL -$${Math.abs(delta).toFixed(0)} to trim`;
   });
+  const sources = {
+    sentiment: cgOk ? "coingecko" : "unavailable",
+    momentum: pxOk ? "binance" : "unavailable",
+    fearGreed: fgReal ? "alternative.me" : "synthetic",
+    prices: pxOk ? "binance" : "unavailable"
+  };
+  const degraded = !cgOk || !pxOk || !fgReal;
   return {
     riskProfile: profile,
     targetAllocation,
@@ -4708,10 +4744,12 @@ async function buildAdvisor(accountId, profile = "BALANCED") {
     expectedReturnPct: EXPECTED_RETURN[profile],
     volatilityPct: VOL[profile],
     rebalanceActions: actions,
-    narrative: `For a ${profile.toLowerCase()} investor, the AI advisor tilts the portfolio using live alternative-data signals \u2014 Fear & Greed ${fg.value} (${fg.classification}), social sentiment, and on-chain whale flow. Expected 12-month return ~${EXPECTED_RETURN[profile]}% with ~${VOL[profile]}% volatility. Cash buffer ${(cashBuffer * 100).toFixed(0)}% kept for dip-buy opportunities.`
+    sources,
+    degraded,
+    narrative: `For a ${profile.toLowerCase()} investor, the AI advisor tilts the portfolio using live signals \u2014 Fear & Greed ${fg.value} (${fg.classification}${fgReal ? "" : ", synthetic fallback"}), ${cgOk ? "CoinGecko community sentiment" : "sentiment unavailable"}, and ${pxOk ? "24h price momentum from Binance" : "momentum unavailable"}. Expected ~${EXPECTED_RETURN[profile]}% return / ~${VOL[profile]}% volatility are ${profile.toLowerCase()} model assumptions, not live-derived. Cash buffer ${(cashBuffer * 100).toFixed(0)}% kept for dip-buys.`
   };
 }
-var UNIVERSE, EXPECTED_RETURN, VOL, CASH_BUFFER;
+var UNIVERSE, EXPECTED_RETURN, VOL, CASH_BUFFER, BINANCE2;
 var init_advisor = __esm({
   "api/_lib/ai/advisor.ts"() {
     init_state();
@@ -4744,6 +4782,7 @@ var init_advisor = __esm({
       GROWTH: 0.05,
       AGGRESSIVE: 0.02
     };
+    BINANCE2 = "https://api.binance.com/api/v3";
   }
 });
 
@@ -5054,14 +5093,14 @@ var init_ai = __esm({
 // api/_lib/routes/accounts.ts
 async function priceFor(symbol) {
   try {
-    const r = await fetch(`${BINANCE2}/ticker/price?symbol=${symbol}`);
+    const r = await fetch(`${BINANCE3}/ticker/price?symbol=${symbol}`);
     const j = await r.json();
     return j.price ? Number(j.price) : 0;
   } catch {
     return 0;
   }
 }
-var accountsRouter, BINANCE2;
+var accountsRouter, BINANCE3;
 var init_accounts = __esm({
   "api/_lib/routes/accounts.ts"() {
     init_dist();
@@ -5069,7 +5108,7 @@ var init_accounts = __esm({
     init_fx();
     init_fraud();
     accountsRouter = new Hono2();
-    BINANCE2 = "https://api.binance.com/api/v3";
+    BINANCE3 = "https://api.binance.com/api/v3";
     accountsRouter.get("/:accountId/balance", async (c) => {
       const acc = getAccount(c.req.param("accountId"));
       const positions = await Promise.all(
@@ -5231,14 +5270,14 @@ function syncAccountFromSnapshot(accountId, snapshot) {
 }
 async function priceFor2(symbol) {
   try {
-    const r = await fetch(`${BINANCE3}/ticker/price?symbol=${symbol}`);
+    const r = await fetch(`${BINANCE4}/ticker/price?symbol=${symbol}`);
     const j = await r.json();
     return j.price ? Number(j.price) : 0;
   } catch {
     return 0;
   }
 }
-var agentRouter, BINANCE3;
+var agentRouter, BINANCE4;
 var init_agent = __esm({
   "api/_lib/routes/agent.ts"() {
     init_dist();
@@ -5248,7 +5287,7 @@ var init_agent = __esm({
     init_advisor();
     init_fraud();
     agentRouter = new Hono2();
-    BINANCE3 = "https://api.binance.com/api/v3";
+    BINANCE4 = "https://api.binance.com/api/v3";
     agentRouter.post("/execute", async (c) => {
       const body = await c.req.json().catch(() => ({}));
       const tool = body.tool || "";

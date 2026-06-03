@@ -14,6 +14,22 @@ const PROFILES: { key: Profile; label: string; desc: string; color: string }[] =
 
 const COLOR_PALETTE = ['#10b981', '#3b82f6', '#a855f7', '#f59e0b', '#f43f5e', '#06b6d4', '#ec4899', '#84cc16'];
 
+const SourceBadge: React.FC<{ label: string; value: string }> = ({ label, value }) => {
+  const live = value !== 'unavailable' && value !== 'synthetic';
+  return (
+    <span
+      className={`inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border ${
+        live
+          ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+          : 'bg-amber-500/10 text-amber-300 border-amber-500/30'
+      }`}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full ${live ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+      {label}: {live ? value : 'DEMO'}
+    </span>
+  );
+};
+
 const AIAdvisorPage: React.FC<{ user: UserState }> = ({ user }) => {
   const { format } = useCurrency();
   const [profile, setProfile] = useState<Profile>('BALANCED');
@@ -38,8 +54,9 @@ const AIAdvisorPage: React.FC<{ user: UserState }> = ({ user }) => {
         </div>
         <h1 className="text-3xl md:text-4xl font-black tracking-tighter mb-2">Smart Allocation Studio</h1>
         <p className="text-slate-400 text-sm max-w-3xl">
-          The AI advisor reads social sentiment + on-chain whale flow + market mood, then tilts a target allocation
-          against your risk profile. Every recommendation is sourced from the custom OpenAPI <code className="text-fuchsia-300">/api/v1/ai/advisor</code> endpoint.
+          The AI advisor reads <strong className="text-slate-200">live</strong> signals — CoinGecko community sentiment, 24h price
+          momentum from Binance, and the Alternative.me Fear &amp; Greed index — then tilts a target allocation against your risk
+          profile. Every recommendation is sourced from the custom OpenAPI <code className="text-fuchsia-300">/api/v1/ai/advisor</code> endpoint.
         </p>
       </div>
 
@@ -86,6 +103,14 @@ const AIAdvisorPage: React.FC<{ user: UserState }> = ({ user }) => {
             <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6">
               <p className="text-[10px] font-black uppercase tracking-widest text-fuchsia-300 mb-2">AI Narrative</p>
               <p className="text-sm text-slate-200 leading-relaxed">{advisor.narrative}</p>
+              {advisor.sources && (
+                <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-white/[0.06]">
+                  <SourceBadge label="Sentiment" value={advisor.sources.sentiment} />
+                  <SourceBadge label="Momentum" value={advisor.sources.momentum} />
+                  <SourceBadge label="Fear &amp; Greed" value={advisor.sources.fearGreed} />
+                  <SourceBadge label="Prices" value={advisor.sources.prices} />
+                </div>
+              )}
             </div>
             <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6">
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-3">Holdings &amp; Rationale</p>
