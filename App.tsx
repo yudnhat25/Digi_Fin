@@ -32,7 +32,7 @@ import { computeRoundEndsAt, computeNextRoundStartsAt } from './services/arena';
 
 import { auth, db } from './firebaseConfig';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { ref, set, get, update } from 'firebase/database';
+import { ref, set, get, update, onValue } from 'firebase/database';
 import { captureReferralFromUrl, referralCodeForUid, registerReferralCode } from './services/referral';
 
 const App: React.FC = () => {
@@ -93,6 +93,27 @@ const App: React.FC = () => {
 
   // Capture a ?ref=CODE from the landing URL before any signup happens.
   useEffect(() => { captureReferralFromUrl(); }, []);
+
+  // Live-sync the referral counters from Firebase so rewards credited by a
+  // referee (who writes to OUR node) reflect instantly — no reload needed.
+  // Only the referral fields are merged, never the local trading state.
+  useEffect(() => {
+    const uid = auth.currentUser?.uid;
+    if (!uid || !currentUser) return;
+    const unsub = onValue(ref(db, `users/${uid}`), (snap) => {
+      const v = snap.val();
+      if (!v) return;
+      setCurrentUser((u) => {
+        if (!u) return u;
+        const count = typeof v.referralCount === 'number' ? v.referralCount : u.referralCount;
+        const earn = typeof v.referralEarnings === 'number' ? v.referralEarnings : u.referralEarnings;
+        const claimed = typeof v.referralClaimed === 'number' ? v.referralClaimed : u.referralClaimed;
+        if (count === u.referralCount && earn === u.referralEarnings && claimed === u.referralClaimed) return u;
+        return { ...u, referralCount: count, referralEarnings: earn, referralClaimed: claimed };
+      });
+    });
+    return () => unsub();
+  }, [currentUser?.accountId]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {

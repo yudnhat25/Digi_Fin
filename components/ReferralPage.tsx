@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UserState } from '../types';
-import { referralLink, getReferralList, ReferralRecord, REFERRAL_SIGNUP_REWARD_USD } from '../services/referral';
+import { referralLink, subscribeReferralList, ReferralRecord, REFERRAL_SIGNUP_REWARD_USD } from '../services/referral';
 import { auth } from '../firebaseConfig';
 
 interface ReferralPageProps {
@@ -26,14 +26,14 @@ const ReferralPage: React.FC<ReferralPageProps> = ({ user, onClaim }) => {
   const [referrals, setReferrals] = useState<ReferralRecord[]>([]);
   const [claiming, setClaiming] = useState(false);
 
-  // Load the real list of people who signed up via this user's code.
+  // Live-subscribe to the real list of people who signed up via this user's
+  // code — updates instantly on every new referral, no reload needed.
   useEffect(() => {
-    let alive = true;
     const uid = auth.currentUser?.uid;
     if (!uid) return;
-    getReferralList(uid).then((list) => { if (alive) setReferrals(list); }).catch(() => {});
-    return () => { alive = false; };
-  }, [user.referralCount]);
+    const unsub = subscribeReferralList(uid, setReferrals);
+    return () => unsub();
+  }, []);
 
   // Stable ref code (stored at signup); fall back to a deterministic one.
   const refCode = user.referralCode || `CW-${user.accountId.split('@')[0].toUpperCase().substring(0, 6)}-${user.accountId.length.toString(36).toUpperCase()}`;

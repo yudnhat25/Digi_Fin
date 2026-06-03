@@ -15,7 +15,7 @@
  * a production system would do the credit in a trusted backend / Cloud Function.
  */
 import { db } from '../firebaseConfig';
-import { ref, get, set, runTransaction } from 'firebase/database';
+import { ref, get, set, runTransaction, onValue } from 'firebase/database';
 
 const PENDING_KEY = 'coinwise_pending_ref';
 
@@ -106,6 +106,34 @@ export async function creditReferrer(
   } catch {
     return null;
   }
+}
+
+/**
+ * Live subscription to the referrer's list — fires immediately and again on
+ * every new referred signup, so the UI updates without a reload. Returns an
+ * unsubscribe function.
+ */
+export function subscribeReferralList(
+  referrerUid: string,
+  cb: (list: ReferralRecord[]) => void,
+): () => void {
+  const r = ref(db, `referrals/${referrerUid}`);
+  return onValue(
+    r,
+    (snap) => {
+      const val = (snap.val() || {}) as Record<string, { name?: string; joinedAt?: number; rewardUsd?: number }>;
+      const list = Object.entries(val)
+        .map(([uid, rec]) => ({
+          uid,
+          name: rec?.name || 'New user',
+          joinedAt: Number(rec?.joinedAt) || 0,
+          rewardUsd: Number(rec?.rewardUsd) || 0,
+        }))
+        .sort((a, b) => b.joinedAt - a.joinedAt);
+      cb(list);
+    },
+    () => cb([]),
+  );
 }
 
 /** Real list of people who signed up via this user's code, newest first. */
