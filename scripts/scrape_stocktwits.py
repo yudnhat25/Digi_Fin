@@ -21,7 +21,7 @@ Usage:  python scripts/scrape_stocktwits.py [pages_per_symbol] [delay_seconds]
 import json, os, sys, time, html, urllib.request, urllib.error
 from collections import Counter
 
-OUT = 'data/stocktwits_corpus.json'
+OUT = 'data/sources/stocktwits_corpus.json'
 
 # Broad crypto coverage -> more volume + label balance. `.X` is StockTwits' crypto suffix.
 SYMBOLS = [

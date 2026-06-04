@@ -21,8 +21,9 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { analyzeText } from '../api/_lib/ai/nlp/vader';
 
-const DATA = join(dirname(dirname(fileURLToPath(import.meta.url))), 'data');
-const load = (n: string) => JSON.parse(readFileSync(join(DATA, n), 'utf-8'));
+// Raw crawls + the intermediate relabeled corpus all live under data/sources/.
+const SRC = join(dirname(dirname(fileURLToPath(import.meta.url))), 'data', 'sources');
+const load = (n: string) => JSON.parse(readFileSync(join(SRC, n), 'utf-8'));
 
 // High-confidence thresholds: only commit a label when VADER is sure.
 const POS_T = 0.45;   // compound >= +0.45  → positive
@@ -86,7 +87,7 @@ add(load('scraped_raw_corpus.json'), 'hn-vader');
 
 const by: Record<string, number> = { positive: 0, negative: 0, neutral: 0 };
 for (const r of out) by[r.label]++;
-writeFileSync(join(DATA, 'relabeled_corpus.json'), JSON.stringify(out), 'utf-8');
+writeFileSync(join(SRC, 'relabeled_corpus.json'), JSON.stringify(out), 'utf-8');
 console.log(`[relabel] wrote relabeled_corpus.json: ${out.length} rows`, by);
 
 // ── self-test: VADER's own calls on the hard cases the model must get right ──

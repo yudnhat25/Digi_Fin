@@ -67,22 +67,13 @@ def tokenize(text):
     bi = [u[i] + ' ' + u[i + 1] for i in range(len(u) - 1)]
     return u + bi
 
-# ── Load dataset ──
-rows = json.load(open(os.path.join(DATA, 'sentiment_dataset.json'), encoding='utf-8'))
-texts = [r['text'] for r in rows]
-labels = [r['label'] for r in rows]
-
-# Test/train split is OWNED by build_dataset.py: every row flagged test_ok=True
-# is the held-out honest test (hand-labeled gold), everything else is train.
-# (Do NOT re-split here — that previously shrank the test to ~13 rows and leaked
-# most of the gold test back into training.)
-test_idx = [i for i, r in enumerate(rows) if r.get('test_ok')]
-train_idx = [i for i, r in enumerate(rows) if not r.get('test_ok')]
-
-X_train_txt = [texts[i] for i in train_idx]
-y_train = [labels[i] for i in train_idx]
-X_test_txt = [texts[i] for i in test_idx]
-y_test = [labels[i] for i in test_idx]
+# ── Load dataset: two self-contained files (split owned by build_dataset.py) ──
+train_rows = json.load(open(os.path.join(DATA, 'sentiment_train.json'), encoding='utf-8'))
+test_rows = json.load(open(os.path.join(DATA, 'sentiment_test.json'), encoding='utf-8'))
+X_train_txt = [r['text'] for r in train_rows]
+y_train = [r['label'] for r in train_rows]
+X_test_txt = [r['text'] for r in test_rows]
+y_test = [r['label'] for r in test_rows]
 print(f"[train] train={len(y_train)} test={len(y_test)} (real held-out)")
 print(f"[train] train classes: {dict(Counter(y_train))}")
 print(f"[train] test  classes: {dict(Counter(y_test))}")

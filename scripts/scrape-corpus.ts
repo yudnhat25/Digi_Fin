@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');
-const OUT = resolve(root, 'data/scraped_raw_corpus.json');
+const OUT = resolve(root, 'data/sources/scraped_raw_corpus.json');
 
 const USER_AGENT = 'CoinWiseAI/1.0 (crypto sentiment research)';
 

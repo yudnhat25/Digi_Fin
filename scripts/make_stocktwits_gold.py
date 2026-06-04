@@ -17,7 +17,7 @@ import json, re, random, os
 from collections import Counter
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA = os.path.join(ROOT, 'data')
+DATA = os.path.join(ROOT, 'data', 'sources')
 
 
 def clean(t):

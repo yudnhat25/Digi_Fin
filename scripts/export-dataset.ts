@@ -12,7 +12,7 @@ import { DATASET } from '../api/_lib/ai/nlp/training/dataset';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');
-const out = resolve(root, 'data/crypto_sentiment_dataset.json');
+const out = resolve(root, 'data/sources/crypto_sentiment_dataset.json');
 mkdirSync(dirname(out), { recursive: true });
 writeFileSync(out, JSON.stringify(DATASET, null, 2), 'utf-8');
 

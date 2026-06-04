@@ -165,23 +165,27 @@ Notebook **so sánh 4 mô hình** để phân loại văn bản crypto thành `p
 - **Port chính xác:** runtime TS là bộ chấm log-linear tổng quát, nên trọng số `coef_→weight`, `intercept_→prior` của model thắng được tái hiện **đúng từng dự đoán** (đã verify numpy == sklearn trước khi xuất). Cả 2 biến thể NB cũng port chuẩn qua `feature_log_prob_`/`class_log_prior_` (dấu complement đã nằm sẵn trong `feature_log_prob_`).
 - **Chọn theo test thật, probe làm sàn:** macro-F1 trên test **155 doc gán tay** (52 headline tin tức + **103 câu StockTwits thật**) là chính; bộ *hard probe* (ca lỗi screenshot) chỉ là **ngưỡng sàn** (phải đạt ≥8/12 mới đủ tư cách). Cách này chọn ra model tổng quát hoá tốt trên **text trader thật**, không phải model chỉ giỏi headline.
 
-### 5.2 Dữ liệu — text THẬT tự gán nhãn lại ([`scripts/build_dataset.py`](../scripts/build_dataset.py) → [`data/sentiment_dataset.json`](../data/sentiment_dataset.json))
+### 5.2 Dữ liệu — text THẬT tự gán nhãn lại
 
-**~73% là text thật** (do người thật viết), cân bằng 3 lớp (~1,350 mỗi lớp):
+**Toàn bộ dataset chỉ gồm 2 file** (build từ các nguồn thô trong [`data/sources/`](../data/sources)):
+- [`data/sentiment_train.json`](../data/sentiment_train.json) — ~3,984 dòng train (cân bằng 1,328/lớp)
+- [`data/sentiment_test.json`](../data/sentiment_test.json) — 155 dòng test (nhãn người)
 
-| Nguồn | File | ~Số (train) | Cách gán nhãn |
+Mỗi dòng tự chứa `{text, label, source}`. **~73% train là text thật** (người thật viết):
+
+| Nguồn (`source`) | File gốc trong `data/sources/` | ~Số (train) | Cách gán nhãn |
 |---|---|---|---|
-| **Real — StockTwits** | [`stocktwits_corpus.json`](../data/stocktwits_corpus.json) (6,106 tin trader thật) | ~1,300 | **Tự gán lại bằng VADER của app** — VỨT tag Bullish/Bearish của người dùng (nhiễu) |
-| **Real — Hacker News** | [`scraped_raw_corpus.json`](../data/scraped_raw_corpus.json) (8,034 title thật) | ~1,650 | Tự gán lại bằng VADER, chỉ giữ nhãn **độ tin cậy cao** |
-| **Synthetic** | template trong build_dataset.py | ~960 | Sinh có nhãn đúng, **chủ đích phủ ca khó**: "buy" trong ngữ cảnh bearish, phủ định ("not bullish"), câu hỏi trung tính |
-| **Gold** | [`crypto_sentiment_dataset.json`](../data/crypto_sentiment_dataset.json) | ~140 (train) + 52 (test) | **Người gán nhãn tay** (3 lớp) |
+| `stocktwits-vader` | `stocktwits_corpus.json` (6,106 tin trader thật) | ~1,300 | **Tự gán lại bằng VADER của app** — VỨT tag Bullish/Bearish của người dùng (nhiễu) |
+| `hn-vader` | `scraped_raw_corpus.json` (8,034 title HN thật) | ~1,650 | Tự gán lại bằng VADER, chỉ giữ nhãn **độ tin cậy cao** |
+| `synth` | template trong build_dataset.py | ~960 | Sinh có nhãn đúng, **chủ đích phủ ca khó**: "buy" trong ngữ cảnh bearish, phủ định ("not bullish"), câu hỏi trung tính |
+| `gold` | `crypto_sentiment_dataset.json` | ~140 | **Người gán nhãn tay** (headline tin tức) |
 
-Quy trình: `npm run scrape:stocktwits` (crawl) → `npm run train:nlp` (relabel + build + train, deterministic seed 42).
+Quy trình: `npm run scrape:stocktwits` (crawl) → `npm run train:nlp` (relabel → build 2 file → train, deterministic seed 42).
 
 **Vì sao tự gán nhãn lại thay vì dùng tag StockTwits?** Tag của người đăng phản ánh **vị thế đang ôm**, không phải nghĩa câu — vd *"Not bullish?"* gắn nhãn *Bullish*, *"$DOGE.X ?"* gắn *Bullish*. Train trên tag đó **đo được làm model tệ đi** (macro-F1 tụt còn ~0.54). Nên ta giữ **text thật** nhưng gán nhãn mới bằng [`vader.ts`](../api/_lib/ai/nlp/vader.ts), chỉ lấy phán quyết chắc chắn (bỏ vùng giữa mơ hồ) — xem [`scripts/relabel-corpus.ts`](../scripts/relabel-corpus.ts).
 
 **Luật đánh giá trung thực (rất quan trọng):**
-- **Test set = 155 câu nhãn NGƯỜI** (không bao giờ là nhãn VADER/synth) — gồm 52 headline tin tức ([`crypto_sentiment_dataset.json`](../data/crypto_sentiment_dataset.json)) + **103 câu StockTwits thật gán tay** ([`stocktwits_gold.json`](../data/stocktwits_gold.json), sinh bởi [`make_stocktwits_gold.py`](../scripts/make_stocktwits_gold.py) — đọc từng câu rồi gán, **không** dùng tag tác giả).
+- **Test set = 155 câu nhãn NGƯỜI** (không bao giờ là nhãn VADER/synth) — gồm 52 headline tin tức (`sources/crypto_sentiment_dataset.json`) + **103 câu StockTwits thật gán tay** (`sources/stocktwits_gold.json`, sinh bởi [`make_stocktwits_gold.py`](../scripts/make_stocktwits_gold.py) — đọc từng câu rồi gán, **không** dùng tag tác giả).
 - 103 câu này **cùng-domain** với train (ngôn ngữ trader) nên đo đúng cái pipeline xử lý thật, và được **loại khỏi train** (kiểm tra leak = 0).
 - Mọi text re-label / synthetic **chỉ ở tập TRAIN**. → benchmark **không vòng tròn**: model chỉ ăn điểm nếu thực sự tổng quát hoá.
 

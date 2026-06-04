@@ -15,7 +15,10 @@ Design (per the "use real text, but re-label it ourselves" decision):
            75% -> train. This keeps the benchmark comparable and non-circular:
            the model can only beat VADER on gold by truly generalizing.
 
-Output: data/sentiment_dataset.json  — list of {text, label, source, test_ok}
+Inputs live in data/sources/ (raw crawls + intermediate). Output is just TWO
+self-contained files — the whole dataset:
+    data/sentiment_train.json  — list of {text, label, source}
+    data/sentiment_test.json   — list of {text, label, source}  (155 human-labeled)
 
 Run:  npx tsx scripts/relabel-corpus.ts   # refresh real labels first
       python scripts/build_dataset.py
@@ -25,9 +28,10 @@ from collections import Counter
 
 random.seed(42)
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA = os.path.join(ROOT, 'data')
+DATA = os.path.join(ROOT, 'data')          # final dataset lives here (train + test)
+SRC = os.path.join(DATA, 'sources')        # raw / intermediate inputs
 CLASSES = ('positive', 'negative', 'neutral')
-load = lambda n: json.load(open(os.path.join(DATA, n), encoding='utf-8'))
+load = lambda n: json.load(open(os.path.join(SRC, n), encoding='utf-8'))
 norm = lambda t: re.sub(r'\s+', ' ', t.lower()).strip()
 
 # Per-class caps so the (very neutral-heavy) real distribution stays balanced
@@ -154,20 +158,23 @@ for c in CLASSES:
     rows = train_by[c][:]; random.shuffle(rows)
     train.extend(rows[:target])
 
-for r in gold_test:
-    r['test_ok'] = True
-out_rows = train + gold_test
-random.shuffle(out_rows)
+# Write TWO self-contained files: the whole dataset is just these two.
+def slim(rows):
+    out = [{'text': r['text'], 'label': r['label'], 'source': r['source']} for r in rows]
+    random.shuffle(out)
+    return out
 
-with open(os.path.join(DATA, 'sentiment_dataset.json'), 'w', encoding='utf-8') as f:
-    json.dump(out_rows, f, ensure_ascii=False)
+train = slim(train)
+test = slim(gold_test)
+with open(os.path.join(DATA, 'sentiment_train.json'), 'w', encoding='utf-8') as f:
+    json.dump(train, f, ensure_ascii=False)
+with open(os.path.join(DATA, 'sentiment_test.json'), 'w', encoding='utf-8') as f:
+    json.dump(test, f, ensure_ascii=False)
 
-tr = [r for r in out_rows if not r['test_ok']]
-print(f"[build] total rows  : {len(out_rows)}")
-print(f"[build] train       : {len(tr)} (balanced/class={target})")
-print(f"[build] train source: {dict(Counter(r['source'] for r in tr))}")
-print(f"[build] train class : {dict(Counter(r['label'] for r in tr))}")
-real_n = sum(r['source'] in ('stocktwits-vader', 'hn-vader') for r in tr)
-print(f"[build] real text   : {real_n} ({100*real_n/len(tr):.0f}%)  synth: {sum(r['source']=='synth' for r in tr)}  gold: {sum(r['source']=='gold' for r in tr)}")
-print(f"[build] test total  : {len(gold_test)} {dict(Counter(r['label'] for r in gold_test))}")
-print(f"[build] test source : {dict(Counter(r['source'] for r in gold_test))}")
+real_n = sum(r['source'] in ('stocktwits-vader', 'hn-vader') for r in train)
+print(f"[build] -> data/sentiment_train.json : {len(train)} rows (balanced/class={target})")
+print(f"[build]    train class  : {dict(Counter(r['label'] for r in train))}")
+print(f"[build]    train source : {dict(Counter(r['source'] for r in train))}")
+print(f"[build]    real text    : {real_n} ({100*real_n/len(train):.0f}%)  synth: {sum(r['source']=='synth' for r in train)}  gold: {sum(r['source']=='gold' for r in train)}")
+print(f"[build] -> data/sentiment_test.json  : {len(test)} rows {dict(Counter(r['label'] for r in test))}")
+print(f"[build]    test source  : {dict(Counter(r['source'] for r in test))}")

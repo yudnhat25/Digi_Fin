@@ -29,8 +29,8 @@ import { analyzeText } from '../api/_lib/ai/nlp/vader';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');
-const RAW_PATH = resolve(root, 'data/scraped_raw_corpus.json');
-const OUT = resolve(root, 'data/silver_labeled_corpus.json');
+const RAW_PATH = resolve(root, 'data/sources/scraped_raw_corpus.json');
+const OUT = resolve(root, 'data/sources/silver_labeled_corpus.json');
 
 if (!existsSync(RAW_PATH)) {
   console.error(`[label] missing ${RAW_PATH}. Run \`npm run scrape:corpus\` first.`);
