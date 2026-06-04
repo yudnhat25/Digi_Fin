@@ -145,7 +145,7 @@ const CommunityPulse: React.FC<Props> = ({ userState, marketData, symbol }) => {
       let insightLine = '';
       if (insight) {
         insightLine = `Alt-data ${base}: sentiment ${insight.sentiment?.label ?? 'n/a'} (${insight.sentiment?.score ?? '?'}), ` +
-          `whale net flow 24h ${insight.whale?.netFlow24hUsd ?? '?'} USD, Fear & Greed ${insight.fearGreed?.value ?? '?'} (${insight.fearGreed?.classification ?? '?'}), signal ${insight.signal ?? '?'}.`;
+          `Fear & Greed ${insight.fearGreed?.value ?? '?'} (${insight.fearGreed?.classification ?? '?'}), signal ${insight.signal ?? '?'}.`;
       }
       const q = (question || '').trim();
       const prompt =

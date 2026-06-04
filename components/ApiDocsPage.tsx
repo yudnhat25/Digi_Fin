@@ -7,7 +7,6 @@ const ENDPOINTS = [
   { method: 'POST', path: '/api/v1/fx/convert', tag: 'FX' },
   { method: 'GET', path: '/api/v1/market/prices', tag: 'Market' },
   { method: 'GET', path: '/api/v1/market/{symbol}/sentiment', tag: 'Alt Data' },
-  { method: 'GET', path: '/api/v1/market/{symbol}/whale-flow', tag: 'Alt Data' },
   { method: 'GET', path: '/api/v1/market/fear-greed', tag: 'Alt Data' },
   { method: 'GET', path: '/api/v1/market/social-pulse', tag: 'Alt Data' },
   { method: 'POST', path: '/api/v1/ai/fraud-check', tag: 'AI' },

@@ -93,7 +93,6 @@ POST   /api/v1/fx/convert            # body {amount, from, to}
 
 GET    /api/v1/market/prices         # proxy Binance + thêm price-in-VND
 GET    /api/v1/market/{symbol}/sentiment
-GET    /api/v1/market/{symbol}/whale-flow
 GET    /api/v1/market/fear-greed
 
 POST   /api/v1/ai/fraud-check        # {transaction} → risk score

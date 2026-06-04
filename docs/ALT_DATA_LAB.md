@@ -69,7 +69,7 @@ Trang hiển thị một dải "Live data sources" ở đầu, lấy từ `GET /
 | **alternative.me Fear & Greed** | [`sources/fearGreed.ts`](../api/_lib/ai/sources/fearGreed.ts) | Chỉ số tâm lý toàn thị trường crypto 0–100 | Một tín hiệu trong fusion + trang Social Pulse | ✅ Thật, miễn phí |
 | **CoinGecko** | [`sources/coingecko.ts`](../api/_lib/ai/sources/coingecko.ts) | % vote up/down cộng đồng, điểm dev/community | Một tín hiệu trong fusion | ✅ Thật, miễn phí |
 
-> **Điểm trung thực quan trọng:** dự án **không giả vờ** mọi thứ đều real-time. Khi một nguồn fail (ví dụ Reddit 403), pipeline **không sập** — nó ghi nhận stage đó là `failed`/`partial`, **phân bổ lại trọng số** cho các nguồn còn sống (xem mục 4d), và stamp trạng thái lên UI. Whale-flow trong các trang khác được gắn nhãn `synthetic/DEMO` rõ ràng vì không có nguồn miễn phí.
+> **Điểm trung thực quan trọng:** dự án **không giả vờ** mọi thứ đều real-time. Khi một nguồn fail (ví dụ Reddit 403), pipeline **không sập** — nó ghi nhận stage đó là `failed`/`partial`, **phân bổ lại trọng số** cho các nguồn còn sống (xem mục 4d), và stamp trạng thái lên UI. Các tín hiệu không có nguồn miễn phí đáng tin cậy (ví dụ whale-flow on-chain) đã được **loại bỏ** thay vì giả lập, để mọi số liệu hiển thị đều có nguồn thật.
 
 Ví dụ thật khi chạy (đã test):
 ```

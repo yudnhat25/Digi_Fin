@@ -2549,26 +2549,6 @@ function getSentiment(symbol) {
     updatedAt: (/* @__PURE__ */ new Date()).toISOString()
   };
 }
-function getWhaleFlow(symbol) {
-  const base = symbol.replace("USDT", "").toUpperCase();
-  const rnd = pseudoRandom(hash(`whale-${base}`) + Math.floor(Date.now() / (10 * 60 * 1e3)));
-  const net = Math.round((rnd() - 0.45) * 48e5);
-  const buys = Math.floor(8 + rnd() * 24);
-  const sells = Math.floor(6 + rnd() * 22);
-  const series = Array.from({ length: 24 }, (_, i) => ({
-    t: new Date(Date.now() - (23 - i) * 60 * 60 * 1e3).toISOString(),
-    netUsd: Math.round((rnd() - 0.5) * 12e5)
-  }));
-  return {
-    symbol,
-    netFlow24hUsd: net,
-    largeBuys: buys,
-    largeSells: sells,
-    biggestSingle: Math.round(rnd() * 35e5 + 5e5),
-    verdict: net > 1e6 ? "Smart-money is accumulating" : net < -1e6 ? "Smart-money is distributing" : "Neutral whale flow \u2014 wait for confirmation",
-    series
-  };
-}
 function getFearGreedSynthetic() {
   const rnd = pseudoRandom(Math.floor(Date.now() / (30 * 60 * 1e3)));
   const value = Math.round(20 + rnd() * 70);
@@ -2887,7 +2867,6 @@ var init_market = __esm({
       }
     });
     marketRouter.get("/:symbol/sentiment", (c) => c.json(getSentiment(c.req.param("symbol"))));
-    marketRouter.get("/:symbol/whale-flow", (c) => c.json(getWhaleFlow(c.req.param("symbol"))));
     marketRouter.get("/fear-greed", async (c) => c.json(await getFearGreed()));
     marketRouter.get("/social-pulse", async (c) => c.json(await getSocialPulse()));
     marketRouter.get("/news", async (c) => {
@@ -4925,7 +4904,6 @@ var init_ai = __esm({
       const sym = body.symbol.toUpperCase();
       const base = sym.replace(/USDT?$/, "");
       const real = await withTimeout2(runAltDataPipeline(base), INSIGHT_PIPELINE_TIMEOUT_MS);
-      const whale = getWhaleFlow(sym);
       const fg = await getFearGreed();
       let sentiment;
       let signal;
@@ -4950,7 +4928,6 @@ var init_ai = __esm({
         sources = {
           sentimentScore: "real",
           sentimentMentions: mentions > 0 ? "real" : "synthetic",
-          whale: "synthetic",
           fearGreed: "hybrid",
           signal: "real",
           confidence: "real"
@@ -4959,13 +4936,12 @@ var init_ai = __esm({
       } else {
         const synth = getSentiment(sym);
         sentiment = synth;
-        const blended = signalFromSentiment(synth.score, whale.netFlow24hUsd > 0 ? 5 : -5);
+        const blended = signalFromSentiment(synth.score, 0);
         signal = blended === "BUY" && synth.score > 0.5 ? "STRONG_BUY" : blended === "SELL" && synth.score < -0.5 ? "STRONG_SELL" : blended;
         confidence = Number(Math.min(0.6, 0.4 + Math.abs(synth.score) * 0.2).toFixed(3));
         sources = {
           sentimentScore: "synthetic",
           sentimentMentions: "synthetic",
-          whale: "synthetic",
           fearGreed: "hybrid",
           signal: "synthetic",
           confidence: "synthetic"
@@ -4978,7 +4954,6 @@ var init_ai = __esm({
         signal,
         confidence,
         sentiment,
-        whale,
         fearGreed: fg,
         narrative,
         sources,
@@ -5330,7 +5305,6 @@ var init_agent = __esm({
             const sym = String(args.symbol).toUpperCase();
             return c.json({
               sentiment: getSentiment(sym),
-              whale: getWhaleFlow(sym),
               fearGreed: await getFearGreed()
             });
           }

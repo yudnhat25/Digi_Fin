@@ -14,7 +14,7 @@ Built for the *Advanced Fintech Synthesis – AI Integration & API Refinement* a
 
 CoinWise AI is a paper-trading + financial-intelligence platform that combines three things which traditional global APIs (Stripe, Plaid) can't deliver in Vietnam:
 
-1. **AI-driven Alternative Data** — social sentiment, on-chain whale flow, fear & greed → fed into the AI Portfolio Advisor and Fraud Detection.
+1. **AI-driven Alternative Data** — social sentiment, social pulse, fear & greed → fed into the AI Portfolio Advisor and Fraud Detection.
 2. **A proprietary OpenAPI server** — first-class **VND localization**, custom AI analytics endpoints, and an agentic tool-dispatcher (see `server/openapi.yaml`).
 3. **An agentic chatbot** — Gemini function-calling that actually *does* things: pulls signals, quotes trades, deposits VND — all through the custom OpenAPI server.
 
@@ -66,7 +66,7 @@ React (Vite) ─► CoinWise OpenAPI server (Hono, port 3001) ─► Binance / G
 
 | Tab | What it shows |
 |---|---|
-| **Terminal** | Live candlestick chart (lightweight-charts) + AI Insight card combining sentiment + whale flow + fear & greed |
+| **Terminal** | Live candlestick chart (lightweight-charts) + AI Insight card combining sentiment + fear & greed |
 | **Markets** | Enriched market list with AI signals + VND prices |
 | **Arena** | Trading competition with realtime leaderboard (Firebase) |
 | **Social Pulse** | AI alt-data leaderboard, fear & greed dial, mood history |

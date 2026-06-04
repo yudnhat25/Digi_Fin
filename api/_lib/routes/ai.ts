@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { checkFraudWithRealAltData } from '../ai/fraud';
 import { buildAdvisor, RiskProfile } from '../ai/advisor';
-import { getSentiment, getWhaleFlow, getFearGreed, signalFromSentiment } from '../ai/altdata';
+import { getSentiment, getFearGreed, signalFromSentiment } from '../ai/altdata';
 import { runAltDataPipeline } from '../ai/pipeline';
 import { classify as classifyNb, getModelInfo } from '../ai/nlp/classifier';
 import { analyzeText } from '../ai/nlp/vader';
@@ -58,9 +58,6 @@ aiRouter.post('/insight', async (c) => {
   // alternative.me Fear & Greed. Bounded at 9s so the card never hangs the UI.
   const real = await withTimeout(runAltDataPipeline(base), INSIGHT_PIPELINE_TIMEOUT_MS);
 
-  // Whale flow has no free real source in this codebase — keep synthetic but
-  // label it so the UI can stamp DEMO badge on it.
-  const whale = getWhaleFlow(sym);
   const fg = await getFearGreed();
 
   let sentiment;
@@ -69,7 +66,6 @@ aiRouter.post('/insight', async (c) => {
   let sources: {
     sentimentScore: 'real' | 'synthetic';
     sentimentMentions: 'real' | 'synthetic';
-    whale: 'synthetic';
     fearGreed: 'hybrid';
     signal: 'real' | 'synthetic';
     confidence: 'real' | 'synthetic';
@@ -94,7 +90,6 @@ aiRouter.post('/insight', async (c) => {
     sources = {
       sentimentScore: 'real',
       sentimentMentions: mentions > 0 ? 'real' : 'synthetic',
-      whale: 'synthetic',
       fearGreed: 'hybrid',
       signal: 'real',
       confidence: 'real',
@@ -105,7 +100,7 @@ aiRouter.post('/insight', async (c) => {
     // a clearly-capped confidence so the UI doesn't oversell stale data.
     const synth = getSentiment(sym);
     sentiment = synth;
-    const blended = signalFromSentiment(synth.score, whale.netFlow24hUsd > 0 ? 5 : -5);
+    const blended = signalFromSentiment(synth.score, 0);
     signal =
       blended === 'BUY' && synth.score > 0.5 ? 'STRONG_BUY' :
       blended === 'SELL' && synth.score < -0.5 ? 'STRONG_SELL' :
@@ -114,7 +109,6 @@ aiRouter.post('/insight', async (c) => {
     sources = {
       sentimentScore: 'synthetic',
       sentimentMentions: 'synthetic',
-      whale: 'synthetic',
       fearGreed: 'hybrid',
       signal: 'synthetic',
       confidence: 'synthetic',
@@ -134,7 +128,6 @@ aiRouter.post('/insight', async (c) => {
     signal,
     confidence,
     sentiment,
-    whale,
     fearGreed: fg,
     narrative,
     sources,

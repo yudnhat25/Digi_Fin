@@ -30,7 +30,7 @@ const TOOLS: FunctionDeclaration[] = [
   },
   {
     name: 'getInsight',
-    description: 'Get composite AI insight for a coin combining sentiment, on-chain whale flow and fear & greed.',
+    description: 'Get composite AI insight for a coin combining sentiment and fear & greed.',
     parameters: {
       type: Type.OBJECT,
       properties: { symbol: { type: Type.STRING } },
@@ -159,7 +159,7 @@ You have function-calling tools that hit the CoinWise OpenAPI server (internal b
 
 **COMMUNITY PULSE:**
 - When the user asks "what does the community think", crowd sentiment, or for advice on a coin → call getCommunityPulse for the community mood (0-100 score + bullish/bearish share).
-- To judge the "market state" for good advice: COMBINE getCommunityPulse with getInsight (sentiment + whale flow + Fear & Greed). If the crowd is bullish BUT whale flow is negative or F&G is in Extreme Greed → WARN about FOMO risk; don't just follow the crowd.
+- To judge the "market state" for good advice: COMBINE getCommunityPulse with getInsight (sentiment + Fear & Greed). If the crowd is bullish BUT sentiment is weak or F&G is in Extreme Greed → WARN about FOMO risk; don't just follow the crowd.
 - If pulse.total = 0 (no comments yet), say there isn't enough community data and rely on alt-data instead.
 
 **GENERAL RULES:**

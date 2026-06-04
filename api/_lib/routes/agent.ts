@@ -9,7 +9,7 @@
 import { Hono } from 'hono';
 import { getAccount } from '../state';
 import { usdToVnd, vndToUsd, convert, getRates } from '../fx';
-import { getSentiment, getWhaleFlow, getFearGreed } from '../ai/altdata';
+import { getSentiment, getFearGreed } from '../ai/altdata';
 import { buildAdvisor, RiskProfile } from '../ai/advisor';
 import { checkFraudWithRealAltData } from '../ai/fraud';
 
@@ -93,7 +93,6 @@ agentRouter.post('/execute', async (c) => {
         const sym = String(args.symbol).toUpperCase();
         return c.json({
           sentiment: getSentiment(sym),
-          whale: getWhaleFlow(sym),
           fearGreed: await getFearGreed(),
         });
       }

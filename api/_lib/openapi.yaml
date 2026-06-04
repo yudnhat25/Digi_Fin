@@ -6,8 +6,8 @@ info:
     Proprietary OpenAPI server for **CoinWise AI**, the AI-driven crypto paper-trading
     & financial-intelligence platform. This server resolves the localization gaps left
     by Stripe / Plaid (which lack first-class **VND** support) and exposes endpoints
-    that serve the AI **Alternative Data** analytics layer (sentiment, on-chain whale
-    flow, fear & greed, fraud detection, AI advisor).
+    that serve the AI **Alternative Data** analytics layer (sentiment, social pulse,
+    fear & greed, fraud detection, AI advisor).
 
     Built for the Advanced Fintech Synthesis assignment — UII incubator demo.
   contact:
@@ -106,22 +106,6 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SentimentSnapshot' }
-
-  /api/v1/market/{symbol}/whale-flow:
-    get:
-      tags: [AI / Alternative Data]
-      summary: On-chain whale flow (large wallet net-buy / sell)
-      parameters:
-        - in: path
-          name: symbol
-          required: true
-          schema: { type: string }
-      responses:
-        '200':
-          description: Whale flow series
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/WhaleFlow' }
 
   /api/v1/market/fear-greed:
     get:
@@ -473,22 +457,6 @@ components:
           items: { type: string }
         aiSummary: { type: string }
         updatedAt: { type: string, format: date-time }
-    WhaleFlow:
-      type: object
-      properties:
-        symbol: { type: string }
-        netFlow24hUsd: { type: number }
-        largeBuys: { type: integer }
-        largeSells: { type: integer }
-        biggestSingle: { type: number }
-        verdict: { type: string }
-        series:
-          type: array
-          items:
-            type: object
-            properties:
-              t: { type: string, format: date-time }
-              netUsd: { type: number }
     FearGreed:
       type: object
       properties:
@@ -565,7 +533,6 @@ components:
         signal: { type: string, enum: [STRONG_BUY, BUY, HOLD, SELL, STRONG_SELL] }
         confidence: { type: number }
         sentiment: { $ref: '#/components/schemas/SentimentSnapshot' }
-        whale: { $ref: '#/components/schemas/WhaleFlow' }
         fearGreed: { $ref: '#/components/schemas/FearGreed' }
         narrative: { type: string }
     AccountBalance:

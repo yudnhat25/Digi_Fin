@@ -4,7 +4,7 @@
  * Users post short takes ("nhận định") on a coin. Each post is scored by the
  * trained Naive-Bayes sentiment model (server-side, free, no Gemini quota),
  * and the per-coin aggregate becomes a "Community Sentiment" signal that the
- * agentic chatbot can read and blend with the alt-data stack (whale flow,
+ * agentic chatbot can read and blend with the alt-data stack (sentiment,
  * Fear & Greed) when giving advice.
  *
  * Storage: Firebase Realtime Database (same instance the Arena leaderboard

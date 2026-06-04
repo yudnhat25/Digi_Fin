@@ -3,7 +3,6 @@
  *
  * The data sources demonstrated here:
  *   • Social sentiment (Twitter/Reddit/News blend)        — score ∈ [-1, 1]
- *   • On-chain whale flow (net large-wallet movement)
  *   • Fear & Greed market mood index
  *   • Aggregated social pulse leaderboard
  *
@@ -80,42 +79,6 @@ export function getSentiment(symbol: string): SentimentSnapshot {
       `Sentiment is ${label.toLowerCase()} (${(score * 100).toFixed(0)}/100). ` +
       `Key drivers: ${themes.join(', ')}.`,
     updatedAt: new Date().toISOString(),
-  };
-}
-
-export interface WhaleFlow {
-  symbol: string;
-  netFlow24hUsd: number;
-  largeBuys: number;
-  largeSells: number;
-  biggestSingle: number;
-  verdict: string;
-  series: { t: string; netUsd: number }[];
-}
-
-export function getWhaleFlow(symbol: string): WhaleFlow {
-  const base = symbol.replace('USDT', '').toUpperCase();
-  const rnd = pseudoRandom(hash(`whale-${base}`) + Math.floor(Date.now() / (10 * 60 * 1000)));
-  const net = Math.round((rnd() - 0.45) * 4_800_000);
-  const buys = Math.floor(8 + rnd() * 24);
-  const sells = Math.floor(6 + rnd() * 22);
-  const series = Array.from({ length: 24 }, (_, i) => ({
-    t: new Date(Date.now() - (23 - i) * 60 * 60 * 1000).toISOString(),
-    netUsd: Math.round((rnd() - 0.5) * 1_200_000),
-  }));
-  return {
-    symbol,
-    netFlow24hUsd: net,
-    largeBuys: buys,
-    largeSells: sells,
-    biggestSingle: Math.round(rnd() * 3_500_000 + 500_000),
-    verdict:
-      net > 1_000_000
-        ? 'Smart-money is accumulating'
-        : net < -1_000_000
-        ? 'Smart-money is distributing'
-        : 'Neutral whale flow — wait for confirmation',
-    series,
   };
 }
 

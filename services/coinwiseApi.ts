@@ -66,12 +66,6 @@ export interface SentimentSnapshot {
   sources: { twitter: number; reddit: number; news: number };
   topThemes: string[]; aiSummary: string; updatedAt: string;
 }
-export interface WhaleFlow {
-  symbol: string; netFlow24hUsd: number;
-  largeBuys: number; largeSells: number; biggestSingle: number;
-  verdict: string;
-  series: { t: string; netUsd: number }[];
-}
 export interface FearGreed {
   value: number; classification: string; delta24h: number;
   history: { date: string; value: number }[];
@@ -112,7 +106,6 @@ export type InsightSource = 'real' | 'hybrid' | 'synthetic';
 export interface CoinInsightSources {
   sentimentScore: InsightSource;
   sentimentMentions: InsightSource;
-  whale: InsightSource;
   fearGreed: InsightSource;
   signal: InsightSource;
   confidence: InsightSource;
@@ -122,7 +115,6 @@ export interface CoinInsight {
   signal: 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL' | 'NEUTRAL';
   confidence: number;
   sentiment: SentimentSnapshot;
-  whale: WhaleFlow;
   fearGreed: FearGreed;
   narrative: string;
   // Per-field provenance so the UI can stamp LIVE / HYBRID / DEMO badges on
@@ -137,7 +129,6 @@ export interface CoinInsight {
 }
 
 export const apiSentiment = (symbol: string) => call<SentimentSnapshot>(`/api/v1/market/${symbol}/sentiment`);
-export const apiWhaleFlow = (symbol: string) => call<WhaleFlow>(`/api/v1/market/${symbol}/whale-flow`);
 export const apiFearGreed = () => call<FearGreed>('/api/v1/market/fear-greed');
 export const apiSocialPulse = () => call<SocialPulseRow[]>('/api/v1/market/social-pulse');
 export const apiCoinInsight = (symbol: string) =>

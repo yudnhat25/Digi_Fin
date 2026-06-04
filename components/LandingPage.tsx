@@ -19,7 +19,7 @@ const PILLARS = [
   {
     accent: 'emerald',
     title: 'AI alternative data',
-    blurb: 'Social sentiment, whale flows, news impact, distilled into one signal score per coin.',
+    blurb: 'Social sentiment, news impact and market mood, distilled into one signal score per coin.',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
         <path strokeLinecap="round" strokeLinejoin="round" d="M3 12h2l2-9 4 18 3-12 2 6h5" />
@@ -173,7 +173,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
 
           <p className="mt-7 mx-auto max-w-[640px] text-center text-slate-400 text-[16.5px] leading-relaxed">
             Paper trade Bitcoin, Ethereum and 180+ pairs with $1M virtual capital. CoinWise AI analyses
-            social sentiment, whale movements and on-chain data to coach you. Built for Vietnamese
+            social sentiment, news and market mood to coach you. Built for Vietnamese
             traders, supports VND natively.
           </p>
 
@@ -253,7 +253,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
                   <span className="text-slate-300 font-semibold text-[13px] tabular-nums">87%</span>
                 </div>
                 <p className="mt-2 text-[12px] text-slate-400 leading-relaxed">
-                  RSI oversold + whale accumulation
+                  RSI oversold + bullish sentiment
                 </p>
                 <button
                   onClick={() => setAuthOpen(true)}

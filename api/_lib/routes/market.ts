@@ -2,7 +2,6 @@ import { Hono } from 'hono';
 import { usdToVnd } from '../fx';
 import {
   getSentiment,
-  getWhaleFlow,
   getFearGreed,
   getSocialPulse,
   signalFromSentiment,
@@ -48,8 +47,6 @@ marketRouter.get('/prices', async (c) => {
 });
 
 marketRouter.get('/:symbol/sentiment', (c) => c.json(getSentiment(c.req.param('symbol'))));
-
-marketRouter.get('/:symbol/whale-flow', (c) => c.json(getWhaleFlow(c.req.param('symbol'))));
 
 marketRouter.get('/fear-greed', async (c) => c.json(await getFearGreed()));
 
