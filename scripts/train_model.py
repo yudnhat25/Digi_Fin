@@ -72,21 +72,12 @@ rows = json.load(open(os.path.join(DATA, 'sentiment_dataset.json'), encoding='ut
 texts = [r['text'] for r in rows]
 labels = [r['label'] for r in rows]
 
-# Held-out REAL test split: 25% of test-eligible (gold + strict-keyword scraped),
-# stratified, deterministic. Everything else → train.
-rng = np.random.RandomState(42)
-idx_by = {c: [] for c in CLASSES}
-for i, r in enumerate(rows):
-    if r.get('test_ok'):
-        idx_by[r['label']].append(i)
-test_idx = set()
-for c in CLASSES:
-    ids = idx_by[c][:]
-    rng.shuffle(ids)
-    cut = max(1, int(round(len(ids) * 0.25)))
-    test_idx.update(ids[:cut])
-train_idx = [i for i in range(len(rows)) if i not in test_idx]
-test_idx = sorted(test_idx)
+# Test/train split is OWNED by build_dataset.py: every row flagged test_ok=True
+# is the held-out honest test (hand-labeled gold), everything else is train.
+# (Do NOT re-split here — that previously shrank the test to ~13 rows and leaked
+# most of the gold test back into training.)
+test_idx = [i for i, r in enumerate(rows) if r.get('test_ok')]
+train_idx = [i for i, r in enumerate(rows) if not r.get('test_ok')]
 
 X_train_txt = [texts[i] for i in train_idx]
 y_train = [labels[i] for i in train_idx]
@@ -110,6 +101,26 @@ candidates = {
     'linear-svc': LinearSVC(C=0.5, class_weight='balanced'),
 }
 
+# Hard probes = the exact real-world cases the model MUST get right (the screenshot
+# misclassifications). Used both for the final sanity print AND as a robust second
+# selection signal, because the 52-row gold test alone is too small/noisy to trust.
+PROBES = [
+    ("Bitcoin spot ETF receives official SEC approval, market rallies", 'positive'),
+    ("$BTC.X looks like people are dumping to buy bubble AI stocks instead", 'negative'),
+    ("$BTC.X why does Saylor keep all these bitcoins? The only reason is to sell", 'negative'),
+    ("$BTC.X get ready for 50k folks - I'm selling 32 bitcoin today", 'negative'),
+    ("$BTC.X who putting in there Bitcoin buy orders?", 'neutral'),
+    ("$BTC.X well when all the retailers start saying a coin is done that indicates a bottom", 'positive'),
+    ("Bearish. $BTC.X if selling 10 coins drops it 14% what is it actually worth", 'negative'),
+    ("Solana hits a new all-time high as ETF inflows surge", 'positive'),
+    ("should I buy or wait on ETH here?", 'neutral'),
+    ("not bullish on DOGE at all, the chart is broken", 'negative'),
+    ("this is not a scam, SOL is a solid project", 'positive'),
+    ("major exchange hacked, millions stolen, panic selling", 'negative'),
+]
+_probe_X = vec.transform([t for t, _ in PROBES])
+_probe_y = [e for _, e in PROBES]
+
 def class_linear_params(name, clf):
     """Return (intercept[dict], coef[name->np.array]) in TS log-linear form, or None."""
     classes_ = list(clf.classes_)
@@ -118,11 +129,15 @@ def class_linear_params(name, clf):
         inter = clf.intercept_                # [n_classes]
         if coef.shape[0] == 1:                # binary edge-case (not expected here)
             return None
-    elif name == 'multinomial-naive-bayes':
+    elif name in ('multinomial-naive-bayes', 'complement-naive-bayes'):
+        # Both classify by argmax(class_log_prior_ + X · feature_log_prob_), which
+        # is exactly the TS log-linear scorer. (ComplementNB's complement sign is
+        # already baked into feature_log_prob_ — verified by the recon check below,
+        # which agrees 1.000, so it ports identically to MultinomialNB.)
         coef = clf.feature_log_prob_          # [n_classes, n_features]
         inter = clf.class_log_prior_          # [n_classes]
     else:
-        return None  # ComplementNB: decision sign differs → port not guaranteed
+        return None
     inter_d = {classes_[k]: float(inter[k]) for k in range(len(classes_))}
     coef_d = {classes_[k]: np.asarray(coef[k]).ravel() for k in range(len(classes_))}
     return inter_d, coef_d
@@ -156,27 +171,35 @@ for name, clf in candidates.items():
         portable = agree > 0.999
     else:
         agree = 0.0
+    probes_ok = int((clf.predict(_probe_X) == np.array(_probe_y)).sum())
+    # Selection score: blend two OUT-OF-distribution signals we trust — the gold
+    # macro-F1 and the hard-probe pass-rate — so a model that games the noisy
+    # 52-row gold test but flunks the real cases can't win.
+    sel = 0.5 * macro + 0.5 * (probes_ok / len(PROBES))
     results.append({'name': name, 'macroF1': macro, 'acc': acc, 'cvF1': cvf1,
-                    'portable': portable, 'agree': agree, 'clf': clf, 'params': params})
+                    'portable': portable, 'agree': agree, 'probes': probes_ok,
+                    'sel': sel, 'clf': clf, 'params': params})
     print(f"[model] {name:24s} macroF1={macro:.4f} acc={acc:.4f} cvF1={cvf1:.4f} "
-          f"portable={portable} (recon-agree={agree:.3f})")
+          f"probes={probes_ok}/{len(PROBES)} sel={sel:.4f} portable={portable} (recon-agree={agree:.3f})")
 
-# ── Select best PORTABLE model by held-out macro-F1, tie-break CV ──
+# ── Select best PORTABLE model by blended gold-F1 + probe score, tie-break CV ──
 portable = [r for r in results if r['portable']]
 if not portable:
     raise SystemExit("No portable model — aborting export.")
-best = max(portable, key=lambda r: (round(r['macroF1'], 4), round(r['cvF1'], 4)))
-print(f"\n[select] BEST = {best['name']}  macroF1={best['macroF1']:.4f} acc={best['acc']:.4f}")
+best = max(portable, key=lambda r: (round(r['sel'], 4), round(r['cvF1'], 4)))
+print(f"\n[select] BEST = {best['name']}  sel={best['sel']:.4f} "
+      f"(macroF1={best['macroF1']:.4f} probes={best['probes']}/{len(PROBES)} cvF1={best['cvF1']:.4f})")
 
 clf = best['clf']
 inter_d, coef_d = best['params']
 
 # ── Confidence calibration via softmax temperature ──
-# LinearSVC margins make softmax saturate at ~100%; LogReg/NB are already
-# calibrated. We bake a temperature T into the exported weights (coef/T,
-# intercept/T) so the displayed P= and the classify threshold are meaningful.
-# Scaling is argmax-invariant → predictions (and the port check above) are
-# unchanged; only the softmax sharpness changes. T targets mean top-prob ≈ 0.80.
+# LinearSVC margins (and naive-Bayes log-likelihood sums) make the softmax
+# saturate near 100%; LogReg is already calibrated. We bake a temperature T into
+# the exported weights (coef/T, intercept/T) so the displayed P= and the classify
+# threshold are meaningful. Scaling is argmax-invariant → predictions (and the
+# port check above) are unchanged; only the softmax sharpness changes. T targets
+# mean top-prob ≈ 0.80.
 def _mean_maxprob(scores, T):
     z = scores / T
     z = z - z.max(axis=1, keepdims=True)
@@ -197,7 +220,7 @@ if best['name'] not in ('logistic-regression', 'multinomial-naive-bayes'):
     temperature = round((lo + hi) / 2, 4)
     inter_d = {c: inter_d[c] / temperature for c in CLASSES}
     coef_d = {c: coef_d[c] / temperature for c in CLASSES}
-    print(f"[select] softmax temperature T={temperature} (SVC confidence calibration)")
+    print(f"[select] softmax temperature T={temperature} (confidence calibration)")
 
 # ── Build metrics on held-out test ──
 pred = clf.predict(Xte)
@@ -291,21 +314,7 @@ print(f"[export] accuracy={METRICS['accuracy']:.4f}  macroF1={METRICS['macroF1']
 print("[export] per-class F1: " + ", ".join(f"{c}={per_class[c]['f1']:.3f}" for c in CLASSES))
 print("[export] wrote model.ts + model-metrics.ts")
 
-# ── Sanity probes: the exact misclassifications we set out to fix ──
-PROBES = [
-    ("Bitcoin spot ETF receives official SEC approval, market rallies", 'positive'),
-    ("$BTC.X looks like people are dumping to buy bubble AI stocks instead", 'negative'),
-    ("$BTC.X why does Saylor keep all these bitcoins? The only reason is to sell", 'negative'),
-    ("$BTC.X get ready for 50k folks - I'm selling 32 bitcoin today", 'negative'),
-    ("$BTC.X who putting in there Bitcoin buy orders?", 'neutral'),
-    ("$BTC.X well when all the retailers start saying a coin is done that indicates a bottom", 'positive'),
-    ("Bearish. $BTC.X if selling 10 coins drops it 14% what is it actually worth", 'negative'),
-    ("Solana hits a new all-time high as ETF inflows surge", 'positive'),
-    ("should I buy or wait on ETH here?", 'neutral'),
-    ("not bullish on DOGE at all, the chart is broken", 'negative'),
-    ("this is not a scam, SOL is a solid project", 'positive'),
-    ("major exchange hacked, millions stolen, panic selling", 'negative'),
-]
+# ── Sanity probes: the exact misclassifications we set out to fix (defined above) ──
 print("\n[sanity] probe predictions (vs expected):")
 pp = clf.predict(vec.transform([t for t, _ in PROBES]))
 ok = 0

@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
 """
-Build a ~5000-example labeled crypto-sentiment corpus for training the
-production classifier.
+Build the training corpus for the production sentiment classifier.
 
-Sources (combined, deduped, balanced):
-  1. GOLD   — data/crypto_sentiment_dataset.json (211 hand-labeled, 3 classes)
-  2. SILVER — data/silver_labeled_corpus.json     (500 VADER-labeled, pos/neg)
-  3. REAL   — data/scraped_raw_corpus.json         (8034 real HN titles) labeled
-              by a high-precision keyword heuristic (distant supervision)
-  4. SYNTH  — template-generated examples that deliberately cover the failure
-              modes we observed (the word "buy" in bearish/neutral context,
-              negations like "not bullish" / "not a scam", neutral questions),
-              so the model learns CONTEXT, not just keyword presence.
+Design (per the "use real text, but re-label it ourselves" decision):
+  REAL   — data/relabeled_corpus.json : real StockTwits + Hacker News text whose
+           labels were assigned FRESH by our own VADER engine (the noisy author
+           Bullish/Bearish self-tags are discarded). High-confidence calls only.
+  SYNTH  — a smaller set of engineered sentences that teach CONTEXT on the exact
+           failure modes (the word "buy" in a bearish/neutral context, negations
+           like "not bullish" / "not a scam", neutral questions). Not 100% real,
+           but kept deliberately to make the model understand, not memorize.
+  GOLD   — data/crypto_sentiment_dataset.json : 211 hand-labeled headlines.
+           Split 25% -> the honest TEST set (human labels, never VADER/synth),
+           75% -> train. This keeps the benchmark comparable and non-circular:
+           the model can only beat VADER on gold by truly generalizing.
 
-Output: data/sentiment_dataset.json  — list of {text, label, source}
-The held-out TEST split is drawn ONLY from real, reliably-labeled rows
-(gold + strict-keyword scraped) so reported metrics reflect real performance,
-never template-fitting. SYNTH rows are train-only.
+Output: data/sentiment_dataset.json  — list of {text, label, source, test_ok}
+
+Run:  npx tsx scripts/relabel-corpus.ts   # refresh real labels first
+      python scripts/build_dataset.py
 """
 import json, re, random, os
 from collections import Counter
@@ -24,126 +26,69 @@ from collections import Counter
 random.seed(42)
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data')
+CLASSES = ('positive', 'negative', 'neutral')
+load = lambda n: json.load(open(os.path.join(DATA, n), encoding='utf-8'))
+norm = lambda t: re.sub(r'\s+', ' ', t.lower()).strip()
 
-# ── High-precision sentiment keywords for distant supervision / test labels ──
-POS_KW = ['rally', 'rallies', 'surge', 'surges', 'soar', 'soars', 'all-time high',
-          'ath', 'bullish', 'breakout', 'adoption', 'approved', 'approval',
-          'partnership', 'record high', 'inflows', 'upgrade', 'soaring',
-          'pumps', 'green', 'recovers', 'rebound', 'milestone', 'institutional']
-NEG_KW = ['crash', 'crashes', 'hack', 'hacked', 'scam', 'rug', 'dump', 'dumps',
-          'plunge', 'plunges', 'lawsuit', 'crackdown', 'collapse', 'collapses',
-          'bearish', 'rekt', 'liquidation', 'liquidations', 'exploit', 'stolen',
-          'ban', 'banned', 'fraud', 'selloff', 'sell-off', 'tumble', 'tumbles',
-          'fear', 'phishing', 'breach', 'arrested', 'bankrupt', 'plummet']
+# Per-class caps so the (very neutral-heavy) real distribution stays balanced
+# and synth stays a minority "teaching" supplement rather than the bulk.
+REAL_CAP = 1400
+SYNTH_PER_CLASS = 400
 
-def kw_label(text):
-    """High-precision label or None when ambiguous."""
-    t = text.lower()
-    pos = any(k in t for k in POS_KW)
-    neg = any(k in t for k in NEG_KW)
-    if pos and not neg:
-        return 'positive'
-    if neg and not pos:
-        return 'negative'
-    return None  # ambiguous or no strong signal
+# ── REAL (VADER-relabeled StockTwits + HN) ───────────────────────────────────
+real_by = {c: [] for c in CLASSES}
+for r in load('relabeled_corpus.json'):
+    if r.get('label') in CLASSES and r.get('text'):
+        real_by[r['label']].append({'text': r['text'], 'label': r['label'], 'source': r.get('source', 'real')})
+for c in CLASSES:
+    random.shuffle(real_by[c])
+    real_by[c] = real_by[c][:REAL_CAP]
 
-def load_json(name):
-    p = os.path.join(DATA, name)
-    with open(p, encoding='utf-8') as f:
-        return json.load(f)
-
-# ── 1. GOLD ──
-gold = [{'text': d['text'], 'label': d['label'], 'source': 'gold'}
-        for d in load_json('crypto_sentiment_dataset.json')
-        if d.get('text') and d.get('label') in ('positive', 'negative', 'neutral')]
-
-# ── 2. SILVER ──
-silver = [{'text': d['text'], 'label': d['label'], 'source': 'silver'}
-          for d in load_json('silver_labeled_corpus.json')
-          if d.get('text') and d.get('label') in ('positive', 'negative', 'neutral')]
-
-# ── 3. REAL scraped → distant supervision ──
-scraped = load_json('scraped_raw_corpus.json')
-real_posneg, real_neutral = [], []
-for d in scraped:
-    txt = (d.get('text') or '').strip()
-    if len(txt) < 15 or len(txt) > 220:
-        continue
-    lab = kw_label(txt)
-    if lab in ('positive', 'negative'):
-        real_posneg.append({'text': txt, 'label': lab, 'source': 'scraped-kw'})
-    elif lab is None:
-        # No strong sentiment word → treat factual HN titles as neutral, but
-        # only "statement-like" ones (avoid questions which can be loaded).
-        if '?' not in txt:
-            real_neutral.append({'text': txt, 'label': 'neutral', 'source': 'scraped-neu'})
-
-random.shuffle(real_posneg)
-random.shuffle(real_neutral)
-real_neutral = real_neutral[:1400]   # cap neutral so it doesn't dominate
-
-# ── 4. SYNTH templates (train-only) — engineered to teach CONTEXT ──
+# ── SYNTH (engineered hard-cases, train-only) ────────────────────────────────
 COINS = ['BTC', 'Bitcoin', '$BTC', 'ETH', 'Ethereum', '$ETH', 'SOL', 'Solana',
          '$SOL', 'BNB', 'XRP', 'Ripple', 'ADA', 'Cardano', 'DOGE', 'AVAX',
          'LINK', 'crypto', 'the market', 'altcoins']
 OTHER = ['AI stocks', 'gold', 'tech stocks', 'other coins', 'memecoins', 'Nvidia']
-PCT = ['5', '8', '12', '15', '20', '30', '40']
 PRICE = ['50k', '60k', '3k', '200', '1.20', '0.45', '80k']
-
 POS_EVENT = ['ETF inflows hit a record', 'a major partnership was announced',
              'the network upgrade went live', 'institutional buying accelerates',
-             'spot ETF approval landed', 'adoption hit new highs',
-             'fees dropped sharply', 'a big exchange listing went live']
-POS_REASON = ['fundamentals are strong', 'volume is exploding',
-              'smart money is accumulating', 'the chart looks bullish',
-              'support held perfectly', 'momentum is building', 'we are so back']
+             'spot ETF approval landed', 'adoption hit new highs', 'fees dropped sharply']
+POS_REASON = ['fundamentals are strong', 'volume is exploding', 'smart money is accumulating',
+              'the chart looks bullish', 'support held perfectly', 'momentum is building']
 NEG_EVENT = ['a major exchange got hacked', 'regulators announced a crackdown',
-             'a stablecoin collapsed', 'the SEC filed a lawsuit',
-             'a whale dumped millions', 'liquidity dried up', 'a hack drained funds']
+             'a stablecoin collapsed', 'the SEC filed a lawsuit', 'a whale dumped millions',
+             'liquidity dried up', 'a hack drained funds']
 NEG_REASON = ['the trend is broken', 'support just failed', 'volume is dead',
-              'it looks like a bull trap', 'fundamentals are weak',
-              'smart money is leaving', 'the chart is ugly', 'this is over']
+              'it looks like a bull trap', 'fundamentals are weak', 'the chart is ugly']
 NEU_EVENT = ['a developer update was posted', 'the team shared a roadmap',
-             'a conference is happening', 'an AMA is scheduled',
-             'mainnet stats were published']
+             'a conference is happening', 'an AMA is scheduled', 'mainnet stats were published']
 
 def T_pos():
     c = random.choice(COINS)
     return random.choice([
         f"{c} surges to a new all-time high as {random.choice(POS_EVENT)}",
-        f"{c} rallies hard, up {random.choice(PCT)}% as {random.choice(POS_EVENT)}",
         f"bullish on {c}, {random.choice(POS_REASON)}",
         f"{c} breaking out, {random.choice(POS_REASON)}",
-        f"huge news for {c}: {random.choice(POS_EVENT)}, to the moon",
         f"accumulating {c} here, {random.choice(POS_REASON)}",
-        f"{c} looking strong, {random.choice(POS_REASON)}",
         f"buying the dip on {c}, {random.choice(POS_REASON)}",
-        f"this is not a scam, {c} is a solid project with real adoption",
-        f"long {c}, {random.choice(POS_REASON)}",
-        f"{c} pump incoming, {random.choice(POS_REASON)}",
-        f"loading up on {c}, {random.choice(POS_EVENT)}",
+        f"this is not a scam, {c} is a solid project with real adoption",  # negation->pos
         f"{c} is undervalued, great time to buy",
+        f"loading up on {c}, {random.choice(POS_EVENT)}",
+        f"long {c}, {random.choice(POS_REASON)}",
     ])
 
 def T_neg():
-    c = random.choice(COINS)
-    o = random.choice(OTHER)
+    c = random.choice(COINS); o = random.choice(OTHER)
     return random.choice([
-        f"{c} crashes {random.choice(PCT)}% as {random.choice(NEG_EVENT)}",
+        f"{c} crashes as {random.choice(NEG_EVENT)}",
         f"bearish on {c}, {random.choice(NEG_REASON)}",
-        f"{c} dumping hard, {random.choice(NEG_REASON)}",
         f"selling my {c}, {random.choice(NEG_REASON)}",
-        f"{c} is a scam, {random.choice(NEG_REASON)}",
-        f"{random.choice(NEG_EVENT)} hits {c}, panic selling everywhere",
-        f"everyone is dumping {c} to buy {o} instead",          # 'buy' but bearish
-        f"people are selling {c} to chase {o}",
-        f"not bullish on {c} at all, {random.choice(NEG_REASON)}",  # negation
+        f"everyone is dumping {c} to buy {o} instead",        # 'buy' but bearish
+        f"not bullish on {c} at all, {random.choice(NEG_REASON)}",  # negation->neg
         f"{c} getting rekt, {random.choice(NEG_REASON)}",
-        f"rug pull on {c}, investors wiped out",
-        f"{c} liquidations spike, longs blown out",
-        f"why is anyone still holding {c}, it is dead money",       # 'holding' + neg
-        f"avoid {c}, {random.choice(NEG_REASON)}",
+        f"why is anyone still holding {c}, it is dead money",
         f"dumping to buy {o} instead of {c}, weak hands shaken out",
+        f"rug pull on {c}, investors wiped out",
     ])
 
 def T_neu():
@@ -152,25 +97,18 @@ def T_neu():
         f"what do you all think about {c} here?",
         f"should I buy or wait on {c}?",                  # 'buy' but neutral question
         f"{c} trading around {random.choice(PRICE)} right now",
-        f"anyone have a price target for {c}?",
         f"{c} consolidating, waiting for a clear move",
         f"holding {c}, watching the key levels",
-        f"{c} volume is average today, nothing unusual",
         f"is {c} a buy or a sell here?",                  # 'buy'/'sell' but neutral
         f"{c} sideways, no clear direction yet",
-        f"thoughts on {c}? not sure where it goes",
-        f"{c} at {random.choice(PRICE)}, what is next",
         f"{c} news today: {random.choice(NEU_EVENT)}",
-        f"how does {c} staking work?",
         f"any update on the {c} roadmap?",
     ])
 
 synth = []
-PER_CLASS_SYNTH = 1500
 for gen, lab in ((T_pos, 'positive'), (T_neg, 'negative'), (T_neu, 'neutral')):
-    seen = set()
-    tries = 0
-    while len([s for s in synth if s['label'] == lab]) < PER_CLASS_SYNTH and tries < PER_CLASS_SYNTH * 6:
+    seen, tries = set(), 0
+    while len([s for s in synth if s['label'] == lab]) < SYNTH_PER_CLASS and tries < SYNTH_PER_CLASS * 8:
         tries += 1
         t = gen()
         if t in seen:
@@ -178,44 +116,50 @@ for gen, lab in ((T_pos, 'positive'), (T_neg, 'negative'), (T_neu, 'neutral')):
         seen.add(t)
         synth.append({'text': t, 'label': lab, 'source': 'synth'})
 
-# ── Assemble, dedupe, mark test eligibility ──
-def norm(t):
-    return re.sub(r'\s+', ' ', t.lower()).strip()
+# ── GOLD (human-labeled): 25% honest test, 75% train ─────────────────────────
+gold_by = {c: [] for c in CLASSES}
+for d in load('crypto_sentiment_dataset.json'):
+    if d.get('label') in CLASSES and d.get('text'):
+        gold_by[d['label']].append({'text': d['text'], 'label': d['label'], 'source': 'gold'})
+gold_train, gold_test = [], []
+for c in CLASSES:
+    rows = gold_by[c][:]; random.shuffle(rows)
+    k = max(8, round(len(rows) * 0.25))
+    for i, r in enumerate(rows):
+        (gold_test if i < k else gold_train).append(r)
 
-all_rows = gold + silver + real_posneg + real_neutral + synth
-seen_norm = set()
-deduped = []
-for r in all_rows:
+# ── Assemble, dedupe (test wins), balance train ──────────────────────────────
+test_keys = {norm(r['text']) for r in gold_test}
+pool = []
+seen = set(test_keys)
+for r in [x for c in CLASSES for x in real_by[c]] + synth + gold_train:
     n = norm(r['text'])
-    if n in seen_norm:
+    if n in seen:
         continue
-    seen_norm.add(n)
-    # test-eligible = GOLD only — hand-labeled, balanced across all 3 classes,
-    # the honest benchmark. scraped-kw is reliable but pos/neg-only and would
-    # skew the test, so it stays in TRAIN.
-    r['test_ok'] = r['source'] == 'gold'
-    deduped.append(r)
+    seen.add(n)
+    r['test_ok'] = False
+    pool.append(r)
 
-random.shuffle(deduped)
+train_by = {c: [r for r in pool if r['label'] == c] for c in CLASSES}
+target = min(1700, min(len(v) for v in train_by.values()))
+train = []
+for c in CLASSES:
+    rows = train_by[c][:]; random.shuffle(rows)
+    train.extend(rows[:target])
 
-# Balance classes by capping the majority (keep all minority).
-by_class = {'positive': [], 'negative': [], 'neutral': []}
-for r in deduped:
-    by_class[r['label']].append(r)
-target = min(1700, max(len(v) for v in by_class.values()))
-balanced = []
-for lab, rows in by_class.items():
-    # keep all test-eligible rows; fill remainder with the rest up to target
-    rows.sort(key=lambda r: (not r['test_ok']))  # test-eligible first
-    balanced.extend(rows[:target])
-random.shuffle(balanced)
+for r in gold_test:
+    r['test_ok'] = True
+out_rows = train + gold_test
+random.shuffle(out_rows)
 
-out = os.path.join(DATA, 'sentiment_dataset.json')
-with open(out, 'w', encoding='utf-8') as f:
-    json.dump(balanced, f, ensure_ascii=False)
+with open(os.path.join(DATA, 'sentiment_dataset.json'), 'w', encoding='utf-8') as f:
+    json.dump(out_rows, f, ensure_ascii=False)
 
-print(f"[build_dataset] total rows : {len(balanced)}")
-print(f"[build_dataset] by class   : {dict(Counter(r['label'] for r in balanced))}")
-print(f"[build_dataset] by source  : {dict(Counter(r['source'] for r in balanced))}")
-print(f"[build_dataset] test-eligible (real): {sum(r['test_ok'] for r in balanced)}")
-print(f"[build_dataset] written    : {out}")
+tr = [r for r in out_rows if not r['test_ok']]
+print(f"[build] total rows  : {len(out_rows)}")
+print(f"[build] train       : {len(tr)} (balanced/class={target})")
+print(f"[build] train source: {dict(Counter(r['source'] for r in tr))}")
+print(f"[build] train class : {dict(Counter(r['label'] for r in tr))}")
+real_n = sum(r['source'] in ('stocktwits-vader', 'hn-vader') for r in tr)
+print(f"[build] real text   : {real_n} ({100*real_n/len(tr):.0f}%)  synth: {sum(r['source']=='synth' for r in tr)}  gold: {sum(r['source']=='gold' for r in tr)}")
+print(f"[build] test (gold) : {len(gold_test)} {dict(Counter(r['label'] for r in gold_test))}")

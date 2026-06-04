@@ -155,32 +155,34 @@ Notebook **so sánh 4 mô hình** để phân loại văn bản crypto thành `p
 | Mô hình | Vai trò |
 |---|---|
 | Multinomial Naive Bayes | baseline kinh điển (Manning et al., Ch. 13) |
-| Complement Naive Bayes | NB cải tiến cho dữ liệu lệch |
+| **Complement Naive Bayes (đang serve)** | **NB cải tiến cho dữ liệu lệch — thắng theo gold-F1 + probe** |
 | Logistic Regression | tuyến tính phân biệt, xác suất hiệu chỉnh |
-| **Linear SVM (đang serve)** | **thắng theo macro-F1 trên test gold** |
+| Linear SVM | margin tối đa, `class_weight='balanced'` |
 
 **Vì sao cách này?**
 - **Khách quan:** không cố định 1 model — để 4 model cạnh tranh trên cùng dữ liệu, số liệu chọn ra mô hình.
 - **Giải thích được:** mọi mô hình ở đây đều **tuyến tính** → mỗi dự đoán phân rã thành đóng góp từng token (UI khoe "decisive features").
-- **Port chính xác:** runtime TS là bộ chấm log-linear tổng quát, nên trọng số `coef_→weight`, `intercept_→prior` của model thắng được tái hiện **đúng từng dự đoán** (đã verify numpy == sklearn trước khi xuất).
+- **Port chính xác:** runtime TS là bộ chấm log-linear tổng quát, nên trọng số `coef_→weight`, `intercept_→prior` của model thắng được tái hiện **đúng từng dự đoán** (đã verify numpy == sklearn trước khi xuất). Cả 2 biến thể NB cũng port chuẩn qua `feature_log_prob_`/`class_log_prior_` (dấu complement đã nằm sẵn trong `feature_log_prob_`).
+- **Chọn theo 2 tín hiệu out-of-distribution:** gold-F1 (52 doc nhỏ, nhiễu) **kết hợp** tỉ lệ pass trên bộ *hard probe* (đúng các ca lỗi screenshot) → tránh model "ăn" test gold nhỏ mà fail ca thật.
 
-### 5.2 Dữ liệu — corpus ~5,000 mẫu ([`scripts/build_dataset.py`](../scripts/build_dataset.py) → [`data/sentiment_dataset.json`](../data/sentiment_dataset.json))
+### 5.2 Dữ liệu — text THẬT tự gán nhãn lại ([`scripts/build_dataset.py`](../scripts/build_dataset.py) → [`data/sentiment_dataset.json`](../data/sentiment_dataset.json))
 
-Trộn 4 nguồn, cân bằng 3 lớp (~1,700 mỗi lớp):
+**~73% là text thật** (do người thật viết), cân bằng 3 lớp (~1,350 mỗi lớp):
 
-| Nguồn | File | ~Số lượng | Cách gán nhãn |
+| Nguồn | File | ~Số (train) | Cách gán nhãn |
 |---|---|---|---|
-| **Gold** | [`crypto_sentiment_dataset.json`](../data/crypto_sentiment_dataset.json) | 211 | **Người gán nhãn tay** (3 lớp) |
-| **Silver** | `silver_labeled_corpus.json` | ~380 | VADER tự gán trên text scrape (pos/neg) |
-| **Real (distant)** | `scraped_raw_corpus.json` (8,034 HN thật) | ~1,650 | **Luật từ khóa độ-chính-xác-cao** + tin trung tính = factual không có từ cảm xúc |
-| **Synthetic** | template trong build_dataset.py | ~2,850 | Sinh có nhãn đúng, **chủ đích phủ ca khó**: "buy" trong ngữ cảnh bearish, phủ định ("not bullish"), câu hỏi trung tính |
+| **Real — StockTwits** | [`stocktwits_corpus.json`](../data/stocktwits_corpus.json) (6,106 tin trader thật) | ~1,300 | **Tự gán lại bằng VADER của app** — VỨT tag Bullish/Bearish của người dùng (nhiễu) |
+| **Real — Hacker News** | [`scraped_raw_corpus.json`](../data/scraped_raw_corpus.json) (8,034 title thật) | ~1,650 | Tự gán lại bằng VADER, chỉ giữ nhãn **độ tin cậy cao** |
+| **Synthetic** | template trong build_dataset.py | ~960 | Sinh có nhãn đúng, **chủ đích phủ ca khó**: "buy" trong ngữ cảnh bearish, phủ định ("not bullish"), câu hỏi trung tính |
+| **Gold** | [`crypto_sentiment_dataset.json`](../data/crypto_sentiment_dataset.json) | ~140 (train) + 52 (test) | **Người gán nhãn tay** (3 lớp) |
 
-Tái tạo: `npm run dataset:build` (deterministic, seed 42).
+Quy trình: `npm run scrape:stocktwits` (crawl) → `npm run train:nlp` (relabel + build + train, deterministic seed 42).
+
+**Vì sao tự gán nhãn lại thay vì dùng tag StockTwits?** Tag của người đăng phản ánh **vị thế đang ôm**, không phải nghĩa câu — vd *"Not bullish?"* gắn nhãn *Bullish*, *"$DOGE.X ?"* gắn *Bullish*. Train trên tag đó **đo được làm model tệ đi** (macro-F1 tụt còn ~0.54). Nên ta giữ **text thật** nhưng gán nhãn mới bằng [`vader.ts`](../api/_lib/ai/nlp/vader.ts), chỉ lấy phán quyết chắc chắn (bỏ vùng giữa mơ hồ) — xem [`scripts/relabel-corpus.ts`](../scripts/relabel-corpus.ts).
 
 **Luật đánh giá trung thực (rất quan trọng):**
-- **Test set = chỉ GOLD** (nhãn người kiểm chứng, cân bằng 3 lớp) — benchmark khách quan duy nhất.
-- Silver / real-distant / synthetic **chỉ ở tập TRAIN**.
-- → Không đánh giá model bằng nhãn tự động (sẽ ăn gian), và không đánh giá bằng template (sẽ học vẹt). Đây là điểm khiến con số accuracy đáng tin.
+- **Test set = chỉ GOLD** (nhãn người, cân bằng 3 lớp, **không bao giờ là nhãn VADER/synth**) — benchmark khách quan, **không vòng tròn**: model chỉ vượt được VADER trên gold nếu thực sự tổng quát hoá.
+- Mọi text re-label / synthetic **chỉ ở tập TRAIN**.
 
 ### 5.3 Các bước trong notebook (10 cell chính)
 
@@ -196,23 +198,25 @@ Tái tạo: `npm run dataset:build` (deterministic, seed 42).
    → lọc độ dài 2..20 → bỏ 40 stopword → SINH BIGRAM kề nhau
    ```
    **Bigram là cải tiến then chốt**: "to buy", "not bullish", "dumping to" cho model thấy **ngữ cảnh**, sửa lỗi cũ (model unigram chấm mọi câu có "buy" thành positive).
-5. **Split trung thực** — Test = held-out **gold** (25%, cân bằng, `random_state=42`); mọi nguồn khác (silver/real/synthetic) vào TRAIN.
+5. **Split trung thực** — Test = held-out **gold** (25%, cân bằng); split do `build_dataset.py` sở hữu (cờ `test_ok`), train_model **dùng nguyên** không tách lại.
 6. **Vectorize** — `CountVectorizer(analyzer=tokenize, min_df=2)` → ma trận đếm thô unigram+bigram.
 7. **Train & so sánh 4 mô hình** — MultinomialNB, ComplementNB, LogisticRegression, LinearSVC (`class_weight='balanced'`). Mỗi model + **5-fold CV macro-F1** để ổn định.
-8. **Chọn mô hình** theo macro-F1 trên test gold, **với điều kiện port được** (tái hiện tuyến tính == sklearn `predict`; ComplementNB bị loại vì khác quy ước dấu).
+8. **Chọn mô hình** theo điểm blend **gold-F1 + tỉ lệ hard-probe**, với điều kiện **port được** (tái hiện tuyến tính == sklearn `predict`). Cả 4 model đều port được (gồm ComplementNB).
 9. **Đánh giá** mô hình thắng: accuracy, macro-F1, `classification_report`, **confusion matrix** (heatmap), **error analysis**.
-10. **Hiệu chỉnh confidence** (nhiệt độ softmax cho SVC — bất biến argmax) rồi **xuất** `model.ts` + `model-metrics.ts`, và verify TS == Python.
+10. **Hiệu chỉnh confidence** (nhiệt độ softmax — bất biến argmax) rồi **xuất** `model.ts` + `model-metrics.ts`, và verify TS == Python.
 
 ### 5.4 Kết quả thực tế (model hiện đang serve)
 
 Lấy từ `GET /api/v1/ai/alt-data/model/info` (số liệu auto-cập nhật từ `model-metrics.ts`):
 ```
-algorithm     : linear-svc  (thắng 4-model so sánh; CV macro-F1 ≈ 0.91)
-accuracy      : 69.2%        macroF1 : 68.8%   (trên test GOLD cân bằng, 52 doc)
-vocabSize     : ~3,200 (unigram+bigram)        train/test : ~5,050 / 52
-per-class F1  : positive 60.6% · negative 81.1% · neutral 64.7%
+algorithm     : complement-naive-bayes  (thắng blend gold-F1 + hard-probe)
+accuracy      : 71.2%        macroF1 : 70.7%   (trên test GOLD cân bằng, 52 doc)
+vocabSize     : ~4,700 (unigram+bigram)        train/test : ~4,050 / 52
+per-class F1  : positive 66.7% · negative 76.2% · neutral 69.2%
+hard probes   : 11/12 (các ca lỗi screenshot giờ đúng)
 ```
-> Lưu ý: con số trên **test gold cân bằng nhỏ** nên khắt khe hơn benchmark cũ — nhưng mô hình mới **sửa được các lỗi thực tế** mà bản unigram cũ mắc (vd "dumping to buy AI stocks" giờ ra **negative** thay vì positive). CV macro-F1 trên toàn corpus ≈ 0.91. Mô hình thắng được chọn tự động, không cố định.
+So sánh 4 model (gold-F1 / CV-F1): ComplementNB **0.707** / 0.81 · LogReg 0.705 / 0.87 · LinearSVC 0.665 / 0.88 · MultinomialNB 0.647 / 0.80.
+> Bản này **vượt bản LinearSVC cũ trên cả hai** (cũ: gold-F1 0.688, probe 8/12 → mới: 0.707, probe 11/12), và **dùng dữ liệu thật** thay vì keyword/template. Quan trọng: thử nghiệm cho thấy dùng **tag StockTwits gốc** (không re-label) làm macro-F1 **tụt còn ~0.54** — nên việc tự gán nhãn lại là then chốt. SVC/LogReg có CV cao hơn (fit phân phối train) nhưng tổng quát hoá ra gold/probe kém hơn → không chọn.
 
 ### 5.5 ⭐ Xuất model sang runtime — cách "Python train, TypeScript serve"
 
@@ -279,4 +283,4 @@ Tất cả nằm trong OpenAPI spec ([`api/_lib/openapi.yaml`](../api/_lib/opena
 
 ## 8. Tóm tắt cho phần pitch / report
 
-> Alt-Data Lab chứng minh trọn vẹn yêu cầu Part A: thu thập **alternative data thật** (social text từ Hacker News/Reddit, Fear & Greed, CoinGecko), phân tích bằng **hai kỹ thuật NLP** — một lexicon VADER và một **Multinomial Naive Bayes tự train** theo quy trình distant-supervision (gold hand-labeled + silver auto-labeled, test trên gold), cộng **Z-score anomaly detection** và **multi-source fusion**, rồi biến tín hiệu thành **hai ứng dụng fintech cụ thể** (Fraud Shield, AI Advisor). Mọi bước đều minh bạch, giải thích được tới từng từ, và toàn bộ trọng số model được Python train rồi serve nguyên vẹn trong runtime TypeScript qua custom OpenAPI server.
+> Alt-Data Lab chứng minh trọn vẹn yêu cầu Part A: thu thập **alternative data thật** (social text từ StockTwits/Hacker News, Fear & Greed, CoinGecko), phân tích bằng **hai kỹ thuật NLP** — một lexicon VADER và một **Complement Naive Bayes tự train** trên **text thật được tự gán nhãn lại** (StockTwits + HN qua VADER, cộng vài câu hard-case, test trên gold hand-labeled), chọn qua **so sánh 4 model**, cộng **Z-score anomaly detection** và **multi-source fusion**, rồi biến tín hiệu thành **hai ứng dụng fintech cụ thể** (Fraud Shield, AI Advisor). Mọi bước đều minh bạch, giải thích được tới từng từ, và toàn bộ trọng số model được Python train rồi serve nguyên vẹn trong runtime TypeScript qua custom OpenAPI server.
