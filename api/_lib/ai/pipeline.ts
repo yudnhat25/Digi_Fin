@@ -272,6 +272,12 @@ export async function runAltDataPipeline(symbol: string): Promise<RealSentimentR
   // "prefer recent, keep volume". A 6-month-old post counts ½, a year ¼, etc.
   const RECENCY_HALF_LIFE_DAYS = 180;
   const nowSec = Date.now() / 1000;
+  // Hard recency floor: drop any post older than 1 year so the sentiment
+  // reflects the current market cycle, not stale headlines. Applied to BOTH
+  // sources uniformly (HN is also filtered at the API; this also covers Reddit).
+  const freshCutoff = nowSec - 365 * 24 * 3600;
+  reddit.posts = reddit.posts.filter((p) => p.createdUtc >= freshCutoff);
+  news.posts = news.posts.filter((n) => n.createdUtc >= freshCutoff);
   const recencyDecay = (createdUtcSec: number) =>
     Math.pow(0.5, Math.max(0, (nowSec - createdUtcSec) / 86400) / RECENCY_HALF_LIFE_DAYS);
   const recencyOf = (ageMin: number) =>

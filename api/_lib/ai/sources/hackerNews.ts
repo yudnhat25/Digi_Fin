@@ -59,6 +59,11 @@ async function fetchSearch(query: string, page = 0): Promise<HnHit[]> {
   url.searchParams.set('tags', 'story');
   url.searchParams.set('hitsPerPage', '50');
   url.searchParams.set('page', String(page));
+  // Hard recency floor: only stories from the last 365 days. The relevance
+  // search otherwise returns all-time-popular crypto stories (often 10+ years
+  // old) that don't reflect the current market cycle.
+  const cutoff = Math.floor(Date.now() / 1000) - 365 * 24 * 3600;
+  url.searchParams.set('numericFilters', `created_at_i>${cutoff}`);
   // Surface fresh material first by also pulling the by-date endpoint when paged.
   const finalUrl = page === 0
     ? url.toString()

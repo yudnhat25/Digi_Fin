@@ -3106,6 +3106,8 @@ async function fetchSearch(query, page = 0) {
   url.searchParams.set("tags", "story");
   url.searchParams.set("hitsPerPage", "50");
   url.searchParams.set("page", String(page));
+  const cutoff = Math.floor(Date.now() / 1e3) - 365 * 24 * 3600;
+  url.searchParams.set("numericFilters", `created_at_i>${cutoff}`);
   const finalUrl = page === 0 ? url.toString() : url.toString().replace("/v1/search?", "/v1/search_by_date?");
   const res = await fetch(finalUrl, {
     headers: { "User-Agent": USER_AGENT2, "Accept": "application/json" }
@@ -4315,6 +4317,9 @@ async function runAltDataPipeline(symbol) {
   const t2a = Date.now();
   const RECENCY_HALF_LIFE_DAYS = 180;
   const nowSec = Date.now() / 1e3;
+  const freshCutoff = nowSec - 365 * 24 * 3600;
+  reddit.posts = reddit.posts.filter((p) => p.createdUtc >= freshCutoff);
+  news.posts = news.posts.filter((n) => n.createdUtc >= freshCutoff);
   const recencyDecay = (createdUtcSec) => Math.pow(0.5, Math.max(0, (nowSec - createdUtcSec) / 86400) / RECENCY_HALF_LIFE_DAYS);
   const recencyOf = (ageMin) => Math.pow(0.5, Math.max(0, ageMin / 1440) / RECENCY_HALF_LIFE_DAYS);
   const docs = [
