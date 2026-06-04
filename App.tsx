@@ -24,9 +24,10 @@ import LiveCandlestickChart from './components/LiveCandlestickChart';
 import OrderBookPanel from './components/OrderBookPanel';
 import TransactionSuccessModal, { TxnSuccessData } from './components/TransactionSuccessModal';
 import StripePayoutModal from './components/StripePayoutModal';
+import FraudGateModal from './components/FraudGateModal';
 import { UserState, MarketData, LeaderboardEntry, SubscriptionTier, StakePosition } from './types';
 import { fetchMarketPrices } from './services/api';
-import { apiBankReferralClaim } from './services/coinwiseApi';
+import { apiBankReferralClaim, apiFraudCheck, FraudCheck } from './services/coinwiseApi';
 import { CRYPTO_SYMBOLS, BASELINE_NET_WORTH, EARN_PRODUCTS, ENTRY_FEE } from './constants';
 import { computeRoundEndsAt, computeNextRoundStartsAt } from './services/arena';
 
@@ -46,6 +47,10 @@ const App: React.FC = () => {
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [txnSuccess, setTxnSuccess] = useState<TxnSuccessData | null>(null);
   const [referralClaimOpen, setReferralClaimOpen] = useState(false);
+  const [fraudGate, setFraudGate] = useState<{
+    check: FraudCheck;
+    pending: { type: 'BUY' | 'SELL'; symbol: string; amount: number; price: number } | null;
+  } | null>(null);
 
   const showToast = (msg: string, type: 'success' | 'error' | 'info' = 'success') => {
     setToast({ msg, type });
@@ -271,7 +276,19 @@ const App: React.FC = () => {
     setActiveTab('dashboard');
   };
 
-  const handleTrade = (type: 'BUY' | 'SELL', symbol: string, amount: number, price: number) => {
+  // Pre-trade fraud gate: runs /fraud-check on the candidate order BEFORE it is
+  // executed. SAFE → execute immediately; REVIEW → ask the user to confirm via
+  // FraudGateModal; BLOCK → hard-stop, never execute. The AI chatbot path passes
+  // skipGate (it already gates in its own quote→confirm flow) to avoid a double
+  // prompt. Falls open (executes) if the check itself errors so a backend blip
+  // never traps the user.
+  const handleTrade = async (
+    type: 'BUY' | 'SELL',
+    symbol: string,
+    amount: number,
+    price: number,
+    opts?: { skipGate?: boolean },
+  ) => {
     if (!currentUser) {
       showToast('Session not loaded yet. Try again in a moment.', 'error');
       return;
@@ -282,6 +299,57 @@ const App: React.FC = () => {
     }
     if (!Number.isFinite(price) || price <= 0) {
       showToast('Invalid price.', 'error');
+      return;
+    }
+
+    if (opts?.skipGate) {
+      executeTrade(type, symbol, amount, price);
+      return;
+    }
+
+    const total = amount * price;
+    // Quick affordability guard so we don't gate an order that can't fill.
+    if (type === 'BUY' && currentUser.balance < total) {
+      showToast('Insufficient funds. Deposit more simulation capital.', 'error');
+      return;
+    }
+
+    const txs = Array.isArray(currentUser.transactions)
+      ? currentUser.transactions
+      : (currentUser.transactions && typeof currentUser.transactions === 'object'
+          ? Object.values(currentUser.transactions) as typeof currentUser.transactions
+          : []);
+    const txCandidate = {
+      type, asset: symbol, amount, price,
+      total: type === 'BUY' ? -total : total,
+      timestamp: Date.now(),
+    };
+    const snapshot = {
+      cashUsd: currentUser.balance,
+      transactions: txs.map((t) => ({ type: t.type, total: t.total, timestamp: t.timestamp })),
+    };
+
+    let check: FraudCheck | null = null;
+    try {
+      check = await apiFraudCheck(currentUser.accountId, txCandidate, snapshot);
+    } catch {
+      check = null; // backend unreachable → fall open
+    }
+
+    if (check?.verdict === 'BLOCK') {
+      setFraudGate({ check, pending: null });
+      return;
+    }
+    if (check?.verdict === 'REVIEW') {
+      setFraudGate({ check, pending: { type, symbol, amount, price } });
+      return;
+    }
+    executeTrade(type, symbol, amount, price);
+  };
+
+  const executeTrade = (type: 'BUY' | 'SELL', symbol: string, amount: number, price: number) => {
+    if (!currentUser) {
+      showToast('Session not loaded yet. Try again in a moment.', 'error');
       return;
     }
     const total = amount * price;
@@ -649,7 +717,9 @@ const App: React.FC = () => {
         userState={currentUser}
         marketData={marketPrices}
         onTradeExecuted={({ symbol, side, amountUsd, price }) => {
-          handleTrade(side, symbol, amountUsd / price, price);
+          // The chatbot already runs its own quote→confirm fraud gate, so skip
+          // the manual-UI gate here to avoid prompting the user twice.
+          handleTrade(side, symbol, amountUsd / price, price, { skipGate: true });
         }}
       />
       {isCompPaymentOpen && currentUser && (
@@ -670,6 +740,21 @@ const App: React.FC = () => {
         </div>
       )}
       <TransactionSuccessModal data={txnSuccess} onClose={() => setTxnSuccess(null)} />
+      {fraudGate && (
+        <FraudGateModal
+          check={fraudGate.check}
+          onCancel={() => setFraudGate(null)}
+          onProceed={
+            fraudGate.pending
+              ? () => {
+                  const p = fraudGate.pending!;
+                  setFraudGate(null);
+                  executeTrade(p.type, p.symbol, p.amount, p.price);
+                }
+              : undefined
+          }
+        />
+      )}
       {referralClaimOpen && currentUser && (
         <StripePayoutModal
           amountUsd={currentUser.referralEarnings || 0}
