@@ -70,10 +70,9 @@ const SourcesHealth: React.FC<{ health: AltDataSourcesHealth | null }> = ({ heal
     { key: 'news', name: 'Hacker News (Algolia)', sub: 'social-media headlines + upvotes', detail: health.news.ok ? `n=${health.news.sample}` : health.news.error, ok: health.news.ok, latency: health.news.latencyMs },
     { key: 'fg', name: 'alternative.me', sub: 'Crypto Fear & Greed Index', detail: health.fearGreed.ok ? `value=${health.fearGreed.value}` : health.fearGreed.error, ok: health.fearGreed.ok, latency: health.fearGreed.latencyMs },
     { key: 'cg', name: 'CoinGecko', sub: 'community votes + dev score', detail: health.coinGecko.ok ? 'OK' : health.coinGecko.error, ok: health.coinGecko.ok, latency: health.coinGecko.latencyMs },
-    { key: 'reddit', name: 'Reddit JSON', sub: 'r/CryptoCurrency (best-effort)', detail: health.reddit.ok ? `n=${health.reddit.sample}` : 'blocked — degraded', ok: health.reddit.ok, latency: health.reddit.latencyMs },
   ];
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
       {items.map((s) => (
         <div key={s.key} className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
           <div className="flex items-center justify-between mb-1">
