@@ -124,7 +124,6 @@ const PostRow: React.FC<{ post: AltDataPipelineResult['nlp']['topPositive'][0]; 
       <span>r/{post.subreddit}</span>
       <span>↑ {post.ups.toLocaleString()}</span>
       <span>💬 {post.numComments}</span>
-      <span>{post.ageMin < 60 ? `${post.ageMin}m` : `${Math.round(post.ageMin / 60)}h`} ago</span>
       <span className={tone === 'positive' ? 'text-emerald-400 font-bold tabular-nums ml-auto' : 'text-rose-400 font-bold tabular-nums ml-auto'}>
         {post.compound > 0 ? '+' : ''}{fmt(post.compound, 3)}
       </span>
@@ -155,7 +154,6 @@ const NbPostRow: React.FC<{
     <div className="flex items-center gap-3 mt-2 text-[10px] text-slate-500">
       <span>{post.subreddit}</span>
       <span>↑ {post.ups.toLocaleString()}</span>
-      <span>{post.ageMin < 60 ? `${post.ageMin}m` : `${Math.round(post.ageMin / 60)}h`} ago</span>
       <span className={tone === 'positive' ? 'text-emerald-400 font-bold tabular-nums ml-auto' : 'text-rose-400 font-bold tabular-nums ml-auto'}>
         P={fmt(post.confidence * 100, 0)}%
       </span>
