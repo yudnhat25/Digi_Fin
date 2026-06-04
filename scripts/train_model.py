@@ -172,23 +172,25 @@ for name, clf in candidates.items():
     else:
         agree = 0.0
     probes_ok = int((clf.predict(_probe_X) == np.array(_probe_y)).sum())
-    # Selection score: blend two OUT-OF-distribution signals we trust — the gold
-    # macro-F1 and the hard-probe pass-rate — so a model that games the noisy
-    # 52-row gold test but flunks the real cases can't win.
-    sel = 0.5 * macro + 0.5 * (probes_ok / len(PROBES))
     results.append({'name': name, 'macroF1': macro, 'acc': acc, 'cvF1': cvf1,
                     'portable': portable, 'agree': agree, 'probes': probes_ok,
-                    'sel': sel, 'clf': clf, 'params': params})
+                    'clf': clf, 'params': params})
     print(f"[model] {name:24s} macroF1={macro:.4f} acc={acc:.4f} cvF1={cvf1:.4f} "
-          f"probes={probes_ok}/{len(PROBES)} sel={sel:.4f} portable={portable} (recon-agree={agree:.3f})")
+          f"probes={probes_ok}/{len(PROBES)} portable={portable} (recon-agree={agree:.3f})")
 
-# ── Select best PORTABLE model by blended gold-F1 + probe score, tie-break CV ──
+# ── Select the PORTABLE model with the best honest-test macro-F1 ──────────────
+# The held-out test is now 155 hand-labeled rows (52 news gold + 103 real
+# StockTwits), big enough to trust directly. The hard probes are used only as a
+# FLOOR: a model must get the basic real-world cases right to be eligible, then
+# we maximize macro-F1 on the honest test (tie-break by 5-fold CV).
+PROBE_FLOOR = 8  # of len(PROBES)
 portable = [r for r in results if r['portable']]
 if not portable:
     raise SystemExit("No portable model — aborting export.")
-best = max(portable, key=lambda r: (round(r['sel'], 4), round(r['cvF1'], 4)))
-print(f"\n[select] BEST = {best['name']}  sel={best['sel']:.4f} "
-      f"(macroF1={best['macroF1']:.4f} probes={best['probes']}/{len(PROBES)} cvF1={best['cvF1']:.4f})")
+eligible = [r for r in portable if r['probes'] >= PROBE_FLOOR] or portable
+best = max(eligible, key=lambda r: (round(r['macroF1'], 4), round(r['cvF1'], 4)))
+print(f"\n[select] BEST = {best['name']}  macroF1={best['macroF1']:.4f} "
+      f"(probes={best['probes']}/{len(PROBES)} cvF1={best['cvF1']:.4f} acc={best['acc']:.4f})")
 
 clf = best['clf']
 inter_d, coef_d = best['params']

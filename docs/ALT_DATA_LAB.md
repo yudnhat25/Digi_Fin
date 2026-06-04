@@ -155,15 +155,15 @@ Notebook **so sánh 4 mô hình** để phân loại văn bản crypto thành `p
 | Mô hình | Vai trò |
 |---|---|
 | Multinomial Naive Bayes | baseline kinh điển (Manning et al., Ch. 13) |
-| **Complement Naive Bayes (đang serve)** | **NB cải tiến cho dữ liệu lệch — thắng theo gold-F1 + probe** |
-| Logistic Regression | tuyến tính phân biệt, xác suất hiệu chỉnh |
+| Complement Naive Bayes | NB cải tiến cho dữ liệu lệch |
+| **Logistic Regression (đang serve)** | **tuyến tính phân biệt, xác suất hiệu chỉnh — thắng macro-F1 trên test thật** |
 | Linear SVM | margin tối đa, `class_weight='balanced'` |
 
 **Vì sao cách này?**
 - **Khách quan:** không cố định 1 model — để 4 model cạnh tranh trên cùng dữ liệu, số liệu chọn ra mô hình.
 - **Giải thích được:** mọi mô hình ở đây đều **tuyến tính** → mỗi dự đoán phân rã thành đóng góp từng token (UI khoe "decisive features").
 - **Port chính xác:** runtime TS là bộ chấm log-linear tổng quát, nên trọng số `coef_→weight`, `intercept_→prior` của model thắng được tái hiện **đúng từng dự đoán** (đã verify numpy == sklearn trước khi xuất). Cả 2 biến thể NB cũng port chuẩn qua `feature_log_prob_`/`class_log_prior_` (dấu complement đã nằm sẵn trong `feature_log_prob_`).
-- **Chọn theo 2 tín hiệu out-of-distribution:** gold-F1 (52 doc nhỏ, nhiễu) **kết hợp** tỉ lệ pass trên bộ *hard probe* (đúng các ca lỗi screenshot) → tránh model "ăn" test gold nhỏ mà fail ca thật.
+- **Chọn theo test thật, probe làm sàn:** macro-F1 trên test **155 doc gán tay** (52 headline tin tức + **103 câu StockTwits thật**) là chính; bộ *hard probe* (ca lỗi screenshot) chỉ là **ngưỡng sàn** (phải đạt ≥8/12 mới đủ tư cách). Cách này chọn ra model tổng quát hoá tốt trên **text trader thật**, không phải model chỉ giỏi headline.
 
 ### 5.2 Dữ liệu — text THẬT tự gán nhãn lại ([`scripts/build_dataset.py`](../scripts/build_dataset.py) → [`data/sentiment_dataset.json`](../data/sentiment_dataset.json))
 
@@ -181,8 +181,9 @@ Quy trình: `npm run scrape:stocktwits` (crawl) → `npm run train:nlp` (relabel
 **Vì sao tự gán nhãn lại thay vì dùng tag StockTwits?** Tag của người đăng phản ánh **vị thế đang ôm**, không phải nghĩa câu — vd *"Not bullish?"* gắn nhãn *Bullish*, *"$DOGE.X ?"* gắn *Bullish*. Train trên tag đó **đo được làm model tệ đi** (macro-F1 tụt còn ~0.54). Nên ta giữ **text thật** nhưng gán nhãn mới bằng [`vader.ts`](../api/_lib/ai/nlp/vader.ts), chỉ lấy phán quyết chắc chắn (bỏ vùng giữa mơ hồ) — xem [`scripts/relabel-corpus.ts`](../scripts/relabel-corpus.ts).
 
 **Luật đánh giá trung thực (rất quan trọng):**
-- **Test set = chỉ GOLD** (nhãn người, cân bằng 3 lớp, **không bao giờ là nhãn VADER/synth**) — benchmark khách quan, **không vòng tròn**: model chỉ vượt được VADER trên gold nếu thực sự tổng quát hoá.
-- Mọi text re-label / synthetic **chỉ ở tập TRAIN**.
+- **Test set = 155 câu nhãn NGƯỜI** (không bao giờ là nhãn VADER/synth) — gồm 52 headline tin tức ([`crypto_sentiment_dataset.json`](../data/crypto_sentiment_dataset.json)) + **103 câu StockTwits thật gán tay** ([`stocktwits_gold.json`](../data/stocktwits_gold.json), sinh bởi [`make_stocktwits_gold.py`](../scripts/make_stocktwits_gold.py) — đọc từng câu rồi gán, **không** dùng tag tác giả).
+- 103 câu này **cùng-domain** với train (ngôn ngữ trader) nên đo đúng cái pipeline xử lý thật, và được **loại khỏi train** (kiểm tra leak = 0).
+- Mọi text re-label / synthetic **chỉ ở tập TRAIN**. → benchmark **không vòng tròn**: model chỉ ăn điểm nếu thực sự tổng quát hoá.
 
 ### 5.3 Các bước trong notebook (10 cell chính)
 
@@ -209,14 +210,22 @@ Quy trình: `npm run scrape:stocktwits` (crawl) → `npm run train:nlp` (relabel
 
 Lấy từ `GET /api/v1/ai/alt-data/model/info` (số liệu auto-cập nhật từ `model-metrics.ts`):
 ```
-algorithm     : complement-naive-bayes  (thắng blend gold-F1 + hard-probe)
-accuracy      : 71.2%        macroF1 : 70.7%   (trên test GOLD cân bằng, 52 doc)
-vocabSize     : ~4,700 (unigram+bigram)        train/test : ~4,050 / 52
-per-class F1  : positive 66.7% · negative 76.2% · neutral 69.2%
-hard probes   : 11/12 (các ca lỗi screenshot giờ đúng)
+algorithm     : logistic-regression  (thắng macro-F1 trên test 155 doc, probe >= floor)
+accuracy      : 63.9%        macroF1 : 62.8%   (trên test NGƯỜI 155 doc)
+vocabSize     : ~4,400 (unigram+bigram)        train/test : ~3,980 / 155
+per-class F1  : positive 68.8% · negative 70.1% · neutral 49.4%
+hard probes   : 9/12 (đạt sàn; 3 ca trượt là contrarian/phủ định khó)
 ```
-So sánh 4 model (gold-F1 / CV-F1): ComplementNB **0.707** / 0.81 · LogReg 0.705 / 0.87 · LinearSVC 0.665 / 0.88 · MultinomialNB 0.647 / 0.80.
-> Bản này **vượt bản LinearSVC cũ trên cả hai** (cũ: gold-F1 0.688, probe 8/12 → mới: 0.707, probe 11/12), và **dùng dữ liệu thật** thay vì keyword/template. Quan trọng: thử nghiệm cho thấy dùng **tag StockTwits gốc** (không re-label) làm macro-F1 **tụt còn ~0.54** — nên việc tự gán nhãn lại là then chốt. SVC/LogReg có CV cao hơn (fit phân phối train) nhưng tổng quát hoá ra gold/probe kém hơn → không chọn.
+**So sánh 4 model — macro-F1 tách theo loại test:**
+| model | news (52) | **trader thật (103)** | tất cả (155) | CV |
+|---|---|---|---|---|
+| **Logistic Regression** | 0.666 | **0.592** | **0.628** | 0.87 |
+| Complement NB | **0.707** | 0.496 | 0.587 | 0.81 |
+| Multinomial NB | 0.651 | 0.492 | 0.567 | 0.80 |
+| Linear SVM | 0.573 | 0.560 | 0.572 | 0.88 |
+
+> **Bài học từ việc mở rộng test:** trên headline tin tức "dễ", NB cho số đẹp (0.65–0.71); nhưng trên **text trader thật** — đúng cái pipeline xử lý — NB rớt còn ~0.49, còn **LogReg giữ 0.59** (cách biệt 0.10). Test 52-doc cũ **thổi phồng** NB; test 155-doc lộ ra LogReg mới là model tổng quát hoá thật → chọn LogReg.
+> **Trung thực:** neutral vẫn là lớp yếu (F1 0.49) vì "trung tính" trong chat trader rất hiếm và mơ hồ. Dùng **tag StockTwits gốc** (không re-label) thì macro-F1 tụt còn ~0.54 — nên tự gán nhãn lại là then chốt. Muốn cao hơn nữa cần **gán tay thêm** chứ không phải đổi thuật toán.
 
 ### 5.5 ⭐ Xuất model sang runtime — cách "Python train, TypeScript serve"
 
@@ -283,4 +292,4 @@ Tất cả nằm trong OpenAPI spec ([`api/_lib/openapi.yaml`](../api/_lib/opena
 
 ## 8. Tóm tắt cho phần pitch / report
 
-> Alt-Data Lab chứng minh trọn vẹn yêu cầu Part A: thu thập **alternative data thật** (social text từ StockTwits/Hacker News, Fear & Greed, CoinGecko), phân tích bằng **hai kỹ thuật NLP** — một lexicon VADER và một **Complement Naive Bayes tự train** trên **text thật được tự gán nhãn lại** (StockTwits + HN qua VADER, cộng vài câu hard-case, test trên gold hand-labeled), chọn qua **so sánh 4 model**, cộng **Z-score anomaly detection** và **multi-source fusion**, rồi biến tín hiệu thành **hai ứng dụng fintech cụ thể** (Fraud Shield, AI Advisor). Mọi bước đều minh bạch, giải thích được tới từng từ, và toàn bộ trọng số model được Python train rồi serve nguyên vẹn trong runtime TypeScript qua custom OpenAPI server.
+> Alt-Data Lab chứng minh trọn vẹn yêu cầu Part A: thu thập **alternative data thật** (social text từ StockTwits/Hacker News, Fear & Greed, CoinGecko), phân tích bằng **hai kỹ thuật NLP** — một lexicon VADER và một **Logistic Regression tự train** trên **text thật được tự gán nhãn lại** (StockTwits + HN qua VADER, cộng vài câu hard-case), chọn qua **so sánh 4 model** trên **test 155 câu gán tay** (gồm 103 câu StockTwits thật, cùng-domain), cộng **Z-score anomaly detection** và **multi-source fusion**, rồi biến tín hiệu thành **hai ứng dụng fintech cụ thể** (Fraud Shield, AI Advisor). Mọi bước đều minh bạch, giải thích được tới từng từ, và toàn bộ trọng số model được Python train rồi serve nguyên vẹn trong runtime TypeScript qua custom OpenAPI server.

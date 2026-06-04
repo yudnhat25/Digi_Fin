@@ -128,6 +128,13 @@ for c in CLASSES:
     for i, r in enumerate(rows):
         (gold_test if i < k else gold_train).append(r)
 
+# Hand-labeled real StockTwits (scripts/make_stocktwits_gold.py) — TEST ONLY.
+# Same trader-domain as training but labeled by careful human reading (not the
+# author tag, not VADER, not a template). Excluded from train via test_keys below.
+for d in load('stocktwits_gold.json'):
+    if d.get('label') in CLASSES and d.get('text'):
+        gold_test.append({'text': d['text'], 'label': d['label'], 'source': 'gold-stocktwits'})
+
 # ── Assemble, dedupe (test wins), balance train ──────────────────────────────
 test_keys = {norm(r['text']) for r in gold_test}
 pool = []
@@ -162,4 +169,5 @@ print(f"[build] train source: {dict(Counter(r['source'] for r in tr))}")
 print(f"[build] train class : {dict(Counter(r['label'] for r in tr))}")
 real_n = sum(r['source'] in ('stocktwits-vader', 'hn-vader') for r in tr)
 print(f"[build] real text   : {real_n} ({100*real_n/len(tr):.0f}%)  synth: {sum(r['source']=='synth' for r in tr)}  gold: {sum(r['source']=='gold' for r in tr)}")
-print(f"[build] test (gold) : {len(gold_test)} {dict(Counter(r['label'] for r in gold_test))}")
+print(f"[build] test total  : {len(gold_test)} {dict(Counter(r['label'] for r in gold_test))}")
+print(f"[build] test source : {dict(Counter(r['source'] for r in gold_test))}")
