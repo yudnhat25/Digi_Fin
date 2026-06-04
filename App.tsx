@@ -380,20 +380,33 @@ const App: React.FC = () => {
       showToast(`Bought ${amount.toFixed(4)} ${symbol.replace('USDT', '')}`);
     } else {
       const existingAssetIndex = updatedUser.assets.findIndex(a => a.symbol === symbol);
-      if (existingAssetIndex === -1 || updatedUser.assets[existingAssetIndex].amount < amount) {
+      if (existingAssetIndex === -1) {
         showToast(`Insufficient ${symbol.replace('USDT', '')} balance.`, 'error');
         return;
       }
+      const held = updatedUser.assets[existingAssetIndex].amount;
+      // A "100%" sell is computed at 6-decimal precision in the panel, which can
+      // land a hair above OR below the real holding and falsely trip
+      // "insufficient" / leave dust. Tolerate one 6-decimal tick: reject only
+      // when the request clearly exceeds holdings, and snap a near-full request
+      // to the exact position (true sell-all, no dust).
+      const TICK = 1e-6;
+      if (amount > held + TICK) {
+        showToast(`Insufficient ${symbol.replace('USDT', '')} balance.`, 'error');
+        return;
+      }
+      const sellAmount = amount >= held - TICK ? held : amount;
+      const sellTotal = sellAmount * price;
       const newAssets = [...updatedUser.assets];
-      newAssets[existingAssetIndex] = { ...newAssets[existingAssetIndex], amount: newAssets[existingAssetIndex].amount - amount };
-      const finalAssets = newAssets.filter(a => a.amount > 0);
+      newAssets[existingAssetIndex] = { ...newAssets[existingAssetIndex], amount: held - sellAmount };
+      const finalAssets = newAssets.filter(a => a.amount > 1e-9);
       updatedUser = {
         ...updatedUser,
-        balance: updatedUser.balance + total,
+        balance: updatedUser.balance + sellTotal,
         assets: finalAssets,
-        transactions: [...updatedUser.transactions, { id: Math.random().toString(36).substr(2, 9), type: 'SELL', asset: symbol, amount, price, total, timestamp: Date.now() }]
+        transactions: [...updatedUser.transactions, { id: Math.random().toString(36).substr(2, 9), type: 'SELL', asset: symbol, amount: sellAmount, price, total: sellTotal, timestamp: Date.now() }]
       };
-      showToast(`Sold ${amount.toFixed(4)} ${symbol.replace('USDT', '')}`);
+      showToast(`Sold ${sellAmount.toFixed(4)} ${symbol.replace('USDT', '')}`);
     }
     saveUserData(updatedUser);
   };

@@ -50,7 +50,10 @@ const TradingPanel: React.FC<TradingPanelProps> = ({
 
   const handlePercentageClick = (p: number) => {
     setPercentage(p);
-    const calculated = (maxAmount * (p / 100)).toFixed(6);
+    // Floor to 6 decimals (never round up) so the computed amount can't exceed
+    // the available balance/holding — a rounded-up "100%" would otherwise trip
+    // the insufficient-balance guard on sell.
+    const calculated = (Math.floor(maxAmount * (p / 100) * 1e6) / 1e6).toFixed(6);
     setAmount(calculated);
   };
 
