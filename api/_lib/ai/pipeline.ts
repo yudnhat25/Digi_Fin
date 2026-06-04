@@ -24,34 +24,16 @@
 import { collectCorpusForSymbol, RedditPost } from './sources/reddit';
 import { collectHnForSymbol, HnHit } from './sources/hackerNews';
 import { collectStockTwits } from './sources/stocktwits';
+import { recordAndScore } from './mentionHistory';
 import { fetchFearGreedReal, FearGreedReal } from './sources/fearGreed';
 import { fetchCoinGecko, CoinGeckoSignals } from './sources/coingecko';
 import { fetchLatestNews } from './sources/cryptoNewsRss';
 import { aggregateCorpus, analyzeText, DocumentSentiment, SentimentLabel } from './nlp/vader';
 import { classifyCorpus, classify as classifyTrained, MODEL_METRICS, getModelInfo } from './nlp/classifier';
 
-// ─── Z-score historical baseline (in-memory ring buffer per coin) ───
-interface MentionSample { ts: number; count: number }
-const MENTION_HISTORY = new Map<string, MentionSample[]>();
-const HISTORY_MAX = 24; // last 24 samples ≈ 24 hours if hit hourly
-
-function pushMentionSample(coin: string, count: number) {
-  const arr = MENTION_HISTORY.get(coin) || [];
-  arr.push({ ts: Date.now(), count });
-  if (arr.length > HISTORY_MAX) arr.shift();
-  MENTION_HISTORY.set(coin, arr);
-}
-
-function zScore(coin: string, current: number): { z: number; mean: number; std: number; n: number } {
-  const arr = MENTION_HISTORY.get(coin) || [];
-  if (arr.length < 3) return { z: 0, mean: current, std: 0, n: arr.length };
-  const values = arr.map((s) => s.count);
-  const mean = values.reduce((s, v) => s + v, 0) / values.length;
-  const variance = values.reduce((s, v) => s + (v - mean) ** 2, 0) / values.length;
-  const std = Math.sqrt(variance);
-  const z = std > 0 ? (current - mean) / std : 0;
-  return { z: Number(z.toFixed(2)), mean: Math.round(mean), std: Math.round(std), n: arr.length };
-}
+// Z-score baseline now persists across cold starts via Firebase RTDB — see
+// ./mentionHistory (recordAndScore). The old in-memory ring buffer reset every
+// serverless cold start, so the baseline never accumulated and z stayed 0.
 
 // ─── Public types ───
 
@@ -440,9 +422,9 @@ export async function runAltDataPipeline(symbol: string): Promise<RealSentimentR
   // STAGE 2b — Z-score anomaly detection (total social-text mentions)
   const t2b = Date.now();
   const mentions = reddit.posts.length + news.posts.length;
-  pushMentionSample(base, mentions);
-  const zs = zScore(base, mentions);
-  const spike = zs.z > 1.5 && zs.n >= 5; // 1.5σ over 5+ historical samples
+  // Persisted baseline (RTDB): scores current vs past, then records this sample.
+  const zs = await recordAndScore(base, mentions, Date.now());
+  const spike = zs.spike; // z > 1.5σ over 5+ persisted samples
   stages.push({
     name: 'analyse.anomaly',
     status: 'ok',

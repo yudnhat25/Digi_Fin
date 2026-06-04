@@ -221,22 +221,22 @@ var init_url = __esm({
     };
     tryDecodeURI = (str) => tryDecode(str, decodeURI);
     getPath = (request) => {
-      const url = request.url;
-      const start = url.indexOf("/", url.indexOf(":") + 4);
+      const url2 = request.url;
+      const start = url2.indexOf("/", url2.indexOf(":") + 4);
       let i = start;
-      for (; i < url.length; i++) {
-        const charCode = url.charCodeAt(i);
+      for (; i < url2.length; i++) {
+        const charCode = url2.charCodeAt(i);
         if (charCode === 37) {
-          const queryIndex = url.indexOf("?", i);
-          const hashIndex = url.indexOf("#", i);
+          const queryIndex = url2.indexOf("?", i);
+          const hashIndex = url2.indexOf("#", i);
           const end = queryIndex === -1 ? hashIndex === -1 ? void 0 : hashIndex : hashIndex === -1 ? queryIndex : Math.min(queryIndex, hashIndex);
-          const path = url.slice(start, end);
+          const path = url2.slice(start, end);
           return tryDecodeURI(path.includes("%25") ? path.replace(/%25/g, "%2525") : path);
         } else if (charCode === 63 || charCode === 35) {
           break;
         }
       }
-      return url.slice(start, i);
+      return url2.slice(start, i);
     };
     getPathNoStrict = (request) => {
       const result = getPath(request);
@@ -284,42 +284,42 @@ var init_url = __esm({
       }
       return value.indexOf("%") !== -1 ? tryDecode(value, decodeURIComponent_) : value;
     };
-    _getQueryParam = (url, key, multiple) => {
+    _getQueryParam = (url2, key, multiple) => {
       let encoded;
       if (!multiple && key && !/[%+]/.test(key)) {
-        let keyIndex2 = url.indexOf("?", 8);
+        let keyIndex2 = url2.indexOf("?", 8);
         if (keyIndex2 === -1) {
           return void 0;
         }
-        if (!url.startsWith(key, keyIndex2 + 1)) {
-          keyIndex2 = url.indexOf(`&${key}`, keyIndex2 + 1);
+        if (!url2.startsWith(key, keyIndex2 + 1)) {
+          keyIndex2 = url2.indexOf(`&${key}`, keyIndex2 + 1);
         }
         while (keyIndex2 !== -1) {
-          const trailingKeyCode = url.charCodeAt(keyIndex2 + key.length + 1);
+          const trailingKeyCode = url2.charCodeAt(keyIndex2 + key.length + 1);
           if (trailingKeyCode === 61) {
             const valueIndex = keyIndex2 + key.length + 2;
-            const endIndex = url.indexOf("&", valueIndex);
-            return _decodeURI(url.slice(valueIndex, endIndex === -1 ? void 0 : endIndex));
+            const endIndex = url2.indexOf("&", valueIndex);
+            return _decodeURI(url2.slice(valueIndex, endIndex === -1 ? void 0 : endIndex));
           } else if (trailingKeyCode == 38 || isNaN(trailingKeyCode)) {
             return "";
           }
-          keyIndex2 = url.indexOf(`&${key}`, keyIndex2 + 1);
+          keyIndex2 = url2.indexOf(`&${key}`, keyIndex2 + 1);
         }
-        encoded = /[%+]/.test(url);
+        encoded = /[%+]/.test(url2);
         if (!encoded) {
           return void 0;
         }
       }
       const results = {};
-      encoded ??= /[%+]/.test(url);
-      let keyIndex = url.indexOf("?", 8);
+      encoded ??= /[%+]/.test(url2);
+      let keyIndex = url2.indexOf("?", 8);
       while (keyIndex !== -1) {
-        const nextKeyIndex = url.indexOf("&", keyIndex + 1);
-        let valueIndex = url.indexOf("=", keyIndex);
+        const nextKeyIndex = url2.indexOf("&", keyIndex + 1);
+        let valueIndex = url2.indexOf("=", keyIndex);
         if (valueIndex > nextKeyIndex && nextKeyIndex !== -1) {
           valueIndex = -1;
         }
-        let name = url.slice(
+        let name = url2.slice(
           keyIndex + 1,
           valueIndex === -1 ? nextKeyIndex === -1 ? void 0 : nextKeyIndex : valueIndex
         );
@@ -334,7 +334,7 @@ var init_url = __esm({
         if (valueIndex === -1) {
           value = "";
         } else {
-          value = url.slice(valueIndex + 1, nextKeyIndex === -1 ? void 0 : nextKeyIndex);
+          value = url2.slice(valueIndex + 1, nextKeyIndex === -1 ? void 0 : nextKeyIndex);
           if (encoded) {
             value = _decodeURI(value);
           }
@@ -352,8 +352,8 @@ var init_url = __esm({
       return key ? results[key] : results;
     };
     getQueryParam = _getQueryParam;
-    getQueryParams = (url, key) => {
-      return _getQueryParam(url, key, true);
+    getQueryParams = (url2, key) => {
+      return _getQueryParam(url2, key, true);
     };
     decodeURIComponent_ = decodeURIComponent;
   }
@@ -1379,9 +1379,9 @@ var init_hono_base = __esm({
           const mergedPath = mergePath(this._basePath, path);
           const pathPrefixLength = mergedPath === "/" ? 0 : mergedPath.length;
           return (request) => {
-            const url = new URL(request.url);
-            url.pathname = this.getPath(request).slice(pathPrefixLength) || "/";
-            return new Request(url, request);
+            const url2 = new URL(request.url);
+            url2.pathname = this.getPath(request).slice(pathPrefixLength) || "/";
+            return new Request(url2, request);
           };
         })();
         const handler2 = async (c, next) => {
@@ -2621,8 +2621,8 @@ async function loadCoinGecko() {
     try {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 4500);
-      const url = `https://api.coingecko.com/api/v3/coins/${id}?localization=false&tickers=false&market_data=true&community_data=true&developer_data=false&sparkline=false`;
-      const res = await fetch(url, {
+      const url2 = `https://api.coingecko.com/api/v3/coins/${id}?localization=false&tickers=false&market_data=true&community_data=true&developer_data=false&sparkline=false`;
+      const res = await fetch(url2, {
         signal: ctrl.signal,
         headers: { "accept": "application/json" }
       });
@@ -2991,8 +2991,8 @@ var init_state = __esm({
 });
 
 // api/_lib/ai/sources/reddit.ts
-async function fetchJson(url, attempt = 0) {
-  const target = attempt === 0 ? url : url.replace("www.reddit.com", "old.reddit.com");
+async function fetchJson(url2, attempt = 0) {
+  const target = attempt === 0 ? url2 : url2.replace("www.reddit.com", "old.reddit.com");
   const res = await fetch(target, {
     headers: {
       "User-Agent": USER_AGENT,
@@ -3003,7 +3003,7 @@ async function fetchJson(url, attempt = 0) {
   });
   if (!res.ok) {
     if ((res.status === 403 || res.status === 429) && attempt === 0) {
-      return fetchJson(url, attempt + 1);
+      return fetchJson(url2, attempt + 1);
     }
     throw new Error(`Reddit ${res.status} on ${target}`);
   }
@@ -3028,8 +3028,8 @@ async function fetchSubredditHot(subreddit, limit = 50) {
   const key = `sub:${subreddit}:${limit}`;
   const hit = CACHE2.get(key);
   if (hit && Date.now() - hit.ts < TTL_MS3) return hit.data;
-  const url = `https://www.reddit.com/r/${encodeURIComponent(subreddit)}/hot.json?limit=${limit}&t=day`;
-  const json = await fetchJson(url);
+  const url2 = `https://www.reddit.com/r/${encodeURIComponent(subreddit)}/hot.json?limit=${limit}&t=day`;
+  const json = await fetchJson(url2);
   const posts = parseChildren(json);
   CACHE2.set(key, { ts: Date.now(), data: posts });
   return posts;
@@ -3101,14 +3101,14 @@ async function fetchSearch(query, page = 0) {
   const key = `hn:${query}:${page}`;
   const hit = CACHE3.get(key);
   if (hit && Date.now() - hit.ts < TTL_MS4) return hit.data;
-  const url = new URL("https://hn.algolia.com/api/v1/search");
-  url.searchParams.set("query", query);
-  url.searchParams.set("tags", "story");
-  url.searchParams.set("hitsPerPage", "50");
-  url.searchParams.set("page", String(page));
+  const url2 = new URL("https://hn.algolia.com/api/v1/search");
+  url2.searchParams.set("query", query);
+  url2.searchParams.set("tags", "story");
+  url2.searchParams.set("hitsPerPage", "50");
+  url2.searchParams.set("page", String(page));
   const cutoff = Math.floor(Date.now() / 1e3) - 365 * 24 * 3600;
-  url.searchParams.set("numericFilters", `created_at_i>${cutoff}`);
-  const finalUrl = page === 0 ? url.toString() : url.toString().replace("/v1/search?", "/v1/search_by_date?");
+  url2.searchParams.set("numericFilters", `created_at_i>${cutoff}`);
+  const finalUrl = page === 0 ? url2.toString() : url2.toString().replace("/v1/search?", "/v1/search_by_date?");
   const res = await fetch(finalUrl, {
     headers: { "User-Agent": USER_AGENT2, "Accept": "application/json" }
   });
@@ -3194,8 +3194,8 @@ async function collectStockTwits(symbol) {
     return { posts: hit.data, sources: [`stocktwits ${ticker} (n=${hit.data.length})`], errors: [] };
   }
   try {
-    const url = `https://api.stocktwits.com/api/2/streams/symbol/${encodeURIComponent(ticker)}.json`;
-    const res = await fetch(url, {
+    const url2 = `https://api.stocktwits.com/api/2/streams/symbol/${encodeURIComponent(ticker)}.json`;
+    const res = await fetch(url2, {
       headers: { "User-Agent": USER_AGENT3, "Accept": "application/json" }
     });
     if (!res.ok) throw new Error(`stocktwits_${res.status}`);
@@ -3252,6 +3252,75 @@ var init_stocktwits = __esm({
   }
 });
 
+// api/_lib/ai/mentionHistory.ts
+function coinKey(coin) {
+  return coin.replace(/[.#$/\[\]]/g, "_").toUpperCase();
+}
+function url(coin) {
+  return `${FIREBASE_DB_URL2}/${PATH}/${encodeURIComponent(coinKey(coin))}.json`;
+}
+async function load(coin) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 3e3);
+  try {
+    const res = await fetch(url(coin), { signal: ctrl.signal });
+    if (!res.ok) return [];
+    const data = await res.json();
+    if (!Array.isArray(data)) return [];
+    return data.filter((s) => s && typeof s.ts === "number" && typeof s.count === "number").sort((a, b) => a.ts - b.ts);
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function save(coin, arr) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 3e3);
+  try {
+    await fetch(url(coin), {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(arr),
+      signal: ctrl.signal
+    });
+  } catch {
+  } finally {
+    clearTimeout(timer);
+  }
+}
+function stats(baseline, current) {
+  if (baseline.length < 3) return { z: 0, mean: current, std: 0, n: baseline.length };
+  const mean = baseline.reduce((s, v) => s + v, 0) / baseline.length;
+  const variance = baseline.reduce((s, v) => s + (v - mean) ** 2, 0) / baseline.length;
+  const std = Math.sqrt(variance);
+  const z = std > 0 ? (current - mean) / std : 0;
+  return { z: Number(z.toFixed(2)), mean: Math.round(mean), std: Math.round(std), n: baseline.length };
+}
+async function recordAndScore(coin, current, nowMs) {
+  const hist = await load(coin);
+  const baseline = hist.filter((s2) => nowMs - s2.ts >= MIN_GAP_MS).map((s2) => s2.count);
+  const s = stats(baseline, current);
+  let next = hist.slice();
+  if (next.length && nowMs - next[next.length - 1].ts < MIN_GAP_MS) {
+    next[next.length - 1] = { ts: nowMs, count: current };
+  } else {
+    next.push({ ts: nowMs, count: current });
+  }
+  if (next.length > HISTORY_MAX) next = next.slice(next.length - HISTORY_MAX);
+  await save(coin, next);
+  return { ...s, spike: s.z > 1.5 && s.n >= 5 };
+}
+var FIREBASE_DB_URL2, PATH, HISTORY_MAX, MIN_GAP_MS;
+var init_mentionHistory = __esm({
+  "api/_lib/ai/mentionHistory.ts"() {
+    FIREBASE_DB_URL2 = "https://gen-lang-client-0742583847-default-rtdb.asia-southeast1.firebasedatabase.app";
+    PATH = "banks/__altdata_mentions";
+    HISTORY_MAX = 24;
+    MIN_GAP_MS = 30 * 60 * 1e3;
+  }
+});
+
 // api/_lib/ai/sources/fearGreed.ts
 async function fetchFearGreedReal(limit = 30) {
   const cappedLimit = Math.min(Math.max(limit, 1), 365);
@@ -3270,8 +3339,8 @@ async function fetchFearGreedReal(limit = 30) {
     };
   }
   try {
-    const url = `https://api.alternative.me/fng/?limit=${cappedLimit}&format=json`;
-    const res = await fetch(url, { headers: { "User-Agent": USER_AGENT4 } });
+    const url2 = `https://api.alternative.me/fng/?limit=${cappedLimit}&format=json`;
+    const res = await fetch(url2, { headers: { "User-Agent": USER_AGENT4 } });
     if (!res.ok) throw new Error(`alternative.me responded ${res.status}`);
     const json = await res.json();
     if (!json?.data?.length) throw new Error("empty payload");
@@ -3324,8 +3393,8 @@ async function fetchCoinGecko(symbol) {
   const hit = CACHE6.get(coinId);
   if (hit && Date.now() - hit.ts < TTL_MS7) return hit.data;
   try {
-    const url = `https://api.coingecko.com/api/v3/coins/${coinId}?localization=false&tickers=false&market_data=false&community_data=true&developer_data=true&sparkline=false`;
-    const res = await fetch(url, { headers: { "User-Agent": USER_AGENT5, "Accept": "application/json" } });
+    const url2 = `https://api.coingecko.com/api/v3/coins/${coinId}?localization=false&tickers=false&market_data=false&community_data=true&developer_data=true&sparkline=false`;
+    const res = await fetch(url2, { headers: { "User-Agent": USER_AGENT5, "Accept": "application/json" } });
     if (!res.ok) throw new Error(`coingecko_${res.status}`);
     const json = await res.json();
     const data = {
@@ -4297,22 +4366,6 @@ var init_classifier = __esm({
 });
 
 // api/_lib/ai/pipeline.ts
-function pushMentionSample(coin, count) {
-  const arr = MENTION_HISTORY.get(coin) || [];
-  arr.push({ ts: Date.now(), count });
-  if (arr.length > HISTORY_MAX) arr.shift();
-  MENTION_HISTORY.set(coin, arr);
-}
-function zScore(coin, current) {
-  const arr = MENTION_HISTORY.get(coin) || [];
-  if (arr.length < 3) return { z: 0, mean: current, std: 0, n: arr.length };
-  const values = arr.map((s) => s.count);
-  const mean = values.reduce((s, v) => s + v, 0) / values.length;
-  const variance = values.reduce((s, v) => s + (v - mean) ** 2, 0) / values.length;
-  const std = Math.sqrt(variance);
-  const z = std > 0 ? (current - mean) / std : 0;
-  return { z: Number(z.toFixed(2)), mean: Math.round(mean), std: Math.round(std), n: arr.length };
-}
 function compositeSignal(compound, confidence) {
   if (confidence < 0.3) return "NEUTRAL";
   if (compound >= 0.5) return "STRONG_BUY";
@@ -4530,9 +4583,8 @@ ${p.selftext.slice(0, 300)}`,
   });
   const t2b = Date.now();
   const mentions = reddit.posts.length + news.posts.length;
-  pushMentionSample(base, mentions);
-  const zs = zScore(base, mentions);
-  const spike = zs.z > 1.5 && zs.n >= 5;
+  const zs = await recordAndScore(base, mentions, Date.now());
+  const spike = zs.spike;
   stages.push({
     name: "analyse.anomaly",
     status: "ok",
@@ -4698,19 +4750,18 @@ async function getRealSentimentScore(symbol) {
   });
   return p;
 }
-var MENTION_HISTORY, HISTORY_MAX, SENTIMENT_CACHE_TTL_MS, sentimentCache;
+var SENTIMENT_CACHE_TTL_MS, sentimentCache;
 var init_pipeline = __esm({
   "api/_lib/ai/pipeline.ts"() {
     init_reddit();
     init_hackerNews();
     init_stocktwits();
+    init_mentionHistory();
     init_fearGreed();
     init_coingecko();
     init_cryptoNewsRss();
     init_vader();
     init_classifier();
-    MENTION_HISTORY = /* @__PURE__ */ new Map();
-    HISTORY_MAX = 24;
     SENTIMENT_CACHE_TTL_MS = 10 * 60 * 1e3;
     sentimentCache = /* @__PURE__ */ new Map();
   }
@@ -4977,8 +5028,8 @@ async function fetchBtcHistory(days = 365) {
     return { ...HISTORY_CACHE.data, days: cappedDays, points: trimmed };
   }
   try {
-    const url = `https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=${cappedDays}&interval=daily`;
-    const res = await fetch(url, { headers: { "User-Agent": USER_AGENT6, "Accept": "application/json" } });
+    const url2 = `https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=${cappedDays}&interval=daily`;
+    const res = await fetch(url2, { headers: { "User-Agent": USER_AGENT6, "Accept": "application/json" } });
     if (!res.ok) throw new Error(`market_chart_${res.status}`);
     const json = await res.json();
     if (!json?.prices?.length) throw new Error("empty_history_payload");
@@ -5953,7 +6004,7 @@ async function handler(req, res) {
       const original = req.headers["x-vercel-original-pathname"];
       path = matched || original || path;
     }
-    const url = `${proto}://${host}${path}`;
+    const url2 = `${proto}://${host}${path}`;
     const method = (req.method || "GET").toUpperCase();
     const hasBody = !["GET", "HEAD"].includes(method);
     const headers = new Headers();
@@ -5968,7 +6019,7 @@ async function handler(req, res) {
       else body = JSON.stringify(req.body);
       if (!headers.has("content-type")) headers.set("content-type", "application/json");
     }
-    const webReq = new Request(url, { method, headers, body });
+    const webReq = new Request(url2, { method, headers, body });
     const webRes = await app2.fetch(webReq);
     res.status(webRes.status);
     webRes.headers.forEach((value, key) => res.setHeader(key, value));

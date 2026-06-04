@@ -612,7 +612,7 @@ const AltDataPipelinePage: React.FC = () => {
           <StageCard
             step={4}
             title={`AI Technique 3 — ${data.anomaly.technique}`}
-            subtitle="In-memory rolling window of mention volume. z = (current − μ) / σ. A z-score above 1.5σ is flagged as a retail-attention SPIKE."
+            subtitle="Persistent rolling window of mention volume (survives cold starts via RTDB). z = (current − μ) / σ. A z-score above 1.5σ over ≥5 samples is flagged as a retail-attention SPIKE."
           >
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               <div className="rounded-lg bg-black/30 border border-white/[0.06] p-3">
