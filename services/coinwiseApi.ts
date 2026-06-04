@@ -86,10 +86,10 @@ export interface FraudCheck {
   altData?: { compositeScore: number; label: string; spike: boolean };
 }
 export interface AdvisorSources {
-  sentiment: 'coingecko' | 'binance' | 'alternative.me' | 'synthetic' | 'unavailable';
-  momentum: 'coingecko' | 'binance' | 'alternative.me' | 'synthetic' | 'unavailable';
-  fearGreed: 'coingecko' | 'binance' | 'alternative.me' | 'synthetic' | 'unavailable';
-  prices: 'coingecko' | 'binance' | 'alternative.me' | 'synthetic' | 'unavailable';
+  sentiment: 'ai-pipeline' | 'coingecko' | 'binance' | 'alternative.me' | 'synthetic' | 'unavailable';
+  momentum: 'ai-pipeline' | 'coingecko' | 'binance' | 'alternative.me' | 'synthetic' | 'unavailable';
+  fearGreed: 'ai-pipeline' | 'coingecko' | 'binance' | 'alternative.me' | 'synthetic' | 'unavailable';
+  prices: 'ai-pipeline' | 'coingecko' | 'binance' | 'alternative.me' | 'synthetic' | 'unavailable';
 }
 export interface AdvisorResult {
   riskProfile: string;

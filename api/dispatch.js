@@ -4781,6 +4781,18 @@ var init_fraud = __esm({
 });
 
 // api/_lib/ai/advisor.ts
+function withTimeout2(p, ms) {
+  return new Promise((resolve2) => {
+    const t = setTimeout(() => resolve2(null), ms);
+    p.then((v) => {
+      clearTimeout(t);
+      resolve2(v);
+    }).catch(() => {
+      clearTimeout(t);
+      resolve2(null);
+    });
+  });
+}
 async function fetchTickers(symbols) {
   const map = /* @__PURE__ */ new Map();
   if (!symbols.length) return map;
@@ -4805,21 +4817,34 @@ async function buildAdvisor(accountId, profile = "BALANCED") {
   const universeSymbols = UNIVERSE.map((u) => u.symbol);
   const heldSymbols = acc.positions.map((p) => p.symbol);
   const tickers = await fetchTickers(Array.from(/* @__PURE__ */ new Set([...universeSymbols, ...heldSymbols])));
+  const ALT_TIMEOUT_MS = 8e3;
+  const composites = await Promise.all(
+    UNIVERSE.map((u) => withTimeout2(getRealSentimentScore(u.symbol), ALT_TIMEOUT_MS))
+  );
+  const compBySymbol = /* @__PURE__ */ new Map();
+  UNIVERSE.forEach((u, i) => {
+    const c = composites[i];
+    if (c && Number.isFinite(c.score)) compBySymbol.set(u.symbol, c.score);
+  });
+  const modelUsed = compBySymbol.size > 0;
   const cgOk = cg.size > 0;
   const pxOk = tickers.size > 0;
   const fgReal = fg.source === "alternative.me";
   const raw2 = UNIVERSE.map((u) => {
     const snap = cg.get(u.symbol);
     const tk = tickers.get(u.symbol);
-    const sentiment = snap ? snap.sentiment : 0;
+    const cgSentiment = snap ? snap.sentiment : 0;
+    const composite = compBySymbol.get(u.symbol);
+    const usingModel = composite !== void 0;
+    const aiSent = usingModel ? composite : cgSentiment;
     const change24h = tk ? tk.change24h : 0;
     const momentum = Math.max(-1, Math.min(1, change24h / 20));
-    const tilt = sentiment * 0.35 + momentum * 0.15 + (fg.value > 60 ? -0.05 : fg.value < 40 ? 0.07 : 0);
+    const tilt = usingModel ? aiSent * 0.45 + momentum * 0.15 : aiSent * 0.35 + momentum * 0.15 + (fg.value > 60 ? -0.05 : fg.value < 40 ? 0.07 : 0);
     const base = u.defaultWeight[profile];
     const adjusted = Math.max(0, base * (1 + tilt));
-    const sentTxt = snap ? `CoinGecko sentiment ${(sentiment * 100).toFixed(0)}/100` : "sentiment n/a";
+    const sentTxt = usingModel ? `AI sentiment ${(aiSent * 100).toFixed(0)}/100 (VADER+NB on social/news)` : snap ? `CoinGecko sentiment ${(cgSentiment * 100).toFixed(0)}/100` : "sentiment n/a";
     const momTxt = tk ? `24h ${change24h >= 0 ? "+" : ""}${change24h.toFixed(1)}%` : "momentum n/a";
-    const rationale = tilt > 0.05 ? `Overweight \u2014 ${sentTxt}, ${momTxt}.` : tilt < -0.05 ? `Underweight \u2014 ${sentTxt}, ${momTxt}.` : `Base weight \u2014 neutral real-time signals (${sentTxt}, ${momTxt}).`;
+    const rationale = tilt > 0.05 ? `Overweight \u2014 ${sentTxt}, ${momTxt}.` : tilt < -0.05 ? `Underweight \u2014 ${sentTxt}, ${momTxt}.` : `Base weight \u2014 neutral signals (${sentTxt}, ${momTxt}).`;
     return { symbol: u.symbol, weight: adjusted, rationale };
   });
   const sum = raw2.reduce((s, r) => s + r.weight, 0) || 1;
@@ -4846,12 +4871,12 @@ async function buildAdvisor(accountId, profile = "BALANCED") {
     return delta > 0 ? `${t.symbol}: BUY +$${delta.toFixed(0)} to reach target weight ${(t.weight * 100).toFixed(1)}%` : `${t.symbol}: SELL -$${Math.abs(delta).toFixed(0)} to trim`;
   });
   const sources = {
-    sentiment: cgOk ? "coingecko" : "unavailable",
+    sentiment: modelUsed ? "ai-pipeline" : cgOk ? "coingecko" : "unavailable",
     momentum: pxOk ? "binance" : "unavailable",
     fearGreed: fgReal ? "alternative.me" : "synthetic",
     prices: pxOk ? "binance" : "unavailable"
   };
-  const degraded = !cgOk || !pxOk || !fgReal;
+  const degraded = !modelUsed && !cgOk || !pxOk || !fgReal;
   return {
     riskProfile: profile,
     targetAllocation,
@@ -4861,7 +4886,7 @@ async function buildAdvisor(accountId, profile = "BALANCED") {
     rebalanceActions: actions,
     sources,
     degraded,
-    narrative: `For a ${profile.toLowerCase()} investor, the AI advisor tilts the portfolio using live signals \u2014 Fear & Greed ${fg.value} (${fg.classification}${fgReal ? "" : ", synthetic fallback"}), ${cgOk ? "CoinGecko community sentiment" : "sentiment unavailable"}, and ${pxOk ? "24h price momentum from Binance" : "momentum unavailable"}. Expected ~${EXPECTED_RETURN[profile]}% return / ~${VOL[profile]}% volatility are ${profile.toLowerCase()} model assumptions, not live-derived. Cash buffer ${(cashBuffer * 100).toFixed(0)}% kept for dip-buys.`
+    narrative: `For a ${profile.toLowerCase()} investor, the AI advisor tilts the portfolio primarily on ${modelUsed ? "the alt-data sentiment model \u2014 VADER + trained Naive Bayes on live StockTwits/news, blended with CoinGecko vote & Fear & Greed" : cgOk ? "CoinGecko community sentiment" : "sentiment unavailable"}, overlaid with ${pxOk ? "24h price momentum from Binance" : "momentum unavailable"}. Fear & Greed ${fg.value} (${fg.classification}${fgReal ? "" : ", synthetic fallback"}). Expected ~${EXPECTED_RETURN[profile]}% return / ~${VOL[profile]}% volatility are ${profile.toLowerCase()} model assumptions, not live-derived. Cash buffer ${(cashBuffer * 100).toFixed(0)}% kept for dip-buys.`
   };
 }
 var UNIVERSE, EXPECTED_RETURN, VOL, CASH_BUFFER, BINANCE2;
@@ -4869,6 +4894,7 @@ var init_advisor = __esm({
   "api/_lib/ai/advisor.ts"() {
     init_state();
     init_altdata();
+    init_pipeline();
     UNIVERSE = [
       { symbol: "BTCUSDT", defaultWeight: { CONSERVATIVE: 0.45, BALANCED: 0.35, GROWTH: 0.25, AGGRESSIVE: 0.18 } },
       { symbol: "ETHUSDT", defaultWeight: { CONSERVATIVE: 0.25, BALANCED: 0.25, GROWTH: 0.22, AGGRESSIVE: 0.18 } },
@@ -4990,7 +5016,7 @@ function mapPipelineLabel(l) {
   if (l === "Bearish" || l === "Capitulation") return "Bearish";
   return "Neutral";
 }
-function withTimeout2(p, ms) {
+function withTimeout3(p, ms) {
   return new Promise((resolve2) => {
     const t = setTimeout(() => resolve2(null), ms);
     p.then((v) => {
@@ -5034,7 +5060,7 @@ var init_ai = __esm({
       if (!body.symbol) return c.json({ error: "symbol required" }, 400);
       const sym = body.symbol.toUpperCase();
       const base = sym.replace(/USDT?$/, "");
-      const real = await withTimeout2(runAltDataPipeline(base), INSIGHT_PIPELINE_TIMEOUT_MS);
+      const real = await withTimeout3(runAltDataPipeline(base), INSIGHT_PIPELINE_TIMEOUT_MS);
       const fg = await getFearGreed();
       let sentiment;
       let signal;

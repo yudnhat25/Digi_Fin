@@ -14,8 +14,17 @@
  */
 import { getAccount } from '../state';
 import { getFearGreed, loadCoinGecko } from './altdata';
+import { getRealSentimentScore } from './pipeline';
 
 export type RiskProfile = 'CONSERVATIVE' | 'BALANCED' | 'GROWTH' | 'AGGRESSIVE';
+
+// Bounds a promise so one slow alt-data pipeline run can't hang the advisor.
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => resolve(null), ms);
+    p.then((v) => { clearTimeout(t); resolve(v); }).catch(() => { clearTimeout(t); resolve(null); });
+  });
+}
 
 const UNIVERSE: { symbol: string; defaultWeight: Record<RiskProfile, number> }[] = [
   { symbol: 'BTCUSDT',  defaultWeight: { CONSERVATIVE: 0.45, BALANCED: 0.35, GROWTH: 0.25, AGGRESSIVE: 0.18 } },
@@ -34,7 +43,7 @@ export interface AdvisorAllocation {
   rationale: string;
 }
 
-export type SourceStatus = 'coingecko' | 'binance' | 'alternative.me' | 'synthetic' | 'unavailable';
+export type SourceStatus = 'ai-pipeline' | 'coingecko' | 'binance' | 'alternative.me' | 'synthetic' | 'unavailable';
 
 export interface AdvisorSources {
   sentiment: SourceStatus;
@@ -106,32 +115,55 @@ export async function buildAdvisor(accountId: string, profile: RiskProfile = 'BA
   const heldSymbols = acc.positions.map((p) => p.symbol);
   const tickers = await fetchTickers(Array.from(new Set([...universeSymbols, ...heldSymbols])));
 
+  // The trained-model sentiment that actually drives allocation: per universe
+  // coin, run the SAME alt-data composite the Lab shows (VADER + trained Naive
+  // Bayes on StockTwits/news, blended with CoinGecko vote + Fear & Greed).
+  // Bounded per coin (cached/deduped) so the advisor stays responsive; coins
+  // that time out fall back to the raw CoinGecko vote sentiment.
+  const ALT_TIMEOUT_MS = 8000;
+  const composites = await Promise.all(
+    UNIVERSE.map((u) => withTimeout(getRealSentimentScore(u.symbol), ALT_TIMEOUT_MS)),
+  );
+  const compBySymbol = new Map<string, number>();
+  UNIVERSE.forEach((u, i) => {
+    const c = composites[i];
+    if (c && Number.isFinite(c.score)) compBySymbol.set(u.symbol, c.score);
+  });
+  const modelUsed = compBySymbol.size > 0;
+
   const cgOk = cg.size > 0;
   const pxOk = tickers.size > 0;
   const fgReal = fg.source === 'alternative.me';
 
-  // Sentiment-tilted weights from REAL signals: CoinGecko vote sentiment +
-  // Binance 24h momentum + contrarian Fear & Greed nudge. Missing data → 0.
+  // Sentiment-tilted weights. PRIMARY driver = the alt-data sentiment model
+  // composite; Binance 24h momentum is the market overlay. Falls back to the
+  // CoinGecko vote (+ contrarian F&G nudge) when the model is unavailable.
   const raw = UNIVERSE.map((u) => {
     const snap = cg.get(u.symbol);
     const tk = tickers.get(u.symbol);
-    const sentiment = snap ? snap.sentiment : 0;                 // [-1, 1]
+    const cgSentiment = snap ? snap.sentiment : 0;               // [-1, 1]
+    const composite = compBySymbol.get(u.symbol);               // [-1, 1] or undefined
+    const usingModel = composite !== undefined;
+    const aiSent = usingModel ? composite! : cgSentiment;
     const change24h = tk ? tk.change24h : 0;                     // %
     const momentum = Math.max(-1, Math.min(1, change24h / 20));  // clamp ±20% → ±1
-    const tilt =
-      sentiment * 0.35 +
-      momentum * 0.15 +
-      (fg.value > 60 ? -0.05 : fg.value < 40 ? 0.07 : 0);
+    // The composite already folds in CoinGecko vote + F&G, so don't double-count
+    // the F&G nudge on the model path; keep it only on the CoinGecko-only path.
+    const tilt = usingModel
+      ? aiSent * 0.45 + momentum * 0.15
+      : aiSent * 0.35 + momentum * 0.15 + (fg.value > 60 ? -0.05 : fg.value < 40 ? 0.07 : 0);
     const base = u.defaultWeight[profile];
     const adjusted = Math.max(0, base * (1 + tilt));
-    const sentTxt = snap ? `CoinGecko sentiment ${(sentiment * 100).toFixed(0)}/100` : 'sentiment n/a';
+    const sentTxt = usingModel
+      ? `AI sentiment ${(aiSent * 100).toFixed(0)}/100 (VADER+NB on social/news)`
+      : snap ? `CoinGecko sentiment ${(cgSentiment * 100).toFixed(0)}/100` : 'sentiment n/a';
     const momTxt = tk ? `24h ${change24h >= 0 ? '+' : ''}${change24h.toFixed(1)}%` : 'momentum n/a';
     const rationale =
       tilt > 0.05
         ? `Overweight — ${sentTxt}, ${momTxt}.`
         : tilt < -0.05
         ? `Underweight — ${sentTxt}, ${momTxt}.`
-        : `Base weight — neutral real-time signals (${sentTxt}, ${momTxt}).`;
+        : `Base weight — neutral signals (${sentTxt}, ${momTxt}).`;
     return { symbol: u.symbol, weight: adjusted, rationale };
   });
   const sum = raw.reduce((s, r) => s + r.weight, 0) || 1;
@@ -163,12 +195,12 @@ export async function buildAdvisor(accountId: string, profile: RiskProfile = 'BA
   });
 
   const sources: AdvisorSources = {
-    sentiment: cgOk ? 'coingecko' : 'unavailable',
+    sentiment: modelUsed ? 'ai-pipeline' : cgOk ? 'coingecko' : 'unavailable',
     momentum: pxOk ? 'binance' : 'unavailable',
     fearGreed: fgReal ? 'alternative.me' : 'synthetic',
     prices: pxOk ? 'binance' : 'unavailable',
   };
-  const degraded = !cgOk || !pxOk || !fgReal;
+  const degraded = (!modelUsed && !cgOk) || !pxOk || !fgReal;
 
   return {
     riskProfile: profile,
@@ -180,10 +212,12 @@ export async function buildAdvisor(accountId: string, profile: RiskProfile = 'BA
     sources,
     degraded,
     narrative:
-      `For a ${profile.toLowerCase()} investor, the AI advisor tilts the portfolio using live signals — ` +
-      `Fear & Greed ${fg.value} (${fg.classification}${fgReal ? '' : ', synthetic fallback'}), ` +
-      `${cgOk ? 'CoinGecko community sentiment' : 'sentiment unavailable'}, and ` +
-      `${pxOk ? '24h price momentum from Binance' : 'momentum unavailable'}. ` +
+      `For a ${profile.toLowerCase()} investor, the AI advisor tilts the portfolio primarily on ` +
+      `${modelUsed
+        ? 'the alt-data sentiment model — VADER + trained Naive Bayes on live StockTwits/news, blended with CoinGecko vote & Fear & Greed'
+        : (cgOk ? 'CoinGecko community sentiment' : 'sentiment unavailable')}, ` +
+      `overlaid with ${pxOk ? '24h price momentum from Binance' : 'momentum unavailable'}. ` +
+      `Fear & Greed ${fg.value} (${fg.classification}${fgReal ? '' : ', synthetic fallback'}). ` +
       `Expected ~${EXPECTED_RETURN[profile]}% return / ~${VOL[profile]}% volatility are ${profile.toLowerCase()} ` +
       `model assumptions, not live-derived. Cash buffer ${(cashBuffer * 100).toFixed(0)}% kept for dip-buys.`,
   };

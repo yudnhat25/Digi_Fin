@@ -54,9 +54,9 @@ const AIAdvisorPage: React.FC<{ user: UserState }> = ({ user }) => {
         </div>
         <h1 className="text-3xl md:text-4xl font-black tracking-tighter mb-2">Smart Allocation Studio</h1>
         <p className="text-slate-400 text-sm max-w-3xl">
-          The AI advisor reads <strong className="text-slate-200">live</strong> signals — CoinGecko community sentiment, 24h price
-          momentum from Binance, and the Alternative.me Fear &amp; Greed index — then tilts a target allocation against your risk
-          profile. Every recommendation is sourced from the custom OpenAPI <code className="text-fuchsia-300">/api/v1/ai/advisor</code> endpoint.
+          The AI advisor tilts a target allocation against your risk profile, driven by the <strong className="text-slate-200">alt-data
+          sentiment model</strong> — VADER + trained Naive Bayes on live StockTwits/news, blended with CoinGecko vote &amp; Fear &amp; Greed —
+          overlaid with 24h price momentum from Binance. Every recommendation is sourced from the custom OpenAPI <code className="text-fuchsia-300">/api/v1/ai/advisor</code> endpoint.
         </p>
       </div>
 
