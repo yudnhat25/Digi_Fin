@@ -142,8 +142,12 @@ export interface EarnYields {
 }
 export const apiEarnYields = () => call<EarnYields>('/api/v1/earn/yields');
 
-export const apiFraudCheck = (accountId: string, transaction: any) =>
-  call<FraudCheck>('/api/v1/ai/fraud-check', { method: 'POST', body: JSON.stringify({ accountId, transaction }) });
+export interface FraudAccountSnapshot {
+  cashUsd: number;
+  transactions: { type?: string; total: number; timestamp: number }[];
+}
+export const apiFraudCheck = (accountId: string, transaction: any, account?: FraudAccountSnapshot) =>
+  call<FraudCheck>('/api/v1/ai/fraud-check', { method: 'POST', body: JSON.stringify({ accountId, transaction, account }) });
 export const apiAdvisor = (accountId: string, riskProfile = 'BALANCED') =>
   call<AdvisorResult>('/api/v1/ai/advisor', { method: 'POST', body: JSON.stringify({ accountId, riskProfile }) });
 

@@ -27,7 +27,15 @@ const FraudShieldPage: React.FC<{ user: UserState }> = ({ user }) => {
 
   useEffect(() => {
     let alive = true;
-    const recent = (user.transactions || []).slice(-15).reverse();
+    const allTxs = user.transactions || [];
+    const recent = allTxs.slice(-15).reverse();
+    // Real account context so the server's behavioural rules (velocity,
+    // notional anomaly, cash-burst) score against genuine history instead of
+    // the empty in-memory server account.
+    const snapshot = {
+      cashUsd: user.balance,
+      transactions: allTxs.map((t) => ({ type: t.type, total: t.total, timestamp: t.timestamp })),
+    };
     Promise.all(
       recent.map(async (tx) => {
         const check = await apiFraudCheck(user.accountId, {
@@ -37,7 +45,7 @@ const FraudShieldPage: React.FC<{ user: UserState }> = ({ user }) => {
           price: tx.price,
           total: tx.total,
           timestamp: tx.timestamp,
-        });
+        }, snapshot);
         return {
           id: tx.id,
           asset: tx.asset,
@@ -52,7 +60,7 @@ const FraudShieldPage: React.FC<{ user: UserState }> = ({ user }) => {
       .catch(console.error)
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [user.accountId, user.transactions]);
+  }, [user.accountId, user.transactions, user.balance]);
 
   const stats = scans.reduce(
     (acc, s) => {

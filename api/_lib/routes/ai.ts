@@ -14,12 +14,13 @@ import { fetchBtcSnapshot, fetchBtcHistory } from '../ai/sources/btcMarket';
 export const aiRouter = new Hono();
 
 aiRouter.post('/fraud-check', async (c) => {
-  const body = await c.req.json().catch(() => null) as { accountId?: string; transaction?: any } | null;
+  const body = await c.req.json().catch(() => null) as { accountId?: string; transaction?: any; account?: any } | null;
   if (!body?.accountId || !body.transaction) return c.json({ error: 'accountId & transaction required' }, 400);
   // Uses the REAL alt-data variant (VADER+CoinGecko sentiment + Reddit mention
-  // spike) on top of the account-behaviour rules. Cached per symbol so the
-  // 15-transaction Fraud Shield scan stays cheap.
-  return c.json(await checkFraudWithRealAltData(body.accountId, body.transaction));
+  // spike) on top of the account-behaviour rules. The client passes its real
+  // balance + transaction history via `account` so velocity/notional/cash-burst
+  // score against genuine behaviour instead of the empty in-memory server state.
+  return c.json(await checkFraudWithRealAltData(body.accountId, body.transaction, body.account));
 });
 
 aiRouter.post('/advisor', async (c) => {
@@ -256,8 +257,8 @@ aiRouter.get('/fear-greed/full', async (c) => {
 });
 
 aiRouter.post('/fraud-check-real', async (c) => {
-  const body = await c.req.json().catch(() => null) as { accountId?: string; transaction?: any } | null;
+  const body = await c.req.json().catch(() => null) as { accountId?: string; transaction?: any; account?: any } | null;
   if (!body?.accountId || !body.transaction) return c.json({ error: 'accountId & transaction required' }, 400);
-  const result = await checkFraudWithRealAltData(body.accountId, body.transaction);
+  const result = await checkFraudWithRealAltData(body.accountId, body.transaction, body.account);
   return c.json(result);
 });

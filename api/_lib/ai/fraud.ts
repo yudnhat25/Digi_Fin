@@ -25,8 +25,20 @@ export interface FraudResult {
   recommendedAction: string;
 }
 
-export function checkFraud(accountId: string, tx: FraudTx): FraudResult {
-  const acc = getAccount(accountId);
+/**
+ * Optional account context supplied by the caller. The server's in-memory
+ * account (state.ts) is seeded empty and reset on every cold start, so the
+ * history-based rules (velocity, notional, cash-burst) never fired in
+ * production. When the client passes its REAL balance + transaction history
+ * here, those rules score against genuine behaviour and become testable.
+ */
+export interface FraudAccountSnapshot {
+  cashUsd: number;
+  transactions: { type?: string; total: number; timestamp: number }[];
+}
+
+export function checkFraud(accountId: string, tx: FraudTx, snapshot?: FraudAccountSnapshot): FraudResult {
+  const acc = snapshot ?? getAccount(accountId);
   const reasons: string[] = [];
   let risk = 0;
 
@@ -80,10 +92,10 @@ export function checkFraud(accountId: string, tx: FraudTx): FraudResult {
  * sentiment pipeline (VADER NLP on Reddit + CoinGecko vote + F&G). Used by
  * /api/v1/ai/fraud-check when the caller can afford ~500–1500ms latency.
  */
-export async function checkFraudWithRealAltData(accountId: string, tx: FraudTx): Promise<FraudResult & {
+export async function checkFraudWithRealAltData(accountId: string, tx: FraudTx, snapshot?: FraudAccountSnapshot): Promise<FraudResult & {
   altData: { compositeScore: number; label: string; spike: boolean };
 }> {
-  const base = checkFraud(accountId, tx);
+  const base = checkFraud(accountId, tx, snapshot);
   if (!tx.asset) {
     return { ...base, altData: { compositeScore: 0, label: 'Neutral', spike: false } };
   }

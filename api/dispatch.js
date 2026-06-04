@@ -4582,8 +4582,8 @@ var init_pipeline = __esm({
 });
 
 // api/_lib/ai/fraud.ts
-function checkFraud(accountId, tx) {
-  const acc = getAccount(accountId);
+function checkFraud(accountId, tx, snapshot) {
+  const acc = snapshot ?? getAccount(accountId);
   const reasons = [];
   let risk = 0;
   const txTotal = Math.abs(tx.total ?? (tx.amount ?? 0) * (tx.price ?? 0));
@@ -4612,8 +4612,8 @@ function checkFraud(accountId, tx) {
   const recommendedAction = verdict === "BLOCK" ? "Hold transaction. Trigger step-up authentication or manual review." : verdict === "REVIEW" ? "Show user a confirmation dialog and require explicit consent." : "Auto-approve transaction.";
   return { riskScore: risk, verdict, reasons, recommendedAction };
 }
-async function checkFraudWithRealAltData(accountId, tx) {
-  const base = checkFraud(accountId, tx);
+async function checkFraudWithRealAltData(accountId, tx, snapshot) {
+  const base = checkFraud(accountId, tx, snapshot);
   if (!tx.asset) {
     return { ...base, altData: { compositeScore: 0, label: "Neutral", spike: false } };
   }
@@ -4892,7 +4892,7 @@ var init_ai = __esm({
     aiRouter.post("/fraud-check", async (c) => {
       const body = await c.req.json().catch(() => null);
       if (!body?.accountId || !body.transaction) return c.json({ error: "accountId & transaction required" }, 400);
-      return c.json(await checkFraudWithRealAltData(body.accountId, body.transaction));
+      return c.json(await checkFraudWithRealAltData(body.accountId, body.transaction, body.account));
     });
     aiRouter.post("/advisor", async (c) => {
       const body = await c.req.json().catch(() => ({}));
@@ -5066,7 +5066,7 @@ var init_ai = __esm({
     aiRouter.post("/fraud-check-real", async (c) => {
       const body = await c.req.json().catch(() => null);
       if (!body?.accountId || !body.transaction) return c.json({ error: "accountId & transaction required" }, 400);
-      const result = await checkFraudWithRealAltData(body.accountId, body.transaction);
+      const result = await checkFraudWithRealAltData(body.accountId, body.transaction, body.account);
       return c.json(result);
     });
   }
