@@ -656,12 +656,13 @@ const AltDataPipelinePage: React.FC = () => {
           <StageCard
             step={5}
             title="AI Technique 4 — Multi-source signal fusion"
-            subtitle={`Inner blend: VADER ${(data.fusion.vaderWeight * 100).toFixed(0)}% + trained Naive Bayes ${(data.fusion.naiveBayesWeight * 100).toFixed(0)}%. Outer blend with non-text alt-data signals.`}
+            subtitle={`Inner blend: VADER ${(data.fusion.vaderWeight * 100).toFixed(0)}% + trained Naive Bayes ${(data.fusion.naiveBayesWeight * 100).toFixed(0)}%. Outer blend: social-text + news tone + CoinGecko + Fear & Greed.`}
           >
             <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
               <div className="md:col-span-7 space-y-2">
                 {[
                   { label: `Social-text (VADER ${(data.fusion.vaderWeight * 100).toFixed(0)}% + NB ${(data.fusion.naiveBayesWeight * 100).toFixed(0)}%)`, val: data.nlp.weightedCompound * data.fusion.vaderWeight + data.mlClassifier.weightedCompound * data.fusion.naiveBayesWeight, w: data.fusion.redditWeight, color: 'bg-emerald-400' },
+                  { label: `News tone (VADER+NB · ${data.newsTone.matchedCount}/${data.newsTone.headlineCount} headlines)`, val: data.newsTone.tone, w: data.fusion.newsWeight, color: 'bg-fuchsia-400' },
                   { label: 'CoinGecko vote-up share', val: data.raw.coinGecko ? (data.raw.coinGecko.voteUpPct - data.raw.coinGecko.voteDownPct) / 100 : 0, w: data.fusion.coinGeckoWeight, color: 'bg-blue-400' },
                   { label: 'Fear & Greed (centered)', val: data.raw.fearGreed ? (data.raw.fearGreed.current.value - 50) / 50 : 0, w: data.fusion.fearGreedWeight, color: 'bg-amber-300' },
                 ].map((row) => (
@@ -695,6 +696,22 @@ const AltDataPipelinePage: React.FC = () => {
                 </p>
               </div>
             </div>
+            {data.newsTone.topHeadlines.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-white/[0.06]">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-fuchsia-300 mb-2">
+                  ▸ News driving the tone · {data.newsTone.label} ({fmt(data.newsTone.tone, 2)})
+                </p>
+                <div className="space-y-1">
+                  {data.newsTone.topHeadlines.map((h, i) => (
+                    <a key={i} href={h.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-[11px] hover:bg-white/[0.03] rounded px-1.5 py-1 -mx-1.5">
+                      <span className={cls('tabular-nums font-bold w-12 text-right shrink-0', h.compound >= 0 ? 'text-emerald-400' : 'text-rose-400')}>{h.compound >= 0 ? '+' : ''}{fmt(h.compound, 2)}</span>
+                      <span className="text-slate-300 truncate flex-1">{h.title}</span>
+                      <span className="text-slate-600 shrink-0">{h.source}</span>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
           </StageCard>
 
           {/* ─── STAGE 4 — APPLICATION ─── */}

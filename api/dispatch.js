@@ -4314,6 +4314,18 @@ async function runAltDataPipeline(symbol) {
     message: cgMsg,
     latencyMs: Date.now() - t1c
   });
+  const t1d = Date.now();
+  const allNews = await fetchLatestNews(50).catch(() => []);
+  const newsCutoffSec = Date.now() / 1e3 - 365 * 24 * 3600;
+  const coinNews = allNews.filter(
+    (h) => (h.tag === base || h.tag === "MACRO") && (!h.publishedAt || h.publishedAt >= newsCutoffSec)
+  );
+  stages.push({
+    name: "collect.news",
+    status: coinNews.length > 0 ? "ok" : "partial",
+    message: `${coinNews.length} headlines (of ${allNews.length}) for ${base} + MACRO`,
+    latencyMs: Date.now() - t1d
+  });
   const t2a = Date.now();
   const RECENCY_HALF_LIFE_DAYS = 180;
   const nowSec = Date.now() / 1e3;
@@ -4444,34 +4456,47 @@ ${p.selftext.slice(0, 300)}`,
     message: `z=${zs.z} (history n=${zs.n}, \u03BC=${zs.mean}, \u03C3=${zs.std}) \u2192 ${spike ? "SPIKE" : "normal"}`,
     latencyMs: Date.now() - t2b
   });
+  const t2bPrime = Date.now();
+  const newsDocs = coinNews.map((h) => ({ text: h.title, weight: 1 }));
+  const newsVader = aggregateCorpus(newsDocs);
+  const newsNb = classifyCorpus(newsDocs);
+  const newsHasSignal = newsVader.corpus.matchedDocCount + newsNb.matchedDocCount > 0;
+  const topHeadlines = coinNews.map((h, i) => ({
+    title: h.title,
+    source: h.source,
+    url: h.url,
+    ageMin: h.publishedAt ? Math.round((Date.now() / 1e3 - h.publishedAt) / 60) : 0,
+    compound: newsVader.perDoc[i]?.sentiment.compound ?? 0
+  })).filter((h) => Math.abs(h.compound) > 0.05).sort((a, b) => Math.abs(b.compound) - Math.abs(a.compound)).slice(0, 6);
+  stages.push({
+    name: "analyse.newsTone",
+    status: newsHasSignal ? "ok" : "partial",
+    message: `news VADER=${newsVader.corpus.weightedCompound} NB=${newsNb.weightedCompound} (matched ${Math.max(newsVader.corpus.matchedDocCount, newsNb.matchedDocCount)}/${coinNews.length})`,
+    latencyMs: Date.now() - t2bPrime
+  });
   const t2c = Date.now();
   const wVader = 0.4, wNB = 0.6;
-  const socialTextScore = corpus.corpus.matchedDocCount + nbCorpus.matchedDocCount > 0 ? corpus.corpus.weightedCompound * wVader + nbCorpus.weightedCompound * wNB : 0;
-  let w = { socialText: 0.5, coinGecko: 0.25, fearGreed: 0.25 };
-  if (!cg.ok) {
-    w.socialText += w.coinGecko * 0.7;
-    w.fearGreed += w.coinGecko * 0.3;
-    w.coinGecko = 0;
-  }
-  if (!fg.ok) {
-    w.socialText += w.fearGreed * 0.7;
-    w.coinGecko += w.fearGreed * 0.3;
-    w.fearGreed = 0;
-  }
-  if (corpus.corpus.matchedDocCount + nbCorpus.matchedDocCount === 0) {
-    w.coinGecko += w.socialText * 0.5;
-    w.fearGreed += w.socialText * 0.5;
-    w.socialText = 0;
-  }
+  const socialAlive = corpus.corpus.matchedDocCount + nbCorpus.matchedDocCount > 0;
+  const socialTextScore = socialAlive ? corpus.corpus.weightedCompound * wVader + nbCorpus.weightedCompound * wNB : 0;
+  const newsTone = newsHasSignal ? Number((newsVader.corpus.weightedCompound * wVader + newsNb.weightedCompound * wNB).toFixed(4)) : 0;
+  let wSocial = socialAlive ? 0.3 : 0;
+  let wNews = newsHasSignal ? 0.2 : 0;
+  let wCg = cg.ok ? 0.25 : 0;
+  let wFg = fg.ok ? 0.25 : 0;
+  const wTotal = wSocial + wNews + wCg + wFg || 1;
+  wSocial /= wTotal;
+  wNews /= wTotal;
+  wCg /= wTotal;
+  wFg /= wTotal;
   const cgScore = cg.ok ? (cg.voteUpPct - cg.voteDownPct) / 100 : 0;
   const fgScore = fg.ok ? (fg.current.value - 50) / 50 : 0;
   const composite = Number(
-    (socialTextScore * w.socialText + cgScore * w.coinGecko + fgScore * w.fearGreed).toFixed(4)
+    (socialTextScore * wSocial + newsTone * wNews + cgScore * wCg + fgScore * wFg).toFixed(4)
   );
   const composite0to100 = Math.round((composite + 1) * 50);
   const confidence = Math.min(
     0.97,
-    0.3 + (corpus.corpus.matchedDocCount > 0 ? 0.25 : 0) + (cg.ok ? 0.2 : 0) + (fg.ok ? 0.15 : 0) + (Math.abs(composite) > 0.4 ? 0.1 : 0)
+    0.3 + (corpus.corpus.matchedDocCount > 0 ? 0.2 : 0) + (newsHasSignal ? 0.1 : 0) + (cg.ok ? 0.2 : 0) + (fg.ok ? 0.12 : 0) + (Math.abs(composite) > 0.4 ? 0.08 : 0)
   );
   const signal = compositeSignal(composite, confidence);
   const label = composite >= 0.5 ? "Euphoric" : composite >= 0.05 ? "Bullish" : composite > -0.05 ? "Neutral" : composite > -0.5 ? "Bearish" : "Capitulation";
@@ -4536,12 +4561,21 @@ ${p.selftext.slice(0, 300)}`,
       historyN: zs.n,
       spike
     },
+    newsTone: {
+      technique: "VADER + Naive Bayes on RSS headlines",
+      headlineCount: coinNews.length,
+      matchedCount: Math.max(newsVader.corpus.matchedDocCount, newsNb.matchedDocCount),
+      tone: newsTone,
+      label: newsTone >= 0.5 ? "Euphoric" : newsTone >= 0.05 ? "Bullish" : newsTone > -0.05 ? "Neutral" : newsTone > -0.5 ? "Bearish" : "Capitulation",
+      topHeadlines
+    },
     fusion: {
       vaderWeight: wVader,
       naiveBayesWeight: wNB,
-      redditWeight: Number(w.socialText.toFixed(2)),
-      coinGeckoWeight: Number(w.coinGecko.toFixed(2)),
-      fearGreedWeight: Number(w.fearGreed.toFixed(2)),
+      redditWeight: Number(wSocial.toFixed(2)),
+      newsWeight: Number(wNews.toFixed(2)),
+      coinGeckoWeight: Number(wCg.toFixed(2)),
+      fearGreedWeight: Number(wFg.toFixed(2)),
       compositeScore: composite,
       composite0to100,
       label,
@@ -4581,6 +4615,7 @@ var init_pipeline = __esm({
     init_hackerNews();
     init_fearGreed();
     init_coingecko();
+    init_cryptoNewsRss();
     init_vader();
     init_classifier();
     MENTION_HISTORY = /* @__PURE__ */ new Map();
@@ -5276,6 +5311,7 @@ var init_agent = __esm({
     init_state();
     init_fx();
     init_altdata();
+    init_pipeline();
     init_advisor();
     init_fraud();
     agentRouter = new Hono2();
@@ -5315,9 +5351,18 @@ var init_agent = __esm({
           case "getInsight": {
             if (!args.symbol) throw new Error("symbol required");
             const sym = String(args.symbol).toUpperCase();
+            const [alt, fg] = await Promise.all([getRealSentimentScore(sym), getFearGreed()]);
+            const signal = alt.score >= 0.15 ? "BUY" : alt.score <= -0.15 ? "SELL" : "HOLD";
             return c.json({
-              sentiment: getSentiment(sym),
-              fearGreed: await getFearGreed()
+              symbol: sym,
+              sentiment: {
+                score: Number(alt.score.toFixed(3)),
+                label: alt.label,
+                spike: alt.spike,
+                source: "VADER + Naive Bayes (live Reddit/HN + news), CoinGecko vote, Fear & Greed"
+              },
+              signal,
+              fearGreed: fg
             });
           }
           case "getFearGreed":

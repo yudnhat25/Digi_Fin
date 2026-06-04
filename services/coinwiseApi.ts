@@ -187,9 +187,14 @@ export interface AltDataPipelineResult {
     technique: string; currentMentions: number;
     zScore: number; baselineMean: number; baselineStd: number; historyN: number; spike: boolean;
   };
+  newsTone: {
+    technique: string; headlineCount: number; matchedCount: number;
+    tone: number; label: string;
+    topHeadlines: { title: string; source: string; url: string; ageMin: number; compound: number }[];
+  };
   fusion: {
     vaderWeight: number; naiveBayesWeight: number;
-    redditWeight: number; coinGeckoWeight: number; fearGreedWeight: number;
+    redditWeight: number; newsWeight: number; coinGeckoWeight: number; fearGreedWeight: number;
     compositeScore: number; composite0to100: number;
     label: string; confidence: number; signal: string;
   };

@@ -25,6 +25,7 @@ import { collectCorpusForSymbol, RedditPost } from './sources/reddit';
 import { collectHnForSymbol, HnHit } from './sources/hackerNews';
 import { fetchFearGreedReal, FearGreedReal } from './sources/fearGreed';
 import { fetchCoinGecko, CoinGeckoSignals } from './sources/coingecko';
+import { fetchLatestNews } from './sources/cryptoNewsRss';
 import { aggregateCorpus, analyzeText, DocumentSentiment, SentimentLabel } from './nlp/vader';
 import { classifyCorpus, classify as classifyTrained, MODEL_METRICS, getModelInfo } from './nlp/classifier';
 
@@ -129,11 +130,22 @@ export interface RealSentimentResult {
     spike: boolean;
   };
 
+  // Stage 2b' — news tone (separate channel: event-tone, not crowd mood)
+  newsTone: {
+    technique: 'VADER + Naive Bayes on RSS headlines';
+    headlineCount: number;
+    matchedCount: number;
+    tone: number;                 // [-1, 1]
+    label: SentimentLabel;
+    topHeadlines: { title: string; source: string; url: string; ageMin: number; compound: number }[];
+  };
+
   // Stage 2c — fusion
   fusion: {
     vaderWeight: number;
     naiveBayesWeight: number;
     redditWeight: number;          // legacy field kept for the UI bar chart
+    newsWeight: number;
     coinGeckoWeight: number;
     fearGreedWeight: number;
     compositeScore: number;       // [-1, 1]
@@ -261,6 +273,22 @@ export async function runAltDataPipeline(symbol: string): Promise<RealSentimentR
     status: cg.ok ? 'ok' : 'failed',
     message: cgMsg,
     latencyMs: Date.now() - t1c,
+  });
+
+  // STAGE 1d — crypto-news RSS (separate "event-tone" channel: fresh + dated)
+  const t1d = Date.now();
+  const allNews = await fetchLatestNews(50).catch(() => []);
+  // Relevant = tagged to this coin, or MACRO (market-wide events move every
+  // coin), and within the 1-year recency floor.
+  const newsCutoffSec = Date.now() / 1000 - 365 * 24 * 3600;
+  const coinNews = allNews.filter(
+    (h) => (h.tag === base || h.tag === 'MACRO') && (!h.publishedAt || h.publishedAt >= newsCutoffSec),
+  );
+  stages.push({
+    name: 'collect.news',
+    status: coinNews.length > 0 ? 'ok' : 'partial',
+    message: `${coinNews.length} headlines (of ${allNews.length}) for ${base} + MACRO`,
+    latencyMs: Date.now() - t1d,
   });
 
   // STAGE 2a — VADER NLP on Reddit + News corpus (union)
@@ -404,39 +432,70 @@ export async function runAltDataPipeline(symbol: string): Promise<RealSentimentR
     latencyMs: Date.now() - t2b,
   });
 
+  // STAGE 2b' — News tone: run the SAME NLP stack (VADER + NB) on headlines.
+  // Kept as its own channel because news measures EVENT tone, not crowd mood.
+  const t2bPrime = Date.now();
+  const newsDocs = coinNews.map((h) => ({ text: h.title, weight: 1 }));
+  const newsVader = aggregateCorpus(newsDocs);
+  const newsNb = classifyCorpus(newsDocs);
+  const newsHasSignal = newsVader.corpus.matchedDocCount + newsNb.matchedDocCount > 0;
+  const topHeadlines = coinNews
+    .map((h, i) => ({
+      title: h.title, source: h.source, url: h.url,
+      ageMin: h.publishedAt ? Math.round((Date.now() / 1000 - h.publishedAt) / 60) : 0,
+      compound: newsVader.perDoc[i]?.sentiment.compound ?? 0,
+    }))
+    .filter((h) => Math.abs(h.compound) > 0.05)
+    .sort((a, b) => Math.abs(b.compound) - Math.abs(a.compound))
+    .slice(0, 6);
+  stages.push({
+    name: 'analyse.newsTone',
+    status: newsHasSignal ? 'ok' : 'partial',
+    message: `news VADER=${newsVader.corpus.weightedCompound} NB=${newsNb.weightedCompound} (matched ${Math.max(newsVader.corpus.matchedDocCount, newsNb.matchedDocCount)}/${coinNews.length})`,
+    latencyMs: Date.now() - t2bPrime,
+  });
+
   // STAGE 2c — multi-source signal fusion
   const t2c = Date.now();
   // Inner blend: VADER (lexicon) and Naive Bayes (trained) on the SAME
   // social-text corpus. NB carries more weight because it is trained from
   // labeled data; VADER is the lexicon baseline.
+  // Inner text blend (used for BOTH social and news): VADER (lexicon) + NB (trained).
   const wVader = 0.4, wNB = 0.6;
-  const socialTextScore =
-    corpus.corpus.matchedDocCount + nbCorpus.matchedDocCount > 0
-      ? corpus.corpus.weightedCompound * wVader + nbCorpus.weightedCompound * wNB
-      : 0;
-  // Outer blend with non-text alt-data signals.
-  // Weights (sum to 1). When a source fails, redistribute proportionally.
-  let w = { socialText: 0.50, coinGecko: 0.25, fearGreed: 0.25 };
-  if (!cg.ok) { w.socialText += w.coinGecko * 0.7; w.fearGreed += w.coinGecko * 0.3; w.coinGecko = 0; }
-  if (!fg.ok) { w.socialText += w.fearGreed * 0.7; w.coinGecko += w.fearGreed * 0.3; w.fearGreed = 0; }
-  if (corpus.corpus.matchedDocCount + nbCorpus.matchedDocCount === 0) {
-    w.coinGecko += w.socialText * 0.5; w.fearGreed += w.socialText * 0.5; w.socialText = 0;
-  }
+  const socialAlive = corpus.corpus.matchedDocCount + nbCorpus.matchedDocCount > 0;
+  const socialTextScore = socialAlive
+    ? corpus.corpus.weightedCompound * wVader + nbCorpus.weightedCompound * wNB
+    : 0;
+  const newsTone = newsHasSignal
+    ? Number((newsVader.corpus.weightedCompound * wVader + newsNb.weightedCompound * wNB).toFixed(4))
+    : 0;
+
+  // Outer blend: social mood + news tone (event channel) + CoinGecko + F&G.
+  // Base weights — news kept moderate (it's event tone, not crowd mood, and
+  // headlines are written neutrally so they read muted). Dead channels drop to
+  // 0 and the survivors are renormalised to sum 1.
+  let wSocial = socialAlive ? 0.30 : 0;
+  let wNews = newsHasSignal ? 0.20 : 0;
+  let wCg = cg.ok ? 0.25 : 0;
+  let wFg = fg.ok ? 0.25 : 0;
+  const wTotal = wSocial + wNews + wCg + wFg || 1;
+  wSocial /= wTotal; wNews /= wTotal; wCg /= wTotal; wFg /= wTotal;
 
   const cgScore = cg.ok ? (cg.voteUpPct - cg.voteDownPct) / 100 : 0;        // [-1,1]
   const fgScore = fg.ok ? (fg.current.value - 50) / 50 : 0;                 // [-1,1]
 
   const composite = Number(
-    (socialTextScore * w.socialText + cgScore * w.coinGecko + fgScore * w.fearGreed).toFixed(4),
+    (socialTextScore * wSocial + newsTone * wNews + cgScore * wCg + fgScore * wFg).toFixed(4),
   );
   const composite0to100 = Math.round((composite + 1) * 50);
   const confidence = Math.min(
     0.97,
     0.30 +
-      (corpus.corpus.matchedDocCount > 0 ? 0.25 : 0) +
+      (corpus.corpus.matchedDocCount > 0 ? 0.20 : 0) +
+      (newsHasSignal ? 0.10 : 0) +
       (cg.ok ? 0.20 : 0) +
-      (fg.ok ? 0.15 : 0) +
-      (Math.abs(composite) > 0.4 ? 0.10 : 0),
+      (fg.ok ? 0.12 : 0) +
+      (Math.abs(composite) > 0.4 ? 0.08 : 0),
   );
   const signal = compositeSignal(composite, confidence);
   const label: SentimentLabel =
@@ -508,12 +567,25 @@ export async function runAltDataPipeline(symbol: string): Promise<RealSentimentR
       historyN: zs.n,
       spike,
     },
+    newsTone: {
+      technique: 'VADER + Naive Bayes on RSS headlines',
+      headlineCount: coinNews.length,
+      matchedCount: Math.max(newsVader.corpus.matchedDocCount, newsNb.matchedDocCount),
+      tone: newsTone,
+      label:
+        newsTone >= 0.5 ? 'Euphoric' :
+        newsTone >= 0.05 ? 'Bullish' :
+        newsTone > -0.05 ? 'Neutral' :
+        newsTone > -0.5 ? 'Bearish' : 'Capitulation',
+      topHeadlines,
+    },
     fusion: {
       vaderWeight: wVader,
       naiveBayesWeight: wNB,
-      redditWeight: Number(w.socialText.toFixed(2)),
-      coinGeckoWeight: Number(w.coinGecko.toFixed(2)),
-      fearGreedWeight: Number(w.fearGreed.toFixed(2)),
+      redditWeight: Number(wSocial.toFixed(2)),
+      newsWeight: Number(wNews.toFixed(2)),
+      coinGeckoWeight: Number(wCg.toFixed(2)),
+      fearGreedWeight: Number(wFg.toFixed(2)),
       compositeScore: composite,
       composite0to100,
       label,

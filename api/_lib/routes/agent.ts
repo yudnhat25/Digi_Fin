@@ -10,6 +10,7 @@ import { Hono } from 'hono';
 import { getAccount } from '../state';
 import { usdToVnd, vndToUsd, convert, getRates } from '../fx';
 import { getSentiment, getFearGreed } from '../ai/altdata';
+import { getRealSentimentScore } from '../ai/pipeline';
 import { buildAdvisor, RiskProfile } from '../ai/advisor';
 import { checkFraudWithRealAltData } from '../ai/fraud';
 
@@ -91,9 +92,21 @@ agentRouter.post('/execute', async (c) => {
       case 'getInsight': {
         if (!args.symbol) throw new Error('symbol required');
         const sym = String(args.symbol).toUpperCase();
+        // REAL alt-data pipeline (VADER + trained Naive Bayes on live Reddit/HN
+        // + news tone + CoinGecko vote + Fear & Greed) — the same brain that
+        // powers the Alt-Data Lab, not the synthetic stub. Cached per symbol.
+        const [alt, fg] = await Promise.all([getRealSentimentScore(sym), getFearGreed()]);
+        const signal = alt.score >= 0.15 ? 'BUY' : alt.score <= -0.15 ? 'SELL' : 'HOLD';
         return c.json({
-          sentiment: getSentiment(sym),
-          fearGreed: await getFearGreed(),
+          symbol: sym,
+          sentiment: {
+            score: Number(alt.score.toFixed(3)),
+            label: alt.label,
+            spike: alt.spike,
+            source: 'VADER + Naive Bayes (live Reddit/HN + news), CoinGecko vote, Fear & Greed',
+          },
+          signal,
+          fearGreed: fg,
         });
       }
       case 'getFearGreed':
