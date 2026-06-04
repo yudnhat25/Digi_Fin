@@ -269,7 +269,7 @@ const ModelMetricsAndDemo: React.FC = () => {
         <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Confusion matrix</p>
         <ConfusionMatrix confusion={info.metrics.confusion} />
         <p className="text-[10px] text-slate-500 mt-2">
-          Algorithm: <span className="text-slate-300 font-mono">{info.algorithm}</span> · α = {info.smoothingAlpha} · trained {new Date(info.trainedAt).toLocaleString()}
+          Algorithm: <span className="text-slate-300 font-mono">{info.algorithm}</span>{info.smoothingAlpha ? ` · α = ${info.smoothingAlpha}` : ''} · trained {new Date(info.trainedAt).toLocaleString()}
         </p>
       </div>
 
@@ -395,7 +395,7 @@ const AltDataPipelinePage: React.FC = () => {
             <div className="flex items-center gap-2 mb-3">
               <Pill tone="emerald">Alt-data pipeline</Pill>
               <Pill tone="slate">Live data</Pill>
-              <Pill tone="blue">VADER + Trained Naive Bayes + Z-score</Pill>
+              <Pill tone="blue">VADER + Trained Classifier + Z-score</Pill>
             </div>
             <h1 className="text-3xl md:text-4xl font-black tracking-tighter mb-2">
               Alternative-Data → AI → Fintech, transparently.
@@ -561,7 +561,7 @@ const AltDataPipelinePage: React.FC = () => {
           <StageCard
             step={3}
             title={`AI Technique 2 — ${data.mlClassifier.technique}`}
-            subtitle={`Trained from scratch on a hand-labeled crypto-sentiment corpus. Held-out accuracy ${(data.mlClassifier.modelAccuracy * 100).toFixed(1)}% · macro F1 ${(data.mlClassifier.modelMacroF1 * 100).toFixed(1)}% · trained ${new Date(data.mlClassifier.modelTrainedAt).toLocaleString()}.`}
+            subtitle={`Best of 4 compared models, trained on a ~5,000-doc labeled corpus (unigram+bigram features). Held-out accuracy ${(data.mlClassifier.modelAccuracy * 100).toFixed(1)}% · macro F1 ${(data.mlClassifier.modelMacroF1 * 100).toFixed(1)}% · trained ${new Date(data.mlClassifier.modelTrainedAt).toLocaleString()}.`}
             status={data.mlClassifier.matchedDocCount > 0 ? 'ok' : 'partial'}
           >
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
@@ -588,7 +588,7 @@ const AltDataPipelinePage: React.FC = () => {
               </div>
               <div className="md:col-span-2 grid grid-cols-1 lg:grid-cols-2 gap-3">
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-400 mb-2">NB → positive (with decisive features)</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-400 mb-2">Model → positive (with decisive features)</p>
                   <div className="space-y-2">
                     {data.mlClassifier.topPositive.length === 0
                       ? <p className="text-[11px] text-slate-500 italic">No positive predictions in this corpus.</p>
@@ -596,7 +596,7 @@ const AltDataPipelinePage: React.FC = () => {
                   </div>
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-rose-400 mb-2">NB → negative (with decisive features)</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-rose-400 mb-2">Model → negative (with decisive features)</p>
                   <div className="space-y-2">
                     {data.mlClassifier.topNegative.length === 0
                       ? <p className="text-[11px] text-slate-500 italic">No negative predictions in this corpus.</p>
@@ -654,13 +654,13 @@ const AltDataPipelinePage: React.FC = () => {
           <StageCard
             step={5}
             title="AI Technique 4 — Multi-source signal fusion"
-            subtitle={`Inner blend: VADER ${(data.fusion.vaderWeight * 100).toFixed(0)}% + trained Naive Bayes ${(data.fusion.naiveBayesWeight * 100).toFixed(0)}%. Outer blend: social-text + news tone + CoinGecko + Fear & Greed.`}
+            subtitle={`Inner blend: VADER ${(data.fusion.vaderWeight * 100).toFixed(0)}% + trained model ${(data.fusion.naiveBayesWeight * 100).toFixed(0)}%. Outer blend: social-text + news tone + CoinGecko + Fear & Greed.`}
           >
             <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
               <div className="md:col-span-7 space-y-2">
                 {[
-                  { label: `Social-text (VADER ${(data.fusion.vaderWeight * 100).toFixed(0)}% + NB ${(data.fusion.naiveBayesWeight * 100).toFixed(0)}%)`, val: data.nlp.weightedCompound * data.fusion.vaderWeight + data.mlClassifier.weightedCompound * data.fusion.naiveBayesWeight, w: data.fusion.redditWeight, color: 'bg-emerald-400' },
-                  { label: `News tone (VADER+NB · ${data.newsTone.matchedCount}/${data.newsTone.headlineCount} headlines)`, val: data.newsTone.tone, w: data.fusion.newsWeight, color: 'bg-fuchsia-400' },
+                  { label: `Social-text (VADER ${(data.fusion.vaderWeight * 100).toFixed(0)}% + model ${(data.fusion.naiveBayesWeight * 100).toFixed(0)}%)`, val: data.nlp.weightedCompound * data.fusion.vaderWeight + data.mlClassifier.weightedCompound * data.fusion.naiveBayesWeight, w: data.fusion.redditWeight, color: 'bg-emerald-400' },
+                  { label: `News tone (VADER+model · ${data.newsTone.matchedCount}/${data.newsTone.headlineCount} headlines)`, val: data.newsTone.tone, w: data.fusion.newsWeight, color: 'bg-fuchsia-400' },
                   { label: 'CoinGecko vote-up share', val: data.raw.coinGecko ? (data.raw.coinGecko.voteUpPct - data.raw.coinGecko.voteDownPct) / 100 : 0, w: data.fusion.coinGeckoWeight, color: 'bg-blue-400' },
                   { label: 'Fear & Greed (centered)', val: data.raw.fearGreed ? (data.raw.fearGreed.current.value - 50) / 50 : 0, w: data.fusion.fearGreedWeight, color: 'bg-amber-300' },
                 ].map((row) => (

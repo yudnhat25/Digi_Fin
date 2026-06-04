@@ -1,142 +1,20 @@
 #!/usr/bin/env node
 /**
- * Train the crypto sentiment Naive Bayes model.
+ * DEPRECATED — the production model is now trained in Python (scikit-learn) so
+ * we can compare several algorithms and pick the best, then export the winner
+ * into the TS log-linear runtime.
  *
- *   Usage: npm run train:nlp
+ *   npm run train:nlp     → python scripts/build_dataset.py
+ *                           python scripts/train_model.py   (writes model.ts + model-metrics.ts)
+ *   npm run verify:nlp    → npx tsx scripts/verify-model.ts (TS reproduces Python exactly)
  *
- * Distant-supervision pipeline:
- *   - Gold (211 hand-labeled) is stratified split 80/20 → goldTrain + goldTest
- *   - Silver (VADER auto-labeled scraped corpus, if present) ADDS to training
- *   - Evaluation runs only on goldTest — honest measure of generalization
- *
- * If data/silver_labeled_corpus.json doesn't exist, we fall back to
- * gold-only training. Run `npm run scrape:corpus && npm run label:corpus`
- * to generate the silver corpus.
+ * This legacy TypeScript Naive-Bayes trainer is kept only for reference. It is
+ * intentionally a no-op so it can never clobber the Python-exported model.ts
+ * with the old unigram-only format.
  */
-import { writeFileSync, readFileSync, mkdirSync, existsSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { DATASET } from '../api/_lib/ai/nlp/training/dataset';
-import { train, evaluate, stratifiedSplit, type LabeledDoc } from '../api/_lib/ai/nlp/training/trainer';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const root = resolve(__dirname, '..');
-
-// ─── Load gold ────────────────────────────────────────────────────
-console.log(`[train-nlp] gold dataset: ${DATASET.length} hand-labeled docs`);
-const goldByClass = DATASET.reduce(
-  (m: Record<string, number>, d) => ((m[d.label] = (m[d.label] || 0) + 1), m),
-  {} as Record<string, number>,
+console.log(
+  '[train-nlp] DEPRECATED. The model is trained in Python now:\n' +
+  '  npm run train:nlp   (runs scripts/build_dataset.py + scripts/train_model.py)\n' +
+  '  npm run verify:nlp  (checks the TS runtime matches the Python model)\n' +
+  'See notebooks/train_sentiment_model.ipynb for the full comparison.',
 );
-console.log(`           pos=${goldByClass.positive}  neg=${goldByClass.negative}  neu=${goldByClass.neutral}`);
-
-// ─── Load silver (optional) ───────────────────────────────────────
-const SILVER_PATH = resolve(root, 'data/silver_labeled_corpus.json');
-let silver: LabeledDoc[] = [];
-if (existsSync(SILVER_PATH)) {
-  const raw = JSON.parse(readFileSync(SILVER_PATH, 'utf-8')) as { text: string; label: 'positive' | 'negative' }[];
-  silver = raw.map((d) => ({ text: d.text, label: d.label }));
-  const silverByClass = silver.reduce(
-    (m: Record<string, number>, d) => ((m[d.label] = (m[d.label] || 0) + 1), m),
-    {} as Record<string, number>,
-  );
-  console.log(`[train-nlp] silver corpus: ${silver.length} VADER-labeled docs`);
-  console.log(`           pos=${silverByClass.positive || 0}  neg=${silverByClass.negative || 0}`);
-} else {
-  console.log(`[train-nlp] silver corpus: NOT FOUND (run \`npm run scrape:corpus && npm run label:corpus\` to add)`);
-}
-
-// ─── Stratified split (gold only — test set must be hand-verified) ─
-const { train: goldTrain, test: goldTest } = stratifiedSplit(DATASET, 0.2, 42);
-const trainSet = [...goldTrain, ...silver];
-const testSet = goldTest;
-
-console.log('');
-console.log(`[train-nlp] training set : ${trainSet.length}  (${goldTrain.length} gold + ${silver.length} silver)`);
-console.log(`[train-nlp] test set     : ${testSet.length}  (gold-only, hand-verified)`);
-console.log('[train-nlp] training (alpha=1.0)...');
-
-const t0 = Date.now();
-const model = train(trainSet, { alpha: 1.0 });
-model.testSize = testSet.length;
-const metrics = evaluate(model, testSet);
-const elapsed = Date.now() - t0;
-
-console.log('');
-console.log('═════════════ Evaluation (on gold test set) ═════════════');
-console.log(`   vocab: ${model.vocabulary.length}  |  trained in ${elapsed} ms`);
-console.log('');
-console.log(`   accuracy:  ${(metrics.accuracy * 100).toFixed(2)}%`);
-console.log(`   macro F1:  ${(metrics.macroF1 * 100).toFixed(2)}%`);
-console.log('');
-for (const c of ['positive', 'negative', 'neutral'] as const) {
-  const m = metrics.perClass[c];
-  console.log(
-    `   ${c.padEnd(9)}  P=${(m.precision * 100).toFixed(1).padStart(5)}%  ` +
-    `R=${(m.recall * 100).toFixed(1).padStart(5)}%  ` +
-    `F1=${(m.f1 * 100).toFixed(1).padStart(5)}%  (n=${m.support})`,
-  );
-}
-console.log('');
-console.log('   Confusion (rows=true, cols=predicted):');
-console.log('              pos    neg    neu');
-for (const c of ['positive', 'negative', 'neutral'] as const) {
-  const row = metrics.confusion[c];
-  console.log(
-    `   ${c.padEnd(8)} ${String(row.positive).padStart(4)}  ${String(row.negative).padStart(5)}  ${String(row.neutral).padStart(5)}`,
-  );
-}
-
-if (metrics.errors.length) {
-  console.log('');
-  console.log(`   Misclassified examples (${metrics.errors.length}):`);
-  for (const e of metrics.errors.slice(0, 8)) {
-    console.log(
-      `   • [true=${e.trueLabel}, pred=${e.predicted} @ ${(e.confidence * 100).toFixed(0)}%]  "${e.text.slice(0, 70)}"`,
-    );
-  }
-}
-console.log('');
-
-// ─── Persist ──────────────────────────────────────────────────────
-const outDir = resolve(root, 'api/_lib/ai/nlp');
-mkdirSync(outDir, { recursive: true });
-
-const modelTs =
-  `// AUTO-GENERATED by scripts/train-nlp.ts — DO NOT EDIT by hand.\n` +
-  `// Re-run \`npm run train:nlp\` to retrain.\n` +
-  `import type { NbModel } from './training/trainer';\n` +
-  `export const MODEL: NbModel = ${JSON.stringify(model)};\n`;
-writeFileSync(resolve(outDir, 'model.ts'), modelTs, 'utf8');
-
-const metricsPayload = {
-  accuracy: metrics.accuracy,
-  macroF1: metrics.macroF1,
-  perClass: metrics.perClass,
-  confusion: metrics.confusion,
-  testSize: metrics.testSize,
-  errors: metrics.errors,
-  vocabSize: model.vocabulary.length,
-  trainSize: model.trainSize,
-  trainedAt: model.trainedAt,
-  algorithm: silver.length ? `${model.algorithm} (distant-supervision: gold=${goldTrain.length} + silver=${silver.length})` : model.algorithm,
-  smoothingAlpha: model.smoothingAlpha,
-};
-const metricsTs =
-  `// AUTO-GENERATED by scripts/train-nlp.ts — DO NOT EDIT by hand.\n` +
-  `import type { EvalMetrics } from './training/trainer';\n` +
-  `export const MODEL_METRICS: EvalMetrics & {\n` +
-  `  vocabSize: number;\n` +
-  `  trainSize: number;\n` +
-  `  testSize: number;\n` +
-  `  trainedAt: string;\n` +
-  `  algorithm: string;\n` +
-  `  smoothingAlpha: number;\n` +
-  `} = ${JSON.stringify(metricsPayload)};\n`;
-writeFileSync(resolve(outDir, 'model-metrics.ts'), metricsTs, 'utf8');
-
-console.log(`[train-nlp] persisted:`);
-console.log(`   • api/_lib/ai/nlp/model.ts        (${modelTs.length} bytes)`);
-console.log(`   • api/_lib/ai/nlp/model-metrics.ts (${metricsTs.length} bytes)`);
-console.log('');
-console.log('[train-nlp] done. Run `npm run build:api` next to rebundle for Vercel.');

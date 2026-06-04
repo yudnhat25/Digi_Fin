@@ -41,21 +41,36 @@ const STOPWORDS = new Set([
   'our', 'us', 'me', 'him', 'who', 'what', 'which', 'whom', 'whose',
 ]);
 
+/**
+ * Feature pipeline. MUST stay byte-for-byte identical to the Python tokenizer in
+ * scripts/train_model.py (tokenize) — the production model is trained there and
+ * its weights are keyed on these exact tokens. Returns unigrams + adjacent
+ * bigrams ("not bullish", "to buy") so the classifier sees CONTEXT, not just
+ * isolated keywords (which is what made the old unigram model rate any text with
+ * "buy" as positive). ASCII-only on purpose: emoji tokenize inconsistently
+ * across JS/Python, so they are excluded in both.
+ */
 export function preprocess(text: string): string[] {
   if (!text) return [];
   const cleaned = text
     .toLowerCase()
     .replace(/https?:\/\/\S+/g, ' ')
     .replace(/[*_`>#~]/g, ' ');
-  const tokens = cleaned.match(/[a-z']+|🚀|💎|\$[a-z]{2,8}/g) || [];
-  return tokens.filter((t) => t.length >= 2 && t.length <= 20 && !STOPWORDS.has(t));
+  const matched = cleaned.match(/[a-z']+|\$[a-z]{2,8}/g) || [];
+  const unigrams = matched.filter((t) => t.length >= 2 && t.length <= 20 && !STOPWORDS.has(t));
+  const tokens = unigrams.slice();
+  for (let i = 0; i < unigrams.length - 1; i++) tokens.push(unigrams[i] + ' ' + unigrams[i + 1]);
+  return tokens;
 }
 
 // ─── Model shape ──────────────────────────────────────────────────
 
 export interface NbModel {
   version: string;
-  algorithm: 'multinomial-naive-bayes';
+  // The TS predict() is a general log-linear scorer, so the persisted model may
+  // be any linear classifier exported from scripts/train_model.py (logistic-
+  // regression, linear-svc, multinomial-naive-bayes, …) — not only NB.
+  algorithm: string;
   smoothingAlpha: number;
   classes: SentimentClass[];
   classDocCount: Record<SentimentClass, number>; // for priors
@@ -171,13 +186,8 @@ export function predict(model: NbModel, text: string): Prediction {
     logScore.positive += contrib.positive;
     logScore.negative += contrib.negative;
     logScore.neutral += contrib.neutral;
-    if (row) {
-      // Discriminative power = max - min log-prob across classes for this token
-      const vals = [contrib.positive, contrib.negative, contrib.neutral];
-      const span = Math.max(...vals) - Math.min(...vals);
-      featureContribs.push({ token: t, contributions: contrib });
-      (featureContribs as any).__lastSpan = span;
-    }
+    // Only in-vocab tokens (with an actual weight row) are explainable features.
+    if (row) featureContribs.push({ token: t, contributions: contrib });
   }
 
   // Softmax → normalized class probabilities (numerically stable).

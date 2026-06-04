@@ -165,14 +165,11 @@ aiRouter.post('/alt-data/classify', async (c) => {
   const nbHasSignal = nb.matchedFeatures.length > 0;
   const vaderHasSignal = vader.matchedTerms.length > 0;
 
-  // The NB model is trained on crypto-finance text only. For comments built
-  // from out-of-vocabulary words (casual speech, profanity) — or where NB has
-  // only a weak read — it collapses toward its class prior, which skews
-  // "positive". Trust NB only when it has a confident in-vocab read; otherwise
-  // defer to the VADER lexicon (covers everyday + profanity terms). If neither
-  // has a clear signal, return Neutral — never a guessed Positive.
-  const nbConfident = nbHasSignal && nb.confidence >= 0.6;
-  if (!nbConfident && vaderHasSignal) {
+  // The trained classifier (LinearSVC over unigram+bigram features, trained on
+  // ~5k labeled docs) is the PRIMARY. We defer to the VADER lexicon only when
+  // the model has NO in-vocab feature to score (slang/profanity the corpus
+  // never covered). If neither has any signal, return Neutral — never a guess.
+  if (!nbHasSignal && vaderHasSignal) {
     const cmp = vader.compound;
     const label = cmp >= 0.05 ? 'positive' : cmp <= -0.05 ? 'negative' : 'neutral';
     return c.json({
@@ -180,14 +177,14 @@ aiRouter.post('/alt-data/classify', async (c) => {
       label,
       compound: Number(cmp.toFixed(4)),
       confidence: Number(Math.min(0.95, 0.55 + Math.abs(cmp) * 0.45).toFixed(4)),
-      source: nbHasSignal ? 'vader-override' : 'vader-fallback',
+      source: 'vader-fallback',
       vader: { compound: cmp, matchedTerms: vader.matchedTerms },
     });
   }
   if (!nbHasSignal && !vaderHasSignal) {
     return c.json({ ...nb, label: 'neutral', compound: 0, confidence: 0.34, source: 'no-signal' });
   }
-  return c.json({ ...nb, source: 'naive-bayes' });
+  return c.json({ ...nb, source: 'trained-model' });
 });
 
 aiRouter.get('/alt-data/sources/health', async (c) => {

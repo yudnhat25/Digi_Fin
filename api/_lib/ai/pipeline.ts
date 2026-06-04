@@ -102,9 +102,11 @@ export interface RealSentimentResult {
     topNegative: PerPostAnalysis[];
   };
 
-  // Stage 2' — Trained Naive Bayes classifier (the AI model the assignment wants)
+  // Stage 2' — the trained classifier (the AI model the assignment wants).
+  // Algorithm is chosen by model comparison in scripts/train_model.py, so the
+  // label is dynamic (e.g. Linear SVM / Logistic Regression / Naive Bayes).
   mlClassifier: {
-    technique: 'Multinomial Naive Bayes (trained from scratch)';
+    technique: string;
     modelTrainedAt: string;
     modelAccuracy: number;
     modelMacroF1: number;
@@ -133,7 +135,7 @@ export interface RealSentimentResult {
 
   // Stage 2b' — news tone (separate channel: event-tone, not crowd mood)
   newsTone: {
-    technique: 'VADER + Naive Bayes on RSS headlines';
+    technique: string;
     headlineCount: number;
     matchedCount: number;
     tone: number;                 // [-1, 1]
@@ -529,6 +531,15 @@ export async function runAltDataPipeline(symbol: string): Promise<RealSentimentR
   // STAGE 4 — fintech application
   const application = buildApplication(composite, spike, signal);
 
+  // Friendly label for whichever algorithm scripts/train_model.py shipped.
+  const ML_ALGO_NAMES: Record<string, string> = {
+    'linear-svc': 'Linear SVM (trained from scratch)',
+    'logistic-regression': 'Logistic Regression (trained from scratch)',
+    'multinomial-naive-bayes': 'Multinomial Naive Bayes (trained from scratch)',
+    'complement-naive-bayes': 'Complement Naive Bayes (trained from scratch)',
+  };
+  const mlTechnique = ML_ALGO_NAMES[MODEL_METRICS.algorithm] || `${MODEL_METRICS.algorithm} (trained from scratch)`;
+
   return {
     symbol,
     base,
@@ -557,7 +568,7 @@ export async function runAltDataPipeline(symbol: string): Promise<RealSentimentR
       topNegative,
     },
     mlClassifier: {
-      technique: 'Multinomial Naive Bayes (trained from scratch)',
+      technique: mlTechnique,
       modelTrainedAt: MODEL_METRICS.trainedAt,
       modelAccuracy: MODEL_METRICS.accuracy,
       modelMacroF1: MODEL_METRICS.macroF1,
@@ -584,7 +595,7 @@ export async function runAltDataPipeline(symbol: string): Promise<RealSentimentR
       spike,
     },
     newsTone: {
-      technique: 'VADER + Naive Bayes on RSS headlines',
+      technique: `VADER + ${MODEL_METRICS.algorithm} on RSS headlines`,
       headlineCount: coinNews.length,
       matchedCount: Math.max(newsVader.corpus.matchedDocCount, newsNb.matchedDocCount),
       tone: newsTone,

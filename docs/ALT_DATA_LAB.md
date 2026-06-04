@@ -150,27 +150,37 @@ Việc cho hai model "bỏ phiếu" và đo agreement chứng minh bạn hiểu 
 
 ### 5.1 Mục tiêu & lý do chọn model
 
-Notebook train một **Multinomial Naive Bayes** để phân loại văn bản crypto thành `positive / negative / neutral`.
+Notebook **so sánh 4 mô hình** để phân loại văn bản crypto thành `positive / negative / neutral`, rồi **chọn mô hình tốt nhất theo macro-F1** và xuất nó vào runtime:
 
-**Vì sao Naive Bayes?**
-- Là classifier văn bản kinh điển trong giáo trình *Introduction to Information Retrieval* (Manning, Raghavan & Schütze, 2008, Ch. 13) — baseline chuẩn để so sánh trong NLP fintech.
-- **Giải thích được:** mỗi dự đoán phân rã thành đóng góp từng token → đúng thứ UI cần khoe.
+| Mô hình | Vai trò |
+|---|---|
+| Multinomial Naive Bayes | baseline kinh điển (Manning et al., Ch. 13) |
+| Complement Naive Bayes | NB cải tiến cho dữ liệu lệch |
+| Logistic Regression | tuyến tính phân biệt, xác suất hiệu chỉnh |
+| **Linear SVM (đang serve)** | **thắng theo macro-F1 trên test gold** |
 
-### 5.2 Dữ liệu — Distant Supervision (gold + silver)
+**Vì sao cách này?**
+- **Khách quan:** không cố định 1 model — để 4 model cạnh tranh trên cùng dữ liệu, số liệu chọn ra mô hình.
+- **Giải thích được:** mọi mô hình ở đây đều **tuyến tính** → mỗi dự đoán phân rã thành đóng góp từng token (UI khoe "decisive features").
+- **Port chính xác:** runtime TS là bộ chấm log-linear tổng quát, nên trọng số `coef_→weight`, `intercept_→prior` của model thắng được tái hiện **đúng từng dự đoán** (đã verify numpy == sklearn trước khi xuất).
 
-Đây là kỹ thuật nâng cao đáng nói khi pitch:
+### 5.2 Dữ liệu — corpus ~5,000 mẫu ([`scripts/build_dataset.py`](../scripts/build_dataset.py) → [`data/sentiment_dataset.json`](../data/sentiment_dataset.json))
 
-| Tập | File | Số lượng | Cách gán nhãn |
+Trộn 4 nguồn, cân bằng 3 lớp (~1,700 mỗi lớp):
+
+| Nguồn | File | ~Số lượng | Cách gán nhãn |
 |---|---|---|---|
-| **Gold** | [`data/crypto_sentiment_dataset.json`](../data/crypto_sentiment_dataset.json) | 211 docs | **Người gán nhãn tay** (~80 pos / 81 neg / 50 neu) |
-| **Silver** | `data/silver_labeled_corpus.json` | ~500 docs | **VADER tự gán nhãn** trên text scrape từ HN + RSS, đã cân bằng + lọc liên quan crypto |
+| **Gold** | [`crypto_sentiment_dataset.json`](../data/crypto_sentiment_dataset.json) | 211 | **Người gán nhãn tay** (3 lớp) |
+| **Silver** | `silver_labeled_corpus.json` | ~380 | VADER tự gán trên text scrape (pos/neg) |
+| **Real (distant)** | `scraped_raw_corpus.json` (8,034 HN thật) | ~1,650 | **Luật từ khóa độ-chính-xác-cao** + tin trung tính = factual không có từ cảm xúc |
+| **Synthetic** | template trong build_dataset.py | ~2,850 | Sinh có nhãn đúng, **chủ đích phủ ca khó**: "buy" trong ngữ cảnh bearish, phủ định ("not bullish"), câu hỏi trung tính |
 
-Sinh silver bằng: `npm run scrape:corpus && npm run label:corpus` (scripts trong [`scripts/`](../scripts/)).
+Tái tạo: `npm run dataset:build` (deterministic, seed 42).
 
 **Luật đánh giá trung thực (rất quan trọng):**
-- **Test set = chỉ gold** (nhãn người kiểm chứng).
-- **Silver chỉ tham gia tập TRAIN.**
-- → Không được đánh giá model bằng chính nhãn tự động của VADER (sẽ ăn gian). Đây là điểm khiến con số accuracy đáng tin.
+- **Test set = chỉ GOLD** (nhãn người kiểm chứng, cân bằng 3 lớp) — benchmark khách quan duy nhất.
+- Silver / real-distant / synthetic **chỉ ở tập TRAIN**.
+- → Không đánh giá model bằng nhãn tự động (sẽ ăn gian), và không đánh giá bằng template (sẽ học vẹt). Đây là điểm khiến con số accuracy đáng tin.
 
 ### 5.3 Các bước trong notebook (10 cell chính)
 
@@ -182,35 +192,27 @@ Sinh silver bằng: `npm run scrape:corpus && npm run label:corpus` (scripts tro
    - Top từ phổ biến mỗi lớp (sanity check: positive phải ra *rally, surge, approval*; negative ra *hack, crash, rug*).
 4. **Tiền xử lý** — pipeline **khớp byte-for-byte với runtime TS** để model phân loại live HN/Reddit giống hệt lúc train:
    ```
-   lowercase → bỏ URL → bỏ ký tự markdown → tách token theo [a-z']
-   → lọc độ dài 2..20 → bỏ 40 stopword tiếng Anh phổ biến
+   lowercase → bỏ URL → bỏ ký tự markdown → tách token theo [a-z'] và $ticker
+   → lọc độ dài 2..20 → bỏ 40 stopword → SINH BIGRAM kề nhau
    ```
-5. **Stratified split 80/20** — chia phân tầng theo lớp, `random_state=42`. Test lấy 20% **của gold**; silver nối vào train.
-6. **Vectorize bag-of-words** — `CountVectorizer` tạo ma trận document-term với ô = số đếm thô `f(t,d)`. MultinomialNB ăn count thô trực tiếp (không cần TF-IDF).
-7. **Train MultinomialNB(alpha=1.0)** — Laplace smoothing α=1. Công thức:
-
-   Phân loại: chọn lớp `c` cực đại
-   $$P(c \mid d) \propto P(c) \cdot \prod_{t \in d} P(t \mid c)^{f(t,d)}$$
-
-   Likelihood có làm trơn add-α:
-   $$P(t \mid c) = \frac{\text{count}(t,c) + \alpha}{\sum_{t'} \text{count}(t',c) + \alpha \cdot |V|}$$
-
-   Tính trong **không gian log** để ổn định số học:
-   $$\log P(c \mid d) = \log P(c) + \sum_{t \in d} f(t,d)\cdot \log P(t \mid c)$$
-8. **Đánh giá** trên test gold: accuracy, macro-F1, `classification_report` (P/R/F1 từng lớp), **confusion matrix** (heatmap), **top token quyết định** mỗi lớp (xếp theo `log P(t|c)`), **error analysis** (liệt kê doc bị phân sai → biết blind spot để mở rộng dữ liệu).
-9. **So sánh baseline Logistic Regression** trên cùng feature (generative vs discriminative).
-10. **Inference demo** trên 3 câu chưa từng thấy.
+   **Bigram là cải tiến then chốt**: "to buy", "not bullish", "dumping to" cho model thấy **ngữ cảnh**, sửa lỗi cũ (model unigram chấm mọi câu có "buy" thành positive).
+5. **Split trung thực** — Test = held-out **gold** (25%, cân bằng, `random_state=42`); mọi nguồn khác (silver/real/synthetic) vào TRAIN.
+6. **Vectorize** — `CountVectorizer(analyzer=tokenize, min_df=2)` → ma trận đếm thô unigram+bigram.
+7. **Train & so sánh 4 mô hình** — MultinomialNB, ComplementNB, LogisticRegression, LinearSVC (`class_weight='balanced'`). Mỗi model + **5-fold CV macro-F1** để ổn định.
+8. **Chọn mô hình** theo macro-F1 trên test gold, **với điều kiện port được** (tái hiện tuyến tính == sklearn `predict`; ComplementNB bị loại vì khác quy ước dấu).
+9. **Đánh giá** mô hình thắng: accuracy, macro-F1, `classification_report`, **confusion matrix** (heatmap), **error analysis**.
+10. **Hiệu chỉnh confidence** (nhiệt độ softmax cho SVC — bất biến argmax) rồi **xuất** `model.ts` + `model-metrics.ts`, và verify TS == Python.
 
 ### 5.4 Kết quả thực tế (model hiện đang serve)
 
-Lấy từ `GET /api/v1/ai/alt-data/model/info` (đã test):
+Lấy từ `GET /api/v1/ai/alt-data/model/info` (số liệu auto-cập nhật từ `model-metrics.ts`):
 ```
-algorithm     : multinomial-naive-bayes (distant-supervision: gold=289 + silver=500)
-accuracy      : 73.6%        macroF1 : 73.9%
-vocabSize     : 2268         train/test : 789 / 72
-per-class F1  : positive 70.4% · negative 73.9% · neutral 77.3%
+algorithm     : linear-svc  (thắng 4-model so sánh; CV macro-F1 ≈ 0.91)
+accuracy      : 69.2%        macroF1 : 68.8%   (trên test GOLD cân bằng, 52 doc)
+vocabSize     : ~3,200 (unigram+bigram)        train/test : ~5,050 / 52
+per-class F1  : positive 60.6% · negative 81.1% · neutral 64.7%
 ```
-Error analysis cho thấy blind spot điển hình: câu nói về **whale accumulation** ("smart money moving in") bị đoán nhầm negative — gợi ý nên bổ sung dữ liệu nhóm này.
+> Lưu ý: con số trên **test gold cân bằng nhỏ** nên khắt khe hơn benchmark cũ — nhưng mô hình mới **sửa được các lỗi thực tế** mà bản unigram cũ mắc (vd "dumping to buy AI stocks" giờ ra **negative** thay vì positive). CV macro-F1 trên toàn corpus ≈ 0.91. Mô hình thắng được chọn tự động, không cố định.
 
 ### 5.5 ⭐ Xuất model sang runtime — cách "Python train, TypeScript serve"
 
@@ -221,14 +223,14 @@ Cell cuối ghi **2 file TypeScript tự sinh** (KHÔNG sửa tay):
 | [`api/_lib/ai/nlp/model.ts`](../api/_lib/ai/nlp/model.ts) (~250KB) | Trọng số: `logPrior`, `logLikelihood` từng token/lớp, `oovLogLikelihood` (token lạ), `vocabulary` | `classifier.ts` để inference |
 | [`api/_lib/ai/nlp/model-metrics.ts`](../api/_lib/ai/nlp/model-metrics.ts) | accuracy, macroF1, per-class, confusion, errors | Card "Training summary" trên UI |
 
-Cụ thể notebook kéo từ sklearn:
-- `clf.class_log_prior_` → `logPrior`
-- `clf.feature_log_prob_[i,j]` → `logLikelihood[token][class]`
-- tính lại `oovLogLikelihood = log(α / (classTokenCount + α·|V|))` cho token ngoài từ vựng.
+Cụ thể script kéo từ sklearn (model thắng là tuyến tính):
+- `clf.intercept_[c]` (hoặc `class_log_prior_`) → `logPrior[c]`
+- `clf.coef_[c][j]` (hoặc `feature_log_prob_`) → `logLikelihood[token][c]`
+- `oovLogLikelihood = 0` (token lạ đóng góp 0 trong mô hình tuyến tính).
 
-Runtime TS ([`nlp/training/trainer.ts`](../api/_lib/ai/nlp/training/trainer.ts) hàm `predict`) **tái hiện đúng phép Naive Bayes log-space** trên trọng số đó → cho ra **cùng kết quả** như sklearn, nhưng chạy được trong serverless function không cần Python.
+Runtime TS ([`nlp/training/trainer.ts`](../api/_lib/ai/nlp/training/trainer.ts) hàm `predict`) là bộ chấm **log-linear tổng quát** `score[c] = prior[c] + Σ count·weight[token][c] → softmax` → tái hiện **đúng từng dự đoán** của model sklearn (đã verify bằng [`scripts/verify-model.ts`](../scripts/verify-model.ts)), chạy trong serverless không cần Python.
 
-> **Hai đường train tương đương:** ngoài notebook (Python/sklearn — deliverable học thuật), còn có `npm run train:nlp` ([`scripts/train-nlp.ts`](../scripts/train-nlp.ts)) train thuần Node cho CI. **Cả hai sinh ra cùng `model.ts`.**
+> **Đường train:** `npm run train:nlp` chạy [`build_dataset.py`](../scripts/build_dataset.py) + [`train_model.py`](../scripts/train_model.py) (Python/sklearn — cũng là nội dung notebook). `npm run verify:nlp` kiểm chứng TS == Python.
 
 ### 5.6 Quy trình retrain (3 bước)
 ```bash
