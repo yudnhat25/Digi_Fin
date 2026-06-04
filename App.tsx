@@ -25,7 +25,7 @@ import OrderBookPanel from './components/OrderBookPanel';
 import TransactionSuccessModal, { TxnSuccessData } from './components/TransactionSuccessModal';
 import StripePayoutModal from './components/StripePayoutModal';
 import FraudGateModal from './components/FraudGateModal';
-import { UserState, MarketData, LeaderboardEntry, SubscriptionTier, StakePosition } from './types';
+import { UserState, MarketData, LeaderboardEntry, SubscriptionTier, StakePosition, Asset } from './types';
 import { fetchMarketPrices } from './services/api';
 import { apiBankReferralClaim, apiFraudCheck, FraudCheck } from './services/coinwiseApi';
 import { CRYPTO_SYMBOLS, BASELINE_NET_WORTH, EARN_PRODUCTS, ENTRY_FEE } from './constants';
@@ -507,37 +507,55 @@ const App: React.FC = () => {
     showToast(finalPrice > 0 ? `Enrolled! $${finalPrice} paid from your CoinWise Bank.` : 'Enrolled successfully!');
   };
 
+  // Coin-style Earn: you stake the ACTUAL asset you hold. The product `symbol`
+  // (BTC/ETH/SOL/BNB) is deducted from holdings and yield accrues IN that coin;
+  // USDT is the one cash-denominated product (USDT ≈ your cash balance). `amount`
+  // is in coin units (USD for USDT). Price is only for the USD-equivalent display.
+  const fmtCoin = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 6 });
+  const assetsOf = (u: UserState) => Array.isArray(u.assets)
+    ? u.assets
+    : (u.assets && typeof u.assets === 'object' ? Object.values(u.assets) as Asset[] : []);
+
   const handleStake = (productId: string, amount: number) => {
     if (!currentUser) return;
-    if (amount > currentUser.balance) {
-      showToast('Insufficient balance to stake.', 'error');
+    const product = EARN_PRODUCTS.find(p => p.id === productId);
+    if (!product || amount <= 0) return;
+    const sym = product.symbol;
+    const isUsdt = sym === 'USDT';
+    const pair = `${sym}USDT`;
+    const price = isUsdt ? 1 : (marketPrices.find(m => m.symbol === pair)?.price || 0);
+
+    const assets = assetsOf(currentUser);
+    const held = isUsdt ? currentUser.balance : (assets.find(a => a.symbol === pair)?.amount || 0);
+    const TICK = 1e-8;
+    if (amount > held + TICK) {
+      showToast(isUsdt ? 'Insufficient balance to stake.' : `You don't hold enough ${sym} — buy some first.`, 'error');
       return;
     }
-    const product = EARN_PRODUCTS.find(p => p.id === productId);
-    if (!product) return;
+    const staked = amount >= held - TICK ? held : amount; // snap a near-full stake to exact holding
+
     const newStake: StakePosition = {
       id: Math.random().toString(36).substr(2, 9),
-      symbol: product.symbol,
-      amount,
-      apy: product.apy,
-      startTime: Date.now(),
-      lockDays: product.lockDays,
-      product: product.name
+      symbol: sym, amount: staked, entryPrice: price, apy: product.apy,
+      startTime: Date.now(), lockDays: product.lockDays, product: product.name,
     };
+    const usd = staked * price;
     const updatedUser: UserState = {
       ...currentUser,
-      balance: currentUser.balance - amount,
+      assets: isUsdt ? assets : assets.map(a => a.symbol === pair ? { ...a, amount: a.amount - staked } : a).filter(a => a.amount > 1e-9),
+      balance: isUsdt ? currentUser.balance - staked : currentUser.balance,
       stakes: [...(currentUser.stakes || []), newStake],
-      transactions: [...currentUser.transactions, { id: Math.random().toString(36).substr(2, 9), type: 'DEPOSIT', asset: `STAKE-${product.symbol}`, amount: 1, price: amount, total: -amount, timestamp: Date.now() }]
+      transactions: [...currentUser.transactions, { id: Math.random().toString(36).substr(2, 9), type: 'DEPOSIT', asset: `STAKE-${sym}`, amount: staked, price, total: -usd, timestamp: Date.now() }],
     };
     saveUserData(updatedUser);
     showTxnSuccess({
       title: 'Stake Successful',
-      subtitle: `Your funds are now earning ${(product.apy * 100).toFixed(2)}% APY.`,
-      amount: `- $${amount.toLocaleString()}`,
+      subtitle: `Now earning ${(product.apy * 100).toFixed(2)}% APY, paid in ${sym}.`,
+      amount: isUsdt ? `- $${staked.toLocaleString()}` : `- ${fmtCoin(staked)} ${sym}`,
       direction: 'out',
       rows: [
         { label: 'Product', value: product.name },
+        { label: 'Staked', value: isUsdt ? `$${staked.toLocaleString()}` : `${fmtCoin(staked)} ${sym} (~$${usd.toLocaleString(undefined, { maximumFractionDigits: 0 })})` },
         { label: 'Lock period', value: `${product.lockDays} days` },
         { label: 'APY', value: `${(product.apy * 100).toFixed(2)}%` },
       ],
@@ -548,24 +566,34 @@ const App: React.FC = () => {
     if (!currentUser) return;
     const stake = (currentUser.stakes || []).find(s => s.id === stakeId);
     if (!stake) return;
+    const sym = stake.symbol;
+    const isUsdt = sym === 'USDT';
+    const pair = `${sym}USDT`;
+    const price = isUsdt ? 1 : (marketPrices.find(m => m.symbol === pair)?.price || stake.entryPrice || 0);
     const daysActive = Math.floor((Date.now() - stake.startTime) / 86400000);
-    const earnings = stake.amount * stake.apy * daysActive / 365;
-    const totalReturn = stake.amount + earnings;
+    const earnings = stake.amount * stake.apy * daysActive / 365; // accrues IN the coin
+    const totalReturn = stake.amount + earnings;                  // coin units (USD for USDT)
+
+    const assets = assetsOf(currentUser);
+    const hasPair = assets.some(a => a.symbol === pair);
     const updatedUser: UserState = {
       ...currentUser,
-      balance: currentUser.balance + totalReturn,
+      balance: isUsdt ? currentUser.balance + totalReturn : currentUser.balance,
+      assets: isUsdt ? assets
+        : (hasPair ? assets.map(a => a.symbol === pair ? { ...a, amount: a.amount + totalReturn } : a)
+                   : [...assets, { symbol: pair, amount: totalReturn }]),
       stakes: (currentUser.stakes || []).filter(s => s.id !== stakeId),
-      transactions: [...currentUser.transactions, { id: Math.random().toString(36).substr(2, 9), type: 'DEPOSIT', asset: `UNSTAKE-${stake.symbol}`, amount: 1, price: totalReturn, total: totalReturn, timestamp: Date.now() }]
+      transactions: [...currentUser.transactions, { id: Math.random().toString(36).substr(2, 9), type: 'DEPOSIT', asset: `UNSTAKE-${sym}`, amount: totalReturn, price, total: totalReturn * price, timestamp: Date.now() }],
     };
     saveUserData(updatedUser);
     showTxnSuccess({
       title: 'Funds Received',
-      subtitle: 'Your stake has been unlocked and returned to your balance.',
-      amount: `+ $${totalReturn.toFixed(2)}`,
+      subtitle: isUsdt ? 'Stake unlocked, returned to your cash balance.' : `Stake unlocked — ${sym} returned to your holdings.`,
+      amount: isUsdt ? `+ $${totalReturn.toFixed(2)}` : `+ ${fmtCoin(totalReturn)} ${sym}`,
       direction: 'in',
       rows: [
-        { label: 'Principal', value: `$${stake.amount.toLocaleString()}` },
-        { label: 'Earnings', value: `+ $${earnings.toFixed(2)}` },
+        { label: 'Principal', value: isUsdt ? `$${stake.amount.toLocaleString()}` : `${fmtCoin(stake.amount)} ${sym}` },
+        { label: 'Earnings', value: isUsdt ? `+ $${earnings.toFixed(2)}` : `+ ${fmtCoin(earnings)} ${sym}` },
         { label: 'Held for', value: `${daysActive} day${daysActive === 1 ? '' : 's'}` },
       ],
     });
@@ -589,7 +617,7 @@ const App: React.FC = () => {
       return <AcademyPage user={currentUser} onEnroll={handleEnrollCourse} onUpgradeClick={() => setActiveTab('pro')} />;
     }
     if (activeTab === 'earn') {
-      return <EarnPage user={currentUser} onStake={handleStake} onUnstake={handleUnstake} onUpgradeClick={() => setActiveTab('pro')} />;
+      return <EarnPage user={currentUser} marketData={marketPrices} onStake={handleStake} onUnstake={handleUnstake} onUpgradeClick={() => setActiveTab('pro')} />;
     }
     if (activeTab === 'referral') {
       return <ReferralPage user={currentUser} onClaim={handleClaimReferral} />;

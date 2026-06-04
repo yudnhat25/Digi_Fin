@@ -42,8 +42,9 @@ export type SubscriptionTier = 'STARTER' | 'PRO' | 'ELITE';
 
 export interface StakePosition {
   id: string;
-  symbol: string;
-  amount: number;
+  symbol: string;        // product asset: USDT | BTC | ETH | SOL | BNB
+  amount: number;        // principal in COIN units (e.g. 2 = 2 ETH). USDT product = USD.
+  entryPrice?: number;   // coin price (USD) at stake time, for value / P&L display
   apy: number;
   startTime: number;
   lockDays: number;

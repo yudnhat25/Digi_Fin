@@ -1,25 +1,36 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { UserState, StakePosition, SubscriptionTier } from '../types';
+import { UserState, SubscriptionTier, MarketData, Asset } from '../types';
 import { EARN_PRODUCTS } from '../constants';
 import { apiEarnYields, type EarnYields } from '../services/coinwiseApi';
 
 interface EarnPageProps {
   user: UserState;
-  onStake: (productId: string, amount: number) => void;
+  marketData: MarketData[];
+  onStake: (productId: string, amount: number) => void;   // amount in COIN units (USD for USDT)
   onUnstake: (stakeId: string) => void;
   onUpgradeClick: () => void;
 }
 
 const TIER_RANK: Record<SubscriptionTier, number> = { STARTER: 0, PRO: 1, ELITE: 2 };
+const fmtCoin = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 6 });
+const fmtUsd = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 
-const EarnPage: React.FC<EarnPageProps> = ({ user, onStake, onUnstake, onUpgradeClick }) => {
+const EarnPage: React.FC<EarnPageProps> = ({ user, marketData, onStake, onUnstake, onUpgradeClick }) => {
   const [selected, setSelected] = useState<string | null>(null);
-  const [amount, setAmount] = useState('1000');
+  const [amount, setAmount] = useState('');
   const [risk, setRisk] = useState<'ALL' | 'Low' | 'Medium' | 'High'>('ALL');
   const [yields, setYields] = useState<EarnYields | null>(null);
 
   const tier = user.tier || 'STARTER';
   const userTierRank = TIER_RANK[tier];
+
+  // Coin-style: you stake the asset you actually HOLD. Price is for USD display;
+  // `held` is the stake-able balance — cash for USDT, coin holdings otherwise.
+  const assets: Asset[] = Array.isArray(user.assets)
+    ? user.assets
+    : (user.assets && typeof user.assets === 'object' ? Object.values(user.assets) as Asset[] : []);
+  const priceOf = (sym: string) => sym === 'USDT' ? 1 : (marketData.find(m => m.symbol === `${sym}USDT`)?.price || 0);
+  const heldOf = (sym: string) => sym === 'USDT' ? user.balance : ((assets.find(a => a.symbol === `${sym}USDT`)?.amount) || 0);
 
   useEffect(() => {
     let alive = true;
@@ -37,12 +48,17 @@ const EarnPage: React.FC<EarnPageProps> = ({ user, onStake, onUnstake, onUpgrade
   const filtered = useMemo(() => products.filter(p => risk === 'ALL' || p.risk === risk), [products, risk]);
 
   const product = selected ? products.find(p => p.id === selected) : null;
-  const amountNum = parseFloat(amount) || 0;
-  const projectedEarning = product ? amountNum * product.apy * (product.lockDays || 365) / 365 : 0;
+  const sym = product?.symbol || 'USDT';
+  const isUsdt = sym === 'USDT';
+  const price = priceOf(sym);
+  const held = heldOf(sym);                              // stake-able balance (coin units / USD)
+  const amountNum = parseFloat(amount) || 0;            // coin units (USD for USDT)
+  const amountUsd = amountNum * price;
+  const projectedEarningCoin = product ? amountNum * product.apy * (product.lockDays || 365) / 365 : 0;
 
   const positions = user.stakes || [];
-  const totalStaked = positions.reduce((s, p) => s + p.amount, 0);
-  const dailyEarnings = positions.reduce((s, p) => s + (p.amount * p.apy / 365), 0);
+  const totalStakedUsd = positions.reduce((s, p) => s + p.amount * priceOf(p.symbol), 0);
+  const dailyEarningsUsd = positions.reduce((s, p) => s + (p.amount * p.apy / 365) * priceOf(p.symbol), 0);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-12">
@@ -60,7 +76,7 @@ const EarnPage: React.FC<EarnPageProps> = ({ user, onStake, onUnstake, onUpgrade
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-5">
           <p className="text-[10px] uppercase tracking-widest font-black text-slate-500 mb-1">Total Staked</p>
-          <p className="text-2xl font-black">${totalStaked.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+          <p className="text-2xl font-black">${totalStakedUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
         </div>
         <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-5">
           <p className="text-[10px] uppercase tracking-widest font-black text-slate-500 mb-1">Active Positions</p>
@@ -68,11 +84,11 @@ const EarnPage: React.FC<EarnPageProps> = ({ user, onStake, onUnstake, onUpgrade
         </div>
         <div className="bg-slate-900/50 border border-emerald-500/30 rounded-2xl p-5">
           <p className="text-[10px] uppercase tracking-widest font-black text-emerald-400 mb-1">Daily Earnings</p>
-          <p className="text-2xl font-black text-emerald-400">+${dailyEarnings.toFixed(2)}</p>
+          <p className="text-2xl font-black text-emerald-400">+${dailyEarningsUsd.toFixed(2)}</p>
         </div>
         <div className="bg-slate-900/50 border border-amber-500/30 rounded-2xl p-5">
           <p className="text-[10px] uppercase tracking-widest font-black text-amber-400 mb-1">Annual Projection</p>
-          <p className="text-2xl font-black text-amber-400">+${(dailyEarnings * 365).toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+          <p className="text-2xl font-black text-amber-400">+${(dailyEarningsUsd * 365).toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
         </div>
       </div>
 
@@ -83,7 +99,9 @@ const EarnPage: React.FC<EarnPageProps> = ({ user, onStake, onUnstake, onUpgrade
           <div className="space-y-3">
             {positions.map(pos => {
               const daysActive = Math.floor((Date.now() - pos.startTime) / 86400000);
-              const accruedEarnings = pos.amount * pos.apy * daysActive / 365;
+              const accruedEarnings = pos.amount * pos.apy * daysActive / 365; // in coin units
+              const pp = priceOf(pos.symbol);
+              const posIsUsdt = pos.symbol === 'USDT';
               const unlockAt = pos.startTime + pos.lockDays * 86400000;
               const canUnstake = pos.lockDays === 0 || Date.now() >= unlockAt;
               return (
@@ -98,11 +116,13 @@ const EarnPage: React.FC<EarnPageProps> = ({ user, onStake, onUnstake, onUpgrade
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-right">
                     <div>
                       <p className="text-[10px] uppercase tracking-widest font-black text-slate-500">Principal</p>
-                      <p className="font-bold text-sm">${pos.amount.toLocaleString()}</p>
+                      <p className="font-bold text-sm">{posIsUsdt ? `$${pos.amount.toLocaleString()}` : `${fmtCoin(pos.amount)} ${pos.symbol}`}</p>
+                      {!posIsUsdt && <p className="text-[10px] text-slate-500 tabular-nums">~${fmtUsd(pos.amount * pp)}</p>}
                     </div>
                     <div>
                       <p className="text-[10px] uppercase tracking-widest font-black text-slate-500">Earned</p>
-                      <p className="font-bold text-sm text-emerald-400">+${accruedEarnings.toFixed(2)}</p>
+                      <p className="font-bold text-sm text-emerald-400">+{posIsUsdt ? `$${accruedEarnings.toFixed(2)}` : `${fmtCoin(accruedEarnings)} ${pos.symbol}`}</p>
+                      {!posIsUsdt && <p className="text-[10px] text-emerald-500/70 tabular-nums">~${fmtUsd(accruedEarnings * pp)}</p>}
                     </div>
                     <button
                       onClick={() => canUnstake && onUnstake(pos.id)}
@@ -182,9 +202,11 @@ const EarnPage: React.FC<EarnPageProps> = ({ user, onStake, onUnstake, onUpgrade
                 </p>
               </div>
               <ul className="text-xs text-slate-400 space-y-1.5 mb-5 flex-1">
-                <li>• Daily payouts in {p.symbol}</li>
+                <li>• Stake your {p.symbol} · earnings paid in {p.symbol}</li>
                 <li>• {p.lockDays === 0 ? 'No lock, withdraw anytime' : `Locked for ${p.lockDays} days`}</li>
-                <li>• Minimum: 100 {p.symbol}</li>
+                <li className={heldOf(p.symbol) > 0 ? 'text-slate-400' : 'text-amber-400/80'}>
+                  • You hold: {p.symbol === 'USDT' ? `$${fmtUsd(heldOf('USDT'))}` : `${fmtCoin(heldOf(p.symbol))} ${p.symbol}`}
+                </li>
               </ul>
               {locked ? (
                 <button onClick={onUpgradeClick} className="w-full bg-amber-500/10 hover:bg-amber-500 hover:text-slate-950 text-amber-400 font-black py-3 rounded-xl uppercase tracking-widest text-xs transition">
@@ -228,14 +250,18 @@ const EarnPage: React.FC<EarnPageProps> = ({ user, onStake, onUnstake, onUpgrade
               </div>
             </div>
 
-            <label className="block text-[10px] uppercase tracking-widest font-black text-slate-500 mb-2">Amount (USDT)</label>
+            <label className="block text-[10px] uppercase tracking-widest font-black text-slate-500 mb-2">Amount ({sym})</label>
             <input
               type="number" value={amount} onChange={e => setAmount(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 font-mono mb-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              placeholder={isUsdt ? '0.00' : `0.000000 ${sym}`}
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 font-mono mb-1 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
+            <p className="text-[11px] text-slate-500 mb-2">
+              {isUsdt ? 'Staked from your cash (USDT)' : (price > 0 ? `≈ $${fmtUsd(amountUsd)}` : 'live price unavailable — staking still works in coin units')}
+            </p>
             <div className="grid grid-cols-4 gap-2 mb-5">
-              {[10, 25, 50, 100].map(p => (
-                <button key={p} onClick={() => setAmount(((user.balance * p) / 100).toFixed(0))} className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-black py-2 rounded-lg uppercase">
+              {[25, 50, 75, 100].map(p => (
+                <button key={p} onClick={() => setAmount(isUsdt ? (held * p / 100).toFixed(2) : Number((held * p / 100).toFixed(8)).toString())} className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-black py-2 rounded-lg uppercase">
                   {p}%
                 </button>
               ))}
@@ -244,28 +270,31 @@ const EarnPage: React.FC<EarnPageProps> = ({ user, onStake, onUnstake, onUpgrade
             <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-2xl p-4 mb-5 space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-slate-400">Daily Earnings</span>
-                <span className="text-emerald-400 font-bold">+${(amountNum * product.apy / 365).toFixed(2)}</span>
+                <span className="text-emerald-400 font-bold">+{isUsdt ? `$${(amountNum * product.apy / 365).toFixed(2)}` : `${fmtCoin(amountNum * product.apy / 365)} ${sym}`}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-slate-400">{product.lockDays === 0 ? 'Yearly Projection' : 'At End of Term'}</span>
-                <span className="text-emerald-400 font-black">+${(product.lockDays === 0 ? amountNum * product.apy : projectedEarning).toFixed(2)}</span>
+                <span className="text-emerald-400 font-black">+{isUsdt ? `$${(product.lockDays === 0 ? amountNum * product.apy : projectedEarningCoin).toFixed(2)}` : `${fmtCoin(product.lockDays === 0 ? amountNum * product.apy : projectedEarningCoin)} ${sym}`}</span>
               </div>
               <div className="flex justify-between text-sm pt-2 border-t border-emerald-500/20">
-                <span className="text-slate-400">Available Balance</span>
-                <span className="font-mono">${user.balance.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                <span className="text-slate-400">Available {isUsdt ? 'cash' : sym}</span>
+                <span className="font-mono">{isUsdt ? `$${held.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : `${fmtCoin(held)} ${sym}`}</span>
               </div>
             </div>
 
+            {!isUsdt && held <= 0 && (
+              <p className="text-[11px] text-amber-400 mb-3 text-center">You don't hold any {sym}. Buy {sym} on the trading terminal first, then stake it here.</p>
+            )}
             <button
               onClick={() => {
                 onStake(product.id, amountNum);
                 setSelected(null);
-                setAmount('1000');
+                setAmount('');
               }}
-              disabled={amountNum <= 0 || amountNum > user.balance}
+              disabled={amountNum <= 0 || amountNum > held}
               className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 font-black py-4 rounded-xl text-lg transition"
             >
-              {amountNum > user.balance ? 'Insufficient balance' : `Confirm Stake — $${amountNum.toLocaleString()}`}
+              {amountNum > held ? `Insufficient ${sym}` : amountNum <= 0 ? 'Enter an amount' : `Confirm Stake — ${isUsdt ? `$${amountNum.toLocaleString()}` : `${fmtCoin(amountNum)} ${sym}`}`}
             </button>
           </div>
         </div>
