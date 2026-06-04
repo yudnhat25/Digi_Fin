@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { UserState, MarketData, LeaderboardEntry } from '../types';
 import { ENTRY_FEE, BASELINE_NET_WORTH } from '../constants';
 import { computeArenaTick, getCycleAnchor, BREAK_MS, CYCLE_MS } from '../services/arena';
+import { stakedValueUsd } from '../utils/portfolio';
 import { db } from '../firebaseConfig';
 import { ref, onValue, remove } from 'firebase/database';
 import { useCurrency } from '../services/currency';
@@ -51,7 +52,7 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
       return acc + (asset.amount * price);
     }, 0);
     const balance = typeof targetUser?.balance === 'number' ? targetUser.balance : 0;
-    const currentWorth = balance + assetValue;
+    const currentWorth = balance + assetValue + stakedValueUsd(targetUser?.stakes, userPrices);
     
     const pnl = (targetUser.competition?.isCompeting)
       ? ((currentWorth - BASELINE_NET_WORTH) / BASELINE_NET_WORTH) * 100 

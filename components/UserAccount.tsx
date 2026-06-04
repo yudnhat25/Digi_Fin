@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { UserState, MarketData } from '../types';
+import { stakedValueUsd } from '../utils/portfolio';
 import { Wallet, TrendingUp, Shield, Clock, ArrowUpRight, ArrowDownRight, CreditCard, DollarSign } from 'lucide-react';
 import PortfolioPieChart from './PortfolioPieChart';
 import BankCheckoutModal from './BankCheckoutModal';
@@ -83,7 +84,7 @@ const UserAccount: React.FC<UserAccountProps> = ({ user, marketPrices, onDeposit
         return acc + (asset.amount * price);
     }, 0);
 
-    const totalBalance = user.balance + assetsValue;
+    const totalBalance = user.balance + assetsValue + stakedValueUsd(user.stakes, marketPrices);
 
     // Calculate BTC holding
     const btcAsset = user.assets.find(a => a.symbol === 'BTCUSDT');

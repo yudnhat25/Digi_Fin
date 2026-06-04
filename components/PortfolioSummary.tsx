@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { UserState, MarketData } from '../types';
 import { useCurrency } from '../services/currency';
+import { stakedValueUsd } from '../utils/portfolio';
 import PortfolioChart from './PortfolioChart';
 
 interface PortfolioSummaryProps {
@@ -21,7 +22,9 @@ const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({ userState, marketPr
     return acc + (asset.amount * marketPrice);
   }, 0), [assets, prices]);
 
-  const totalValue = balance + assetValue;
+  // Earn stakes are part of net worth too (coin-native, valued at live price).
+  const stakedValue = useMemo(() => stakedValueUsd(userState?.stakes, prices), [userState?.stakes, prices]);
+  const totalValue = balance + assetValue + stakedValue;
   const initialValue = 1_000_000;
   const pnlAbs = totalValue - initialValue;
   const pnlPercent = (pnlAbs / initialValue) * 100;

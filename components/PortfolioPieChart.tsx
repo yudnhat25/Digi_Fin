@@ -1,5 +1,6 @@
 import React from 'react';
 import { UserState, MarketData } from '../types';
+import { stakedValueUsd } from '../utils/portfolio';
 
 interface PortfolioPieChartProps {
     userState: UserState;
@@ -13,7 +14,8 @@ const PortfolioPieChart: React.FC<PortfolioPieChartProps> = ({ userState, market
         return acc + (asset.amount * price);
     }, 0);
 
-    const totalValue = userState.balance + assetsValue;
+    const stakedValue = stakedValueUsd(userState.stakes, marketPrices);
+    const totalValue = userState.balance + assetsValue + stakedValue;
 
     // Calculate percentages for each asset + cash
     const portfolioData = [
@@ -34,7 +36,13 @@ const PortfolioPieChart: React.FC<PortfolioPieChartProps> = ({ userState, market
                 percentage: (value / totalValue) * 100,
                 color: colors[index % colors.length]
             };
-        })
+        }),
+        ...(stakedValue > 0 ? [{
+            name: 'Staked (Earn)',
+            value: stakedValue,
+            percentage: (stakedValue / totalValue) * 100,
+            color: '#a855f7' // purple-500
+        }] : [])
     ].filter(item => item.value > 0);
 
     // Simple SVG pie chart

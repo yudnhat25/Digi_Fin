@@ -194,11 +194,17 @@ export const NewsWidget: React.FC = () => {
 
 export const PortfolioBreakdownWidget: React.FC<WidgetsProps> = ({ marketData, user }) => {
   const breakdown = useMemo(() => {
-    return (user.assets || []).map(a => {
+    const held = (user.assets || []).map(a => {
       const price = marketData.find(m => m.symbol === a.symbol)?.price || 0;
       return { symbol: a.symbol.replace('USDT', ''), value: a.amount * price };
-    }).filter(a => a.value > 0).sort((a, b) => b.value - a.value);
-  }, [user.assets, marketData]);
+    });
+    // Surface Earn stakes as their own allocation slices (locked, but still net worth).
+    const staked = (user.stakes || []).map(st => ({
+      symbol: `${st.symbol} ⊕`,
+      value: st.symbol === 'USDT' ? st.amount : st.amount * (marketData.find(m => m.symbol === `${st.symbol}USDT`)?.price || 0),
+    }));
+    return [...held, ...staked].filter(a => a.value > 0).sort((a, b) => b.value - a.value);
+  }, [user.assets, user.stakes, marketData]);
 
   const totalValue = breakdown.reduce((s, a) => s + a.value, 0);
 

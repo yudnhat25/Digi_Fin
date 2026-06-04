@@ -26,6 +26,7 @@ import TransactionSuccessModal, { TxnSuccessData } from './components/Transactio
 import StripePayoutModal from './components/StripePayoutModal';
 import FraudGateModal from './components/FraudGateModal';
 import { UserState, MarketData, LeaderboardEntry, SubscriptionTier, StakePosition, Asset } from './types';
+import { stakedValueUsd } from './utils/portfolio';
 import { fetchMarketPrices } from './services/api';
 import { apiBankReferralClaim, apiFraudCheck, FraudCheck } from './services/coinwiseApi';
 import { CRYPTO_SYMBOLS, BASELINE_NET_WORTH, EARN_PRODUCTS, ENTRY_FEE } from './constants';
@@ -77,7 +78,7 @@ const App: React.FC = () => {
           return acc + (curr.amount * price);
         }, 0);
 
-        const totalNetWorth = updatedUser.balance + currentAssetValue;
+        const totalNetWorth = updatedUser.balance + currentAssetValue + stakedValueUsd(updatedUser.stakes, safePrices);
         const pnl = ((totalNetWorth - updatedUser.competition.entryNetWorth) / updatedUser.competition.entryNetWorth) * 100;
 
         const playerEntry: LeaderboardEntry = {
