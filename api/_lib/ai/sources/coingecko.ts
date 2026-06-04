@@ -82,13 +82,18 @@ export async function fetchCoinGecko(symbol: string): Promise<CoinGeckoSignals |
   }
 }
 
-export async function pingCoinGecko(): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
+export async function pingCoinGecko(): Promise<{ ok: boolean; latencyMs: number; rateLimited?: boolean; error?: string }> {
   const t0 = Date.now();
   try {
     const res = await fetch('https://api.coingecko.com/api/v3/ping', {
       headers: { 'User-Agent': USER_AGENT },
     });
-    return { ok: res.ok, latencyMs: Date.now() - t0 };
+    // HTTP 429 means CoinGecko is alive but throttling our shared datacenter
+    // (Vercel) IP — that's "degraded", not "down". Only genuine network
+    // failures / 5xx / hard blocks count as down.
+    if (res.status === 429) return { ok: true, latencyMs: Date.now() - t0, rateLimited: true };
+    if (res.ok) return { ok: true, latencyMs: Date.now() - t0 };
+    return { ok: false, latencyMs: Date.now() - t0, error: `coingecko_${res.status}` };
   } catch (e) {
     return { ok: false, latencyMs: Date.now() - t0, error: (e as Error).message };
   }

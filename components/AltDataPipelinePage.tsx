@@ -66,10 +66,10 @@ const Pill: React.FC<{ tone?: 'emerald' | 'rose' | 'amber' | 'slate' | 'blue'; c
 // ─── Sources health strip ───
 const SourcesHealth: React.FC<{ health: AltDataSourcesHealth | null }> = ({ health }) => {
   if (!health) return null;
-  const items = [
+  const items: { key: string; name: string; sub: string; detail?: string; ok: boolean; warn?: boolean; latency: number }[] = [
     { key: 'news', name: 'Hacker News (Algolia)', sub: 'social-media headlines + upvotes', detail: health.news.ok ? `n=${health.news.sample}` : health.news.error, ok: health.news.ok, latency: health.news.latencyMs },
     { key: 'fg', name: 'alternative.me', sub: 'Crypto Fear & Greed Index', detail: health.fearGreed.ok ? `value=${health.fearGreed.value}` : health.fearGreed.error, ok: health.fearGreed.ok, latency: health.fearGreed.latencyMs },
-    { key: 'cg', name: 'CoinGecko', sub: 'community votes + dev score', detail: health.coinGecko.ok ? 'OK' : health.coinGecko.error, ok: health.coinGecko.ok, latency: health.coinGecko.latencyMs },
+    { key: 'cg', name: 'CoinGecko', sub: 'community votes + dev score', detail: health.coinGecko.ok ? (health.coinGecko.rateLimited ? 'rate-limited (datacenter IP)' : 'OK') : health.coinGecko.error, ok: health.coinGecko.ok, warn: health.coinGecko.rateLimited, latency: health.coinGecko.latencyMs },
   ];
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -77,7 +77,7 @@ const SourcesHealth: React.FC<{ health: AltDataSourcesHealth | null }> = ({ heal
         <div key={s.key} className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
           <div className="flex items-center justify-between mb-1">
             <p className="text-xs font-bold text-slate-200">{s.name}</p>
-            <Pill tone={s.ok ? 'emerald' : 'rose'}>{s.ok ? 'live' : 'down'}</Pill>
+            <Pill tone={!s.ok ? 'rose' : s.warn ? 'amber' : 'emerald'}>{!s.ok ? 'down' : s.warn ? 'throttled' : 'live'}</Pill>
           </div>
           <p className="text-[10px] text-slate-500">{s.sub}</p>
           <div className="mt-2 flex items-center justify-between text-[10px] text-slate-400">

@@ -3283,7 +3283,9 @@ async function pingCoinGecko() {
     const res = await fetch("https://api.coingecko.com/api/v3/ping", {
       headers: { "User-Agent": USER_AGENT4 }
     });
-    return { ok: res.ok, latencyMs: Date.now() - t0 };
+    if (res.status === 429) return { ok: true, latencyMs: Date.now() - t0, rateLimited: true };
+    if (res.ok) return { ok: true, latencyMs: Date.now() - t0 };
+    return { ok: false, latencyMs: Date.now() - t0, error: `coingecko_${res.status}` };
   } catch (e) {
     return { ok: false, latencyMs: Date.now() - t0, error: e.message };
   }

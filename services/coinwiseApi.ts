@@ -204,7 +204,7 @@ export interface AltDataSourcesHealth {
   reddit: { ok: boolean; latencyMs: number; sample?: number; error?: string };
   news: { ok: boolean; latencyMs: number; sample?: number; error?: string };
   fearGreed: { ok: boolean; latencyMs: number; value?: number; error?: string };
-  coinGecko: { ok: boolean; latencyMs: number; error?: string };
+  coinGecko: { ok: boolean; latencyMs: number; rateLimited?: boolean; error?: string };
   overall: 'live' | 'down';
   timestamp: string;
 }
