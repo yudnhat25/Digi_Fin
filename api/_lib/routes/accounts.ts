@@ -148,7 +148,12 @@ accountsRouter.post('/:accountId/trade', async (c) => {
     const cashAvailable = Number.isFinite(body.currentCashUsd)
       ? Number(body.currentCashUsd)
       : acc.cashUsd;
-    if (cashAvailable < usdNotional + fee) {
+    // An "all-in" quote sets notional = cash/(1+fee) → notional+fee equals cash
+    // with ZERO headroom, so sub-cent floating-point drift in cash/(1+fee)*(1+fee)
+    // would falsely reject it. Allow a 1-cent tolerance; genuine overspends still
+    // exceed it. The spend below is clamped so the balance never goes negative.
+    const CASH_EPS = Math.max(1e-2, cashAvailable * 1e-9);
+    if (cashAvailable + CASH_EPS < usdNotional + fee) {
       return c.json({ error: 'Insufficient cash' }, 400);
     }
     acc.cashUsd = Math.max(0, cashAvailable - (usdNotional + fee));

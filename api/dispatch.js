@@ -5188,7 +5188,8 @@ var init_accounts = __esm({
       }
       if (body.side === "BUY") {
         const cashAvailable = Number.isFinite(body.currentCashUsd) ? Number(body.currentCashUsd) : acc.cashUsd;
-        if (cashAvailable < usdNotional + fee) {
+        const CASH_EPS = Math.max(0.01, cashAvailable * 1e-9);
+        if (cashAvailable + CASH_EPS < usdNotional + fee) {
           return c.json({ error: "Insufficient cash" }, 400);
         }
         acc.cashUsd = Math.max(0, cashAvailable - (usdNotional + fee));
