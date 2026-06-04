@@ -265,16 +265,27 @@ export async function runAltDataPipeline(symbol: string): Promise<RealSentimentR
 
   // STAGE 2a — VADER NLP on Reddit + News corpus (union)
   const t2a = Date.now();
+  // Recency decay: HN's relevance search surfaces all-time-popular crypto
+  // stories, many years old, which don't reflect CURRENT sentiment. Fold an
+  // exponential time decay (180-day half-life) into each post's weight so fresh
+  // posts dominate the aggregate while old ones still count (floored at 1) —
+  // "prefer recent, keep volume". A 6-month-old post counts ½, a year ¼, etc.
+  const RECENCY_HALF_LIFE_DAYS = 180;
+  const nowSec = Date.now() / 1000;
+  const recencyDecay = (createdUtcSec: number) =>
+    Math.pow(0.5, Math.max(0, (nowSec - createdUtcSec) / 86400) / RECENCY_HALF_LIFE_DAYS);
+  const recencyOf = (ageMin: number) =>
+    Math.pow(0.5, Math.max(0, ageMin / 1440) / RECENCY_HALF_LIFE_DAYS);
   const docs = [
     ...reddit.posts.map((p) => ({
       kind: 'reddit' as const, src: p,
       text: `${p.title}\n${p.selftext.slice(0, 300)}`,
-      weight: Math.max(1, p.ups),
+      weight: Math.max(1, p.ups * recencyDecay(p.createdUtc)),
     })),
     ...news.posts.map((n) => ({
       kind: 'news' as const, src: n,
       text: n.title,
-      weight: Math.max(1, n.points + 1),
+      weight: Math.max(1, (n.points + 1) * recencyDecay(n.createdUtc)),
     })),
   ];
   const corpus = aggregateCorpus(docs.map((d) => ({ text: d.text, weight: d.weight })));
@@ -298,13 +309,15 @@ export async function runAltDataPipeline(symbol: string): Promise<RealSentimentR
       url: n.hnUrl, compound: ds.compound, label: ds.label, matchedTerms: ds.matchedTerms,
     };
   });
+  // Rank top cards by compound × engagement × recency so fresh posts surface
+  // instead of decade-old viral stories.
   const topPositive = perPost
     .filter((p) => p.matchedTerms.length > 0 && p.compound > 0.05)
-    .sort((a, b) => b.compound * Math.log10(b.ups + 2) - a.compound * Math.log10(a.ups + 2))
+    .sort((a, b) => b.compound * Math.log10(b.ups + 2) * recencyOf(b.ageMin) - a.compound * Math.log10(a.ups + 2) * recencyOf(a.ageMin))
     .slice(0, 5);
   const topNegative = perPost
     .filter((p) => p.matchedTerms.length > 0 && p.compound < -0.05)
-    .sort((a, b) => a.compound * Math.log10(a.ups + 2) - b.compound * Math.log10(b.ups + 2))
+    .sort((a, b) => a.compound * Math.log10(a.ups + 2) * recencyOf(a.ageMin) - b.compound * Math.log10(b.ups + 2) * recencyOf(b.ageMin))
     .slice(0, 5);
   stages.push({
     name: 'analyse.nlp.vader',

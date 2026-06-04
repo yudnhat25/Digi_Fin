@@ -3142,9 +3142,9 @@ async function collectHnForSymbol(symbol) {
   }
   const dedup = /* @__PURE__ */ new Map();
   for (const h of all) dedup.set(h.id, h);
-  const posts = Array.from(dedup.values()).sort(
-    (a, b) => b.points - a.points || b.createdUtc - a.createdUtc
-  );
+  const nowSec = Date.now() / 1e3;
+  const score = (h) => (h.points + 1) * Math.pow(0.5, Math.max(0, (nowSec - h.createdUtc) / 86400) / 180);
+  const posts = Array.from(dedup.values()).sort((a, b) => score(b) - score(a));
   return { posts, sources, errors };
 }
 async function pingHackerNews() {
@@ -4313,19 +4313,23 @@ async function runAltDataPipeline(symbol) {
     latencyMs: Date.now() - t1c
   });
   const t2a = Date.now();
+  const RECENCY_HALF_LIFE_DAYS = 180;
+  const nowSec = Date.now() / 1e3;
+  const recencyDecay = (createdUtcSec) => Math.pow(0.5, Math.max(0, (nowSec - createdUtcSec) / 86400) / RECENCY_HALF_LIFE_DAYS);
+  const recencyOf = (ageMin) => Math.pow(0.5, Math.max(0, ageMin / 1440) / RECENCY_HALF_LIFE_DAYS);
   const docs = [
     ...reddit.posts.map((p) => ({
       kind: "reddit",
       src: p,
       text: `${p.title}
 ${p.selftext.slice(0, 300)}`,
-      weight: Math.max(1, p.ups)
+      weight: Math.max(1, p.ups * recencyDecay(p.createdUtc))
     })),
     ...news.posts.map((n) => ({
       kind: "news",
       src: n,
       text: n.title,
-      weight: Math.max(1, n.points + 1)
+      weight: Math.max(1, (n.points + 1) * recencyDecay(n.createdUtc))
     }))
   ];
   const corpus = aggregateCorpus(docs.map((d) => ({ text: d.text, weight: d.weight })));
@@ -4360,8 +4364,8 @@ ${p.selftext.slice(0, 300)}`,
       matchedTerms: ds.matchedTerms
     };
   });
-  const topPositive = perPost.filter((p) => p.matchedTerms.length > 0 && p.compound > 0.05).sort((a, b) => b.compound * Math.log10(b.ups + 2) - a.compound * Math.log10(a.ups + 2)).slice(0, 5);
-  const topNegative = perPost.filter((p) => p.matchedTerms.length > 0 && p.compound < -0.05).sort((a, b) => a.compound * Math.log10(a.ups + 2) - b.compound * Math.log10(b.ups + 2)).slice(0, 5);
+  const topPositive = perPost.filter((p) => p.matchedTerms.length > 0 && p.compound > 0.05).sort((a, b) => b.compound * Math.log10(b.ups + 2) * recencyOf(b.ageMin) - a.compound * Math.log10(a.ups + 2) * recencyOf(a.ageMin)).slice(0, 5);
+  const topNegative = perPost.filter((p) => p.matchedTerms.length > 0 && p.compound < -0.05).sort((a, b) => a.compound * Math.log10(a.ups + 2) * recencyOf(a.ageMin) - b.compound * Math.log10(b.ups + 2) * recencyOf(b.ageMin)).slice(0, 5);
   stages.push({
     name: "analyse.nlp.vader",
     status: corpus.corpus.matchedDocCount > 0 ? "ok" : "partial",

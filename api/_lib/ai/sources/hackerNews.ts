@@ -106,9 +106,13 @@ export async function collectHnForSymbol(symbol: string): Promise<{
   }
   const dedup = new Map<string, HnHit>();
   for (const h of all) dedup.set(h.id, h);
-  const posts = Array.from(dedup.values()).sort((a, b) =>
-    b.points - a.points || b.createdUtc - a.createdUtc,
-  );
+  // Rank by points decayed over time (180-day half-life) so recent-and-popular
+  // stories outrank decade-old viral ones — the relevance search otherwise
+  // returns all-time hits that don't reflect current sentiment.
+  const nowSec = Date.now() / 1000;
+  const score = (h: HnHit) =>
+    (h.points + 1) * Math.pow(0.5, Math.max(0, (nowSec - h.createdUtc) / 86400) / 180);
+  const posts = Array.from(dedup.values()).sort((a, b) => score(b) - score(a));
   return { posts, sources, errors };
 }
 
