@@ -23,6 +23,7 @@
 
 import { collectCorpusForSymbol, RedditPost } from './sources/reddit';
 import { collectHnForSymbol, HnHit } from './sources/hackerNews';
+import { collectStockTwits } from './sources/stocktwits';
 import { fetchFearGreedReal, FearGreedReal } from './sources/fearGreed';
 import { fetchCoinGecko, CoinGeckoSignals } from './sources/coingecko';
 import { fetchLatestNews } from './sources/cryptoNewsRss';
@@ -236,15 +237,30 @@ export async function runAltDataPipeline(symbol: string): Promise<RealSentimentR
     latencyMs: Date.now() - t1a,
   });
 
-  // STAGE 1a' — Hacker News via Algolia (primary social-text source)
+  // STAGE 1a' — crypto-social text. StockTwits (crypto-native, users self-tag
+  // Bullish/Bearish) is the PRIMARY source; Hacker News is the fallback when
+  // StockTwits is empty or blocked (e.g. datacenter IP).
   const t1aPrime = Date.now();
-  const news = await collectHnForSymbol(symbol).catch((e) => ({
+  let news = await collectStockTwits(symbol).catch((e) => ({
     posts: [] as HnHit[], sources: [] as string[], errors: [(e as Error).message],
   }));
+  let socialSrc = 'StockTwits';
+  if (news.posts.length === 0) {
+    const hn = await collectHnForSymbol(symbol).catch((e) => ({
+      posts: [] as HnHit[], sources: [] as string[], errors: [(e as Error).message],
+    }));
+    if (hn.posts.length > 0) {
+      news = hn;
+      socialSrc = 'Hacker News (fallback)';
+    } else {
+      news = { posts: [], sources: [...news.sources, ...hn.sources], errors: [...news.errors, ...hn.errors] };
+      socialSrc = 'StockTwits + HN';
+    }
+  }
   stages.push({
-    name: 'collect.hackerNews',
-    status: news.errors.length === 0 ? 'ok' : news.posts.length > 0 ? 'partial' : 'failed',
-    message: `${news.posts.length} HN stories from ${news.sources.length} queries` +
+    name: 'collect.social',
+    status: news.posts.length > 0 ? 'ok' : news.errors.length === 0 ? 'partial' : 'failed',
+    message: `${news.posts.length} posts from ${socialSrc}` +
       (news.errors.length ? ` (errors: ${news.errors.length})` : ''),
     latencyMs: Date.now() - t1aPrime,
   });
@@ -337,7 +353,7 @@ export async function runAltDataPipeline(symbol: string): Promise<RealSentimentR
     }
     const n = d.src;
     return {
-      id: `n:${n.id}`, title: n.title, subreddit: `HN/${n.author}`,
+      id: `n:${n.id}`, title: n.title, subreddit: `${n.platform ?? 'HN'}/${n.author}`,
       ups: n.points, numComments: n.numComments,
       ageMin: Math.round((Date.now() / 1000 - n.createdUtc) / 60),
       url: n.hnUrl, compound: ds.compound, label: ds.label, matchedTerms: ds.matchedTerms,

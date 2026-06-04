@@ -3122,7 +3122,8 @@ async function fetchSearch(query, page = 0) {
     numComments: Number(h.num_comments) || 0,
     createdUtc: Number(h.created_at_i) || 0,
     url: String(h.url || ""),
-    hnUrl: `https://news.ycombinator.com/item?id=${h.objectID}`
+    hnUrl: `https://news.ycombinator.com/item?id=${h.objectID}`,
+    platform: "HN"
   }));
   CACHE3.set(key, { ts: Date.now(), data: hits });
   return hits;
@@ -3183,17 +3184,85 @@ var init_hackerNews = __esm({
   }
 });
 
+// api/_lib/ai/sources/stocktwits.ts
+async function collectStockTwits(symbol) {
+  const base = symbol.replace(/USDT$|USD$/i, "").toUpperCase();
+  const ticker = ST_SYMBOLS[base] || `${base}.X`;
+  const cacheKey = `st:${ticker}`;
+  const hit = CACHE4.get(cacheKey);
+  if (hit && Date.now() - hit.ts < TTL_MS5) {
+    return { posts: hit.data, sources: [`stocktwits ${ticker} (n=${hit.data.length})`], errors: [] };
+  }
+  try {
+    const url = `https://api.stocktwits.com/api/2/streams/symbol/${encodeURIComponent(ticker)}.json`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": USER_AGENT3, "Accept": "application/json" }
+    });
+    if (!res.ok) throw new Error(`stocktwits_${res.status}`);
+    const json = await res.json();
+    const messages = json.messages || [];
+    const posts = messages.filter((m) => m.body).map((m) => {
+      const username = m.user?.username || "anon";
+      const tag = m.entities?.sentiment?.basic;
+      const body = tag ? `${tag}. ${m.body}` : m.body;
+      return {
+        id: `st:${m.id}`,
+        title: body,
+        author: username,
+        points: Number(m.likes?.total) || 0,
+        numComments: 0,
+        createdUtc: m.created_at ? Math.floor(new Date(m.created_at).getTime() / 1e3) : 0,
+        url: `https://stocktwits.com/${username}/message/${m.id}`,
+        hnUrl: `https://stocktwits.com/symbol/${ticker}`,
+        platform: "StockTwits"
+      };
+    });
+    CACHE4.set(cacheKey, { ts: Date.now(), data: posts });
+    return { posts, sources: [`stocktwits ${ticker} (n=${posts.length})`], errors: [] };
+  } catch (e) {
+    return { posts: [], sources: [], errors: [`stocktwits:${ticker}: ${e.message}`] };
+  }
+}
+var ST_SYMBOLS, CACHE4, TTL_MS5, USER_AGENT3;
+var init_stocktwits = __esm({
+  "api/_lib/ai/sources/stocktwits.ts"() {
+    ST_SYMBOLS = {
+      BTC: "BTC.X",
+      ETH: "ETH.X",
+      SOL: "SOL.X",
+      BNB: "BNB.X",
+      XRP: "XRP.X",
+      DOGE: "DOGE.X",
+      ADA: "ADA.X",
+      AVAX: "AVAX.X",
+      LINK: "LINK.X",
+      DOT: "DOT.X",
+      SHIB: "SHIB.X",
+      NEAR: "NEAR.X",
+      ARB: "ARB.X",
+      OP: "OP.X",
+      PEPE: "PEPE.X",
+      INJ: "INJ.X",
+      TIA: "TIA.X",
+      WIF: "WIF.X"
+    };
+    CACHE4 = /* @__PURE__ */ new Map();
+    TTL_MS5 = 10 * 60 * 1e3;
+    USER_AGENT3 = "Mozilla/5.0 (compatible; CoinWiseAI/1.0; +https://coinwise.ai)";
+  }
+});
+
 // api/_lib/ai/sources/fearGreed.ts
 async function fetchFearGreedReal(limit = 30) {
   const cappedLimit = Math.min(Math.max(limit, 1), 365);
-  if (CACHE4 && Date.now() - CACHE4.ts < TTL_MS5 && CACHE4.limit >= cappedLimit) {
-    if (CACHE4.limit === cappedLimit) return CACHE4.data;
-    const trimmed = CACHE4.data.history.slice(-cappedLimit);
+  if (CACHE5 && Date.now() - CACHE5.ts < TTL_MS6 && CACHE5.limit >= cappedLimit) {
+    if (CACHE5.limit === cappedLimit) return CACHE5.data;
+    const trimmed = CACHE5.data.history.slice(-cappedLimit);
     const cur = trimmed[trimmed.length - 1];
     const yesterday = trimmed[trimmed.length - 2];
     const lastWeek = trimmed[trimmed.length - 8] || trimmed[0];
     return {
-      ...CACHE4.data,
+      ...CACHE5.data,
       current: cur,
       delta24h: yesterday ? cur.value - yesterday.value : 0,
       delta7d: lastWeek ? cur.value - lastWeek.value : 0,
@@ -3202,7 +3271,7 @@ async function fetchFearGreedReal(limit = 30) {
   }
   try {
     const url = `https://api.alternative.me/fng/?limit=${cappedLimit}&format=json`;
-    const res = await fetch(url, { headers: { "User-Agent": USER_AGENT3 } });
+    const res = await fetch(url, { headers: { "User-Agent": USER_AGENT4 } });
     if (!res.ok) throw new Error(`alternative.me responded ${res.status}`);
     const json = await res.json();
     if (!json?.data?.length) throw new Error("empty payload");
@@ -3223,7 +3292,7 @@ async function fetchFearGreedReal(limit = 30) {
       delta7d: lastWeek ? current.value - lastWeek.value : 0,
       history: points
     };
-    CACHE4 = { ts: Date.now(), limit: cappedLimit, data };
+    CACHE5 = { ts: Date.now(), limit: cappedLimit, data };
     return data;
   } catch (e) {
     return { ok: false, error: e.message, fetchedAt: (/* @__PURE__ */ new Date()).toISOString() };
@@ -3236,12 +3305,12 @@ async function pingFearGreed() {
   const err = "error" in r ? r.error : "unknown";
   return { ok: false, latencyMs: Date.now() - t0, error: err };
 }
-var CACHE4, TTL_MS5, USER_AGENT3;
+var CACHE5, TTL_MS6, USER_AGENT4;
 var init_fearGreed = __esm({
   "api/_lib/ai/sources/fearGreed.ts"() {
-    CACHE4 = null;
-    TTL_MS5 = 30 * 60 * 1e3;
-    USER_AGENT3 = "CoinWiseAI/1.0 (Vietnam fintech assignment)";
+    CACHE5 = null;
+    TTL_MS6 = 30 * 60 * 1e3;
+    USER_AGENT4 = "CoinWiseAI/1.0 (Vietnam fintech assignment)";
   }
 });
 
@@ -3252,11 +3321,11 @@ async function fetchCoinGecko(symbol) {
   if (!coinId) {
     return { ok: false, coinId: base, error: "unknown_coin_id", fetchedAt: (/* @__PURE__ */ new Date()).toISOString() };
   }
-  const hit = CACHE5.get(coinId);
-  if (hit && Date.now() - hit.ts < TTL_MS6) return hit.data;
+  const hit = CACHE6.get(coinId);
+  if (hit && Date.now() - hit.ts < TTL_MS7) return hit.data;
   try {
     const url = `https://api.coingecko.com/api/v3/coins/${coinId}?localization=false&tickers=false&market_data=false&community_data=true&developer_data=true&sparkline=false`;
-    const res = await fetch(url, { headers: { "User-Agent": USER_AGENT4, "Accept": "application/json" } });
+    const res = await fetch(url, { headers: { "User-Agent": USER_AGENT5, "Accept": "application/json" } });
     if (!res.ok) throw new Error(`coingecko_${res.status}`);
     const json = await res.json();
     const data = {
@@ -3273,7 +3342,7 @@ async function fetchCoinGecko(symbol) {
       communityScore: Number(json.community_score) || 0,
       alexaRank: json.public_interest_stats?.alexa_rank ?? null
     };
-    CACHE5.set(coinId, { ts: Date.now(), data });
+    CACHE6.set(coinId, { ts: Date.now(), data });
     return data;
   } catch (e) {
     return { ok: false, coinId, error: e.message, fetchedAt: (/* @__PURE__ */ new Date()).toISOString() };
@@ -3283,7 +3352,7 @@ async function pingCoinGecko() {
   const t0 = Date.now();
   try {
     const res = await fetch("https://api.coingecko.com/api/v3/ping", {
-      headers: { "User-Agent": USER_AGENT4 }
+      headers: { "User-Agent": USER_AGENT5 }
     });
     if (res.status === 429) return { ok: true, latencyMs: Date.now() - t0, rateLimited: true };
     if (res.ok) return { ok: true, latencyMs: Date.now() - t0 };
@@ -3292,7 +3361,7 @@ async function pingCoinGecko() {
     return { ok: false, latencyMs: Date.now() - t0, error: e.message };
   }
 }
-var COIN_IDS, CACHE5, TTL_MS6, USER_AGENT4;
+var COIN_IDS, CACHE6, TTL_MS7, USER_AGENT5;
 var init_coingecko = __esm({
   "api/_lib/ai/sources/coingecko.ts"() {
     COIN_IDS = {
@@ -3315,9 +3384,9 @@ var init_coingecko = __esm({
       ARB: "arbitrum",
       OP: "optimism"
     };
-    CACHE5 = /* @__PURE__ */ new Map();
-    TTL_MS6 = 10 * 60 * 1e3;
-    USER_AGENT4 = "CoinWiseAI/1.0 (Vietnam fintech assignment)";
+    CACHE6 = /* @__PURE__ */ new Map();
+    TTL_MS7 = 10 * 60 * 1e3;
+    USER_AGENT5 = "CoinWiseAI/1.0 (Vietnam fintech assignment)";
   }
 });
 
@@ -4285,15 +4354,30 @@ async function runAltDataPipeline(symbol) {
     latencyMs: Date.now() - t1a
   });
   const t1aPrime = Date.now();
-  const news = await collectHnForSymbol(symbol).catch((e) => ({
+  let news = await collectStockTwits(symbol).catch((e) => ({
     posts: [],
     sources: [],
     errors: [e.message]
   }));
+  let socialSrc = "StockTwits";
+  if (news.posts.length === 0) {
+    const hn = await collectHnForSymbol(symbol).catch((e) => ({
+      posts: [],
+      sources: [],
+      errors: [e.message]
+    }));
+    if (hn.posts.length > 0) {
+      news = hn;
+      socialSrc = "Hacker News (fallback)";
+    } else {
+      news = { posts: [], sources: [...news.sources, ...hn.sources], errors: [...news.errors, ...hn.errors] };
+      socialSrc = "StockTwits + HN";
+    }
+  }
   stages.push({
-    name: "collect.hackerNews",
-    status: news.errors.length === 0 ? "ok" : news.posts.length > 0 ? "partial" : "failed",
-    message: `${news.posts.length} HN stories from ${news.sources.length} queries` + (news.errors.length ? ` (errors: ${news.errors.length})` : ""),
+    name: "collect.social",
+    status: news.posts.length > 0 ? "ok" : news.errors.length === 0 ? "partial" : "failed",
+    message: `${news.posts.length} posts from ${socialSrc}` + (news.errors.length ? ` (errors: ${news.errors.length})` : ""),
     latencyMs: Date.now() - t1aPrime
   });
   const t1b = Date.now();
@@ -4371,7 +4455,7 @@ ${p.selftext.slice(0, 300)}`,
     return {
       id: `n:${n.id}`,
       title: n.title,
-      subreddit: `HN/${n.author}`,
+      subreddit: `${n.platform ?? "HN"}/${n.author}`,
       ups: n.points,
       numComments: n.numComments,
       ageMin: Math.round((Date.now() / 1e3 - n.createdUtc) / 60),
@@ -4613,6 +4697,7 @@ var init_pipeline = __esm({
   "api/_lib/ai/pipeline.ts"() {
     init_reddit();
     init_hackerNews();
+    init_stocktwits();
     init_fearGreed();
     init_coingecko();
     init_cryptoNewsRss();
@@ -4822,10 +4907,10 @@ async function fetchBtcSnapshot() {
   try {
     const [marketsRes, globalRes] = await Promise.all([
       fetch("https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=bitcoin&price_change_percentage=24h", {
-        headers: { "User-Agent": USER_AGENT5, "Accept": "application/json" }
+        headers: { "User-Agent": USER_AGENT6, "Accept": "application/json" }
       }),
       fetch("https://api.coingecko.com/api/v3/global", {
-        headers: { "User-Agent": USER_AGENT5, "Accept": "application/json" }
+        headers: { "User-Agent": USER_AGENT6, "Accept": "application/json" }
       })
     ]);
     if (!marketsRes.ok) throw new Error(`markets_${marketsRes.status}`);
@@ -4861,7 +4946,7 @@ async function fetchBtcHistory(days = 365) {
   }
   try {
     const url = `https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=${cappedDays}&interval=daily`;
-    const res = await fetch(url, { headers: { "User-Agent": USER_AGENT5, "Accept": "application/json" } });
+    const res = await fetch(url, { headers: { "User-Agent": USER_AGENT6, "Accept": "application/json" } });
     if (!res.ok) throw new Error(`market_chart_${res.status}`);
     const json = await res.json();
     if (!json?.prices?.length) throw new Error("empty_history_payload");
@@ -4887,10 +4972,10 @@ async function fetchBtcHistory(days = 365) {
     return { ok: false, error: e.message, fetchedAt: (/* @__PURE__ */ new Date()).toISOString() };
   }
 }
-var USER_AGENT5, SNAPSHOT_CACHE, SNAPSHOT_TTL_MS, HISTORY_CACHE, HISTORY_TTL_MS;
+var USER_AGENT6, SNAPSHOT_CACHE, SNAPSHOT_TTL_MS, HISTORY_CACHE, HISTORY_TTL_MS;
 var init_btcMarket = __esm({
   "api/_lib/ai/sources/btcMarket.ts"() {
-    USER_AGENT5 = "CoinWiseAI/1.0 (Vietnam fintech assignment)";
+    USER_AGENT6 = "CoinWiseAI/1.0 (Vietnam fintech assignment)";
     SNAPSHOT_CACHE = null;
     SNAPSHOT_TTL_MS = 5 * 60 * 1e3;
     HISTORY_CACHE = null;
@@ -5642,7 +5727,7 @@ function median(xs) {
 }
 async function getEarnYields() {
   const now = Date.now();
-  if (cache2 && now - cache2.ts < TTL_MS7) return cache2.data;
+  if (cache2 && now - cache2.ts < TTL_MS8) return cache2.data;
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 6e3);
@@ -5676,7 +5761,7 @@ async function getEarnYields() {
     return { yields: {}, source: "unavailable", degraded: true, asOf: (/* @__PURE__ */ new Date()).toISOString() };
   }
 }
-var ASSETS, MIN_TVL, STAKING_FLOOR, TTL_MS7, cache2;
+var ASSETS, MIN_TVL, STAKING_FLOOR, TTL_MS8, cache2;
 var init_earn = __esm({
   "api/_lib/earn.ts"() {
     ASSETS = {
@@ -5688,7 +5773,7 @@ var init_earn = __esm({
     };
     MIN_TVL = 1e7;
     STAKING_FLOOR = 1;
-    TTL_MS7 = 30 * 60 * 1e3;
+    TTL_MS8 = 30 * 60 * 1e3;
     cache2 = null;
   }
 });

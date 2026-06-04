@@ -121,7 +121,7 @@ const PostRow: React.FC<{ post: AltDataPipelineResult['nlp']['topPositive'][0]; 
       {post.title}
     </a>
     <div className="flex items-center gap-3 mt-2 text-[10px] text-slate-500">
-      <span>r/{post.subreddit}</span>
+      <span>{post.subreddit}</span>
       <span>↑ {post.ups.toLocaleString()}</span>
       <span>💬 {post.numComments}</span>
       <span className={tone === 'positive' ? 'text-emerald-400 font-bold tabular-nums ml-auto' : 'text-rose-400 font-bold tabular-nums ml-auto'}>
@@ -459,7 +459,7 @@ const AltDataPipelinePage: React.FC = () => {
                 <p className="text-2xl font-black tabular-nums">{data.collected.totalDocs}</p>
                 <p className="text-[11px] text-slate-500">
                   documents for {data.base}
-                  <span className="text-slate-600"> · HN {data.collected.newsPosts} · Reddit {data.collected.redditPosts}</span>
+                  <span className="text-slate-600"> · Social {data.collected.newsPosts} · Reddit {data.collected.redditPosts}</span>
                 </p>
                 <ul className="mt-2 space-y-0.5 max-h-20 overflow-auto">
                   {[...data.sources.news, ...data.sources.reddit].slice(0, 5).map((s, i) => (

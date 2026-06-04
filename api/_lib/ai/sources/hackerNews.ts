@@ -23,6 +23,7 @@ export interface HnHit {
   createdUtc: number;
   url: string;
   hnUrl: string;
+  platform?: string;   // 'HN' | 'StockTwits' — which community this came from
 }
 
 interface CacheEntry { ts: number; data: HnHit[] }
@@ -85,6 +86,7 @@ async function fetchSearch(query: string, page = 0): Promise<HnHit[]> {
       createdUtc: Number(h.created_at_i) || 0,
       url: String(h.url || ''),
       hnUrl: `https://news.ycombinator.com/item?id=${h.objectID}`,
+      platform: 'HN',
     }));
   CACHE.set(key, { ts: Date.now(), data: hits });
   return hits;
