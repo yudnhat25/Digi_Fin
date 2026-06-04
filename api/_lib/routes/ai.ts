@@ -165,10 +165,10 @@ aiRouter.post('/alt-data/classify', async (c) => {
   const nbHasSignal = nb.matchedFeatures.length > 0;
   const vaderHasSignal = vader.matchedTerms.length > 0;
 
-  // The trained classifier (LinearSVC over unigram+bigram features, trained on
-  // ~5k labeled docs) is the PRIMARY. We defer to the VADER lexicon only when
-  // the model has NO in-vocab feature to score (slang/profanity the corpus
-  // never covered). If neither has any signal, return Neutral — never a guess.
+  // The trained classifier (linear model over unigram+bigram features, trained
+  // on real re-labeled crypto text) is the PRIMARY. We defer to the VADER lexicon
+  // only when the model has NO in-vocab feature to score (slang/profanity the
+  // corpus never covered). If neither has any signal, return Neutral — never a guess.
   if (!nbHasSignal && vaderHasSignal) {
     const cmp = vader.compound;
     const label = cmp >= 0.05 ? 'positive' : cmp <= -0.05 ? 'negative' : 'neutral';

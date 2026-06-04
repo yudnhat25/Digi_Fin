@@ -30,6 +30,7 @@ export interface DocClassification {
   confidence: number;
   compound: number;       // ∈ [-1, +1]: P(pos) − P(neg)
   perClassProb: Record<SentimentClass, number>;
+  perClassLogProb: Record<SentimentClass, number>;
   matchedFeatures: Prediction['matchedFeatures'];
 }
 
@@ -40,6 +41,7 @@ export function classify(text: string): DocClassification {
     confidence: p.confidence,
     compound: Number((p.perClassProb.positive - p.perClassProb.negative).toFixed(4)),
     perClassProb: p.perClassProb,
+    perClassLogProb: p.perClassLogProb,
     matchedFeatures: p.matchedFeatures,
   };
 }
