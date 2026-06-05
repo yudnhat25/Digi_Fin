@@ -186,3 +186,44 @@ VADER và mô hình train **chấm cùng một corpus** rồi trộn — VADER b
 5. **Tool cho chatbot agentic:** `getCommunityPulse()` cho chatbot đọc mood cộng đồng và blend với alt-data khi tư vấn.
 
 **Lưu ý quan trọng:** Community Pulse **không** phải 1 trong 4 chân của composite alt-data (Câu 1) — nói rõ để không bị bắt lỗi trùng nguồn.
+
+---
+
+## Phụ lục — VADER là gì, tại sao chọn, ứng dụng
+
+> Code thật: [api/_lib/ai/nlp/vader.ts](../api/_lib/ai/nlp/vader.ts) + [lexicon.ts](../api/_lib/ai/nlp/lexicon.ts).
+
+### 1. VADER là gì
+**VADER = Valence Aware Dictionary and sEntiment Reasoner** (Hutto & Gilbert, 2014) — một kỹ thuật phân tích cảm xúc (sentiment) dạng **từ điển + luật ngữ pháp** (lexicon + rule-based), **không cần huấn luyện**. Cách hoạt động trong dự án:
+
+1. **Tách từ (tokenize)** câu thành các token.
+2. Với mỗi token có trong **từ điển valence** (mỗi từ gắn sẵn 1 điểm cảm xúc, vd "moon" +, "rug" −):
+   - **Booster:** nhân hệ số theo 1–2 từ đứng trước (*"very" / "extremely"* khuếch đại, *"slightly"* giảm).
+   - **Negation:** đảo dấu nếu có từ phủ định trong 3 từ trước (*"not good"* → âm).
+   - **ALL-CAPS:** viết HOA toàn bộ → tăng cường độ (+0.733).
+3. **Cộng tất cả valence** → điểm thô (compound raw).
+4. **Chuẩn hóa** về [−1, 1] bằng công thức VADER: `x / √(x² + 15)`.
+
+Khác biệt cốt lõi: VADER **đọc được sắc thái mạng xã hội** mà mô hình bag-of-words thường bỏ lỡ — viết hoa, phủ định, từ tăng cường, dấu câu. Trong dự án, từ điển đã được **tinh chỉnh cho crypto** (thêm slang: "HODL", "rug", "moon", "FUD"...).
+
+### 2. Tại sao chọn VADER làm 1 trọng số (40%)
+Trong tầng trộn social/news, điểm = **VADER 40% + mô hình tự train 60%**. Lý do giữ VADER bên cạnh mô hình:
+
+| Lý do | Giải thích |
+|---|---|
+| **Không cần nhãn, chạy ngay (zero-shot)** | VADER hoạt động trên *bất kỳ* câu nào kể cả từ chưa từng thấy lúc train — phủ vùng mà mô hình (giới hạn bởi vocab 4,454) bị "out-of-vocabulary". |
+| **Bắt sắc thái ngữ pháp** | Mô hình tuyến tính bag-of-words coi *"not good"* ≈ *"good"*; VADER xử lý phủ định, ALL-CAPS, intensifier — đúng kiểu ngôn ngữ Twitter/StockTwits. |
+| **Giải thích được (explainable)** | Trả về `matchedTerms` (từ nào đóng góp bao nhiêu) → minh bạch, hợp tiêu chí "honest evaluation". |
+| **Ổn định, làm sàn an toàn (baseline)** | Khi mô hình train sai/thiếu tự tin, VADER kéo điểm về mức hợp lý. Hai cái **bù lỗi cho nhau** → robust hơn dùng riêng. |
+| **Trọng số 40% < 60%** | Mô hình train (học từ dữ liệu gán nhãn) vẫn là chính; VADER là lớp phủ ngữ pháp + an toàn, nên nhẹ hơn. |
+
+→ Đây là **ensemble lexicon + ML**: lexicon mạnh ở luật ngôn ngữ, ML mạnh ở pattern học được. Trộn lại đáng tin hơn từng cái đơn lẻ.
+
+### 3. Ứng dụng của VADER trong app
+1. **Chấm điểm social-text & news** (Alt-Data Lab "Technique 1") — đầu vào cho composite signal (Câu 1/4).
+2. **Re-label dữ liệu train:** dùng VADER độ tin cao để **gán nhãn lại** text StockTwits thật (vứt nhãn nhiễu của người đăng) → tạo tập train (gold-plus-silver, Câu 4).
+3. **Fraud Shield:** sentiment VADER là 1 input để bắt "mua lúc tâm lý cực xấu" (contra-FOMO).
+4. **AI Advisor / Smart Allocation:** điểm sentiment (gồm VADER) nghiêng tỷ trọng danh mục (Câu 5).
+5. **Explainability cho UI:** hiện đúng từ nào kéo điểm lên/xuống trên thẻ phân tích.
+
+**Một câu để trả lời khi bảo vệ:** *VADER là bộ chấm cảm xúc từ-điển-+-luật, không cần train, bắt được phủ định/viết-hoa/từ-tăng-cường mà bag-of-words bỏ lỡ; chọn nó làm baseline 40% để phủ từ lạ, giải thích được và bù lỗi cho mô hình ML 60% — ensemble đáng tin hơn dùng riêng.*
