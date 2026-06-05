@@ -185,6 +185,23 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
   // frozen against the round they actually played.
   const isWinner = isRoundEnded && userRank === 1 && participants.length > 0;
 
+  // While competing, the header clock must track the user's OWN round (the one
+  // they paid for), NOT the perpetual global tick. Otherwise, once their round
+  // closes the global clock rolls on and the finished round's net worth / PNL
+  // appear to "carry over" into a freshly-rolled round that the user never
+  // joined. Tying the display to roundEndsAt makes the close unmistakable, so
+  // the Round-complete / winner UI takes over and the next entry re-baselines
+  // to $1,000,000.
+  const userRoundRemainingMs = (roundEndsAtMs && Number.isFinite(roundEndsAtMs))
+    ? Math.max(0, roundEndsAtMs - Date.now())
+    : 0;
+  const fmtClock = (ms: number) => {
+    const m = Math.floor(ms / 60000);
+    const s = Math.floor((ms % 60000) / 1000);
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+  const isCompeting = !!user.competition?.isCompeting;
+
   const totalParticipants = participants.length;
   const prizePool = totalParticipants * ENTRY_FEE;
 
@@ -533,10 +550,18 @@ const CompetitionView: React.FC<CompetitionViewProps> = ({ user, marketPrices, o
         <div className="bg-slate-900/50 backdrop-blur border border-slate-800 p-5 rounded-2xl relative overflow-hidden group">
           <div className={`absolute inset-0 translate-y-full group-hover:translate-y-0 transition-transform duration-500 ${isBreak ? 'bg-amber-500/5' : 'bg-emerald-500/5'}`}></div>
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 relative z-10">
-            {isBreak ? `Break · next round in` : `Round ${arenaTick.roundIndex} · time left`}
+            {isCompeting
+              ? (isRoundEnded ? `Your round · complete` : `Your round · time left`)
+              : (isBreak ? `Break · next round in` : `Round ${arenaTick.roundIndex} · time left`)}
           </p>
-          <p className={`text-2xl font-black font-mono relative z-10 ${isBreak ? 'text-amber-400' : 'text-white'}`}>
-            {arenaTick.display}
+          <p className={`text-2xl font-black font-mono relative z-10 ${
+            isCompeting
+              ? (isRoundEnded ? 'text-rose-400' : 'text-white')
+              : (isBreak ? 'text-amber-400' : 'text-white')
+          }`}>
+            {isCompeting
+              ? (isRoundEnded ? '00:00' : fmtClock(userRoundRemainingMs))
+              : arenaTick.display}
           </p>
         </div>
         <div className="bg-slate-900/50 backdrop-blur border border-slate-800 p-5 rounded-2xl">
