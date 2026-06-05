@@ -69,7 +69,6 @@ const STATS = [
 const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
   const [authOpen, setAuthOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const [lang, setLang] = useState<'EN' | 'VI'>('EN');
   const [livePrice, setLivePrice] = useState(74857.64);
 
   useEffect(() => {
@@ -122,17 +121,6 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="hidden sm:flex items-center gap-1 text-[11px] font-medium text-slate-500">
-              <button
-                onClick={() => setLang('EN')}
-                className={lang === 'EN' ? 'text-slate-100' : 'hover:text-slate-300'}
-              >EN</button>
-              <span className="text-slate-700">·</span>
-              <button
-                onClick={() => setLang('VI')}
-                className={lang === 'VI' ? 'text-slate-100' : 'hover:text-slate-300'}
-              >VI</button>
-            </div>
             <button
               onClick={() => setAuthOpen(true)}
               className="text-[13px] font-medium text-slate-300 hover:text-white px-3 py-1.5"
