@@ -104,12 +104,22 @@ const AIAdvisorPage: React.FC<{ user: UserState }> = ({ user }) => {
               <p className="text-[10px] font-black uppercase tracking-widest text-fuchsia-300 mb-2">AI Narrative</p>
               <p className="text-sm text-slate-200 leading-relaxed">{advisor.narrative}</p>
               {advisor.sources && (
-                <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-white/[0.06]">
-                  <SourceBadge label="Sentiment" value={advisor.sources.sentiment} />
-                  <SourceBadge label="Momentum" value={advisor.sources.momentum} />
-                  <SourceBadge label="Fear &amp; Greed" value={advisor.sources.fearGreed} />
-                  <SourceBadge label="Prices" value={advisor.sources.prices} />
-                </div>
+                <>
+                  <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-white/[0.06]">
+                    <SourceBadge label="Sentiment" value={advisor.sources.sentiment} />
+                    <SourceBadge label="Momentum" value={advisor.sources.momentum} />
+                    <SourceBadge label="Fear &amp; Greed" value={advisor.sources.fearGreed} />
+                    <SourceBadge label="Prices" value={advisor.sources.prices} />
+                  </div>
+                  {(advisor.sources.momentum !== 'binance' || advisor.sources.prices !== 'binance') && (
+                    <p className="text-[10px] text-slate-500 leading-relaxed mt-2">
+                      <span className="text-amber-300/90 font-bold">DEMO</span> means Binance's 24h ticker was unreachable from this
+                      server region (it's geo-blocked on some serverless hosts), so the price-momentum overlay was skipped — the tilt
+                      ran on <span className="text-slate-300">live sentiment + Fear &amp; Greed</span> only. No mock numbers are
+                      injected; it goes live (<span className="text-emerald-300/90 font-bold">BINANCE</span>) when the ticker is reachable.
+                    </p>
+                  )}
+                </>
               )}
             </div>
             <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6">
