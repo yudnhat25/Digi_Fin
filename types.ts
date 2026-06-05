@@ -35,6 +35,10 @@ export interface CompetitionStats {
     balance: number;
     assets: Asset[];
     transactions: Transaction[];
+    // Earn stakes are snapshotted + cleared on entry too: their value counts
+    // toward net worth, so leaving them in would leak real staked value into
+    // the $1M arena baseline as phantom PNL. Optional for legacy snapshots.
+    stakes?: StakePosition[];
   };
 }
 

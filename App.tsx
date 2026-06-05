@@ -199,6 +199,7 @@ const App: React.FC = () => {
     // can never go negative.
     const realAssets = Array.isArray(currentUser.assets) ? currentUser.assets : [];
     const realTxs = Array.isArray(currentUser.transactions) ? currentUser.transactions : [];
+    const realStakes = Array.isArray(currentUser.stakes) ? currentUser.stakes : [];
     const realBalance = Number.isFinite(currentUser.balance) ? currentUser.balance : 0;
     // The entry fee is now charged in real VND against the user's CoinWise Bank
     // account inside CompetitionPaymentModal (OpenAPI /bank/arena/pay-entry), so
@@ -211,6 +212,10 @@ const App: React.FC = () => {
       balance: BASELINE_NET_WORTH,
       assets: [],
       transactions: [],
+      // Clear Earn stakes for the arena: staked value counts toward net worth,
+      // so leaving them in would inflate the $1M baseline as phantom PNL that
+      // never resets across rounds. Snapshotted below and restored on exit.
+      stakes: [],
       competition: {
         isCompeting: true,
         entryNetWorth: BASELINE_NET_WORTH,
@@ -223,6 +228,7 @@ const App: React.FC = () => {
           balance: snapshotBalance,
           assets: realAssets,
           transactions: realTxs,
+          stakes: realStakes,
         },
       },
     };
@@ -257,6 +263,9 @@ const App: React.FC = () => {
           balance: snap.balance,
           assets: snap.assets,
           transactions: snap.transactions,
+          // Restore real Earn stakes. Legacy snapshots predate this field — fall
+          // back to whatever's on the session (old flow never cleared them).
+          stakes: snap.stakes ?? currentUser.stakes ?? [],
           competition: { isCompeting: false, entryNetWorth: 0, entryTime: 0, pnlPercent: 0, currentRank: 0 },
         }
       : {
