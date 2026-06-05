@@ -227,3 +227,42 @@ Trong tầng trộn social/news, điểm = **VADER 40% + mô hình tự train 60
 5. **Explainability cho UI:** hiện đúng từ nào kéo điểm lên/xuống trên thẻ phân tích.
 
 **Một câu để trả lời khi bảo vệ:** *VADER là bộ chấm cảm xúc từ-điển-+-luật, không cần train, bắt được phủ định/viết-hoa/từ-tăng-cường mà bag-of-words bỏ lỡ; chọn nó làm baseline 40% để phủ từ lạ, giải thích được và bù lỗi cho mô hình ML 60% — ensemble đáng tin hơn dùng riêng.*
+
+---
+
+## Phụ lục — Alt-Data Lab: lấy dữ liệu & chấm điểm như thế nào
+
+> Code thật: [api/_lib/ai/pipeline.ts](../api/_lib/ai/pipeline.ts) → hàm `runAltDataPipeline(symbol)`.
+
+### 1. Lấy dữ liệu như thế nào để chấm điểm
+Alt-Data Lab **không phải batch chạy hằng ngày** — nó gọi pipeline **theo từng đồng coin, real-time, ngay khi bạn mở Lab / chọn coin**. Mỗi lần gọi `runAltDataPipeline(symbol)` sẽ thu thập song song:
+
+| Nguồn | Phạm vi | Theo coin? |
+|---|---|---|
+| **StockTwits** (chính) | các message mới nhất của coin đó | ✅ theo coin |
+| **Hacker News / Reddit** (fallback) | bài liên quan coin | ✅ theo coin |
+| **News RSS** | tin lọc theo `tag === coin` hoặc `MACRO` | ✅ theo coin |
+| **CoinGecko** | vote up/down của chính coin | ✅ theo coin |
+| **Fear & Greed** | tâm lý toàn thị trường | ❌ chung thị trường |
+
+**Kết quả được cache 10 phút/coin** (`SENTIMENT_CACHE_TTL_MS = 10 phút`) — mở lại trong 10 phút thì dùng lại kết quả, quá 10 phút mới fetch mới. Vậy là **on-demand + cache**, không phải "chấm 1 lần mỗi ngày".
+
+### 2. Tính điểm như thế nào (4 bước)
+1. **Chấm từng post/câu:** mỗi văn bản chạy qua **VADER + mô hình tự train** → ra `compound ∈ [−1, 1]`.
+2. **Gộp có trọng số (không phải trung bình thường):** mỗi post có
+   `weight = max(1, engagement × recencyDecay)`
+   - *engagement* = số up/like (hoặc points) → post nhiều tương tác nặng hơn.
+   - *recencyDecay* = `0.5^(ageDays / 180)` → **half-life 180 ngày**: post càng cũ trọng số càng giảm (cũ 180 ngày → còn ½, 360 ngày → còn ¼). Post mới được ưu tiên.
+3. **Trộn 2 tầng → composite:**
+   - *Inner blend* (cho cả social & news): **VADER 40% + model 60%**.
+   - *Outer blend*: **social 0.30 / news 0.20 / CoinGecko 0.25 / Fear&Greed 0.25**; nguồn nào chết → trọng số về 0, phần còn lại tự chuẩn hóa.
+4. **Xuất kết quả:** `composite ∈ [−1,1]` → quy về **0–100**, kèm **signal** (STRONG_SELL…STRONG_BUY), **label** (Capitulation…Euphoric), và **confidence** (cộng dồn theo số nguồn còn sống).
+
+### 3. "Theo coin theo ngày" hay không?
+- **Theo coin:** ✅ đúng — mỗi coin một lần chấm riêng.
+- **Theo ngày:** ❌ **không**. Không có chu kỳ ngày. Cơ chế là:
+  - **On-demand** (chấm khi cần) + **cache 10 phút**.
+  - Dữ liệu là **cửa sổ trượt**: bỏ post cũ hơn **365 ngày**, và **giảm trọng số liên tục theo thời gian** (half-life 180 ngày) — chứ không bó tròn theo "ngày".
+- Riêng **mention volume** (Z-score, Technique 3) thì có lưu chuỗi thời gian bền trên RTDB để so baseline, nhưng đó là kênh anomaly riêng, không phải cách chấm sentiment.
+
+**Một câu để trả lời khi bảo vệ:** *Alt-Data Lab chấm theo từng coin, real-time (cache 10 phút) chứ không phải batch theo ngày; mỗi post được VADER+model chấm rồi gộp có trọng số = tương tác × độ mới (half-life 180 ngày), trộn 2 tầng (VADER 40/model 60; social/news/CoinGecko/F&G) ra điểm 0–100 + signal + confidence.*
